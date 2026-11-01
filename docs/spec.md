@@ -558,7 +558,7 @@ Avoid:
 
 - Microservices.
 - Mandatory cloud dependencies.
-- External AI APIs.
+- Generative AI and external AI APIs.
 - Separate MCP business logic.
 - Heavy ORMs. Use a thin, typed query builder that supports SQLite and PostgreSQL.
 - Database-specific SQL outside the job-claiming code.
@@ -582,7 +582,7 @@ Prefer straightforward, testable modules with explicit boundaries.
 | Crypto | Node built-in Ed25519; canonical JSON (RFC 8785) | Verifiable with standard tools, including `openssl` |
 | Auth | argon2id (`@node-rs/argon2`), cookie sessions in the database, hashed prefixed API keys | Standard and simple |
 | Email | Nodemailer (SMTP) | |
-| Import (v1.2) | Firecrawl `pdf-inspector` (PDF) and `AnyDoc` (.docx and other formats), via Node bindings | Open source (MIT), fully local, fast; optional local OCR for scanned PDFs |
+| Import (v1.2) | Firecrawl `pdf-inspector` (PDF) and `AnyDoc` (.docx and other formats), via Node bindings | Open source (MIT), fully local, fast; local OCR for scanned PDFs, on by default (model bundled in the image) |
 | UI | React, Vite, Tailwind; admin SPA plus a separate lightweight signing page using `signature_pad` | Signing page stays fast on phones |
 | Verifier | `signed-md verify agreement.zip`, also compiled to a single binary | Offline verification with no install |
 | Tests | Vitest; Playwright for the end-to-end signing flow | Playwright runs the acceptance test |
