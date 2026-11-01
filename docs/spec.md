@@ -335,7 +335,7 @@ Template-based documents must retain their template version and provenance. Inli
 ### Human approval
 
 - Template versions created through REST or MCP start as `pending_approval`.
-- The approve operation exists only in the web UI and requires a logged-in user session. It is not exposed through REST or MCP, and API keys cannot call it.
+- The approve operation exists only in the web UI and requires a logged-in user session. From v1.1, that user must have the `owner` role. It is not exposed through REST or MCP, and API keys cannot call it.
 - Creating a document from a `pending_approval` version fails with `TEMPLATE_NOT_APPROVED`.
 - Approval is recorded as an event and included in the evidence of every document that uses the version.
 
@@ -519,6 +519,7 @@ v1.1 introduces:
 - User permissions.
 - Per-user API keys.
 - Team activity.
+- Template approval (and inline document approval) restricted to the `owner` role, still UI-only.
 
 Existing installations must migrate without losing documents, keys, or signing evidence. Existing API keys are assigned to the original administrator.
 
