@@ -1,12 +1,12 @@
 # Signed.md
 ## REST, MCP, and agent skills specification
 
-**Status:** Draft v0.1  
+**Status:** Draft v0.2  
 **Required release:** v1.0 MVP
 
 ## 1. Objective
 
-An AI agent must be able to prepare, validate, preview, send, monitor, and retrieve a signed agreement using Signed.md.
+An AI agent must be able to prepare, validate, preview, send, monitor, revoke, and retrieve a signed agreement using Signed.md.
 
 All operations must be deterministic and auditable.
 
@@ -22,7 +22,7 @@ Versioned under `/v1`.
 
 ### MCP server
 
-Exposes the same signing capabilities to MCP-compatible agents.
+Exposes the same signing capabilities to MCP-compatible agents, over Streamable HTTP at `/mcp`, authenticated with an API key.
 
 ### Agent skill
 
@@ -30,7 +30,7 @@ Documents the correct workflow for agents using REST or MCP.
 
 The skill must be distributed with the open-source project.
 
-All three interfaces share the same application logic.
+All three interfaces share the same application logic and the same schemas.
 
 ## 3. Core workflow
 
@@ -44,19 +44,19 @@ Discover approved template
 Read template field schema
       |
       v
-Populate permitted values
+Populate permitted template values and signers
       |
       v
-Validate
+Validate (edit draft and repeat if needed)
       |
       v
-Generate preview
+Generate preview (returns revision)
       |
       v
 Request user approval
       |
       v
-Send for signature
+Send approved revision
       |
       v
 Track status / receive webhook
@@ -73,8 +73,13 @@ Retrieve completed ZIP
 GET    /v1/templates
 POST   /v1/templates
 GET    /v1/templates/{id}
+POST   /v1/templates/{id}/versions
 GET    /v1/templates/{id}/versions/{version}
+POST   /v1/templates/{id}/archive
+POST   /v1/templates/{id}/unarchive
 ```
+
+Templates are never edited in place. `POST /versions` creates a new version.
 
 ### Documents
 
@@ -82,12 +87,20 @@ GET    /v1/templates/{id}/versions/{version}
 GET    /v1/documents
 POST   /v1/documents
 GET    /v1/documents/{id}
+PATCH  /v1/documents/{id}
 POST   /v1/documents/{id}/validate
 GET    /v1/documents/{id}/preview
 POST   /v1/documents/{id}/send
-GET    /v1/documents/{id}/status
+POST   /v1/documents/{id}/revoke
+POST   /v1/documents/{id}/signers/{key}/resend
+POST   /v1/documents/{id}/archive
+POST   /v1/documents/{id}/unarchive
 GET    /v1/documents/{id}/artifacts
 ```
+
+`GET /v1/documents` hides archived documents unless `?archived=true` is passed. The same applies to templates.
+
+There is no `DELETE` endpoint for any resource.
 
 ### Configuration
 
@@ -97,7 +110,7 @@ GET    /v1/webhooks
 PUT    /v1/webhooks
 ```
 
-The final API should avoid redundant endpoints where resource representations already expose the necessary information.
+The API avoids redundant endpoints where resource representations already expose the necessary information. For example, status is part of `GET /v1/documents/{id}`.
 
 ## 5. Create document
 
@@ -113,21 +126,18 @@ Content-Type: application/json
 ```json
 {
   "template_id": "tpl_services",
-  "fields": {
-    "client.name": "Acme Ltd",
-    "client.fee": 1000,
-    "terms.notice_days": 30
+  "values": {
+    "client_name": "Acme Ltd",
+    "fee": "1000.00",
+    "notice_days": 30
   },
-  "parties": [
-    {
-      "role": "provider",
-      "email": "contracts@example.com"
-    },
-    {
-      "role": "client",
-      "email": "legal@acme.example"
-    }
+  "signers": [
+    { "key": "client1", "name": "Jane Doe", "email": "jane@acme.example", "order": 1 },
+    { "key": "client2", "name": "John Roe", "email": "john@acme.example", "order": 1 },
+    { "key": "provider", "name": "Sam Lee", "email": "contracts@example.com", "order": 2 }
   ],
+  "expires_in_days": 14,
+  "timezone": "Europe/London",
   "auto_send": false,
   "webhook_url": "https://example.com/hooks/contracts",
   "metadata": {
@@ -137,19 +147,41 @@ Content-Type: application/json
 }
 ```
 
-A successful response returns the document ID, validation state, and relevant links.
+- `values` holds template values. Keys are written without the `$` prefix.
+- `signers` lists every signer. Each `key` must match the signer keys used in the template. Signers with the same `order` sign in parallel; the next group is notified when the current group is done.
+- Currency values are decimal strings.
 
-### Alternative inputs
+A successful response returns the document ID, status, revision, validation state, and relevant links.
 
-Document creation may use:
+### Alternative input
+
+Document creation uses either:
 
 - `template_id`
-- `content`
-- `content_url`
+- `content` (inline Markdown, with the same placeholder notation)
 
-These input modes are mutually exclusive unless explicitly documented otherwise.
+These are mutually exclusive. There is no URL input; agents fetch remote content themselves and pass it as `content`.
 
-## 6. Validation
+## 6. Edit draft
+
+```http
+PATCH /v1/documents/doc_123
+```
+
+```json
+{
+  "values": { "fee": "1200.00" },
+  "signers": [
+    { "key": "client1", "name": "Jane Doe", "email": "jane.doe@acme.example", "order": 1 }
+  ]
+}
+```
+
+- Works on drafts only. Otherwise it returns `DOCUMENT_NOT_DRAFT`.
+- `values` are merged. `signers` entries are matched by `key` and replaced.
+- Returns the new revision. Any earlier approval no longer matches.
+
+## 7. Validation
 
 Example:
 
@@ -162,97 +194,140 @@ Response:
 ```json
 {
   "valid": false,
+  "revision": "rev_456",
   "errors": [
     {
-      "code": "FIELD_REQUIRED",
-      "field": "client.email",
-      "message": "Client email is required"
+      "code": "SIGNER_MISSING",
+      "field": "provider.signature",
+      "message": "The template uses signer key 'provider', but no signer has that key"
     }
   ]
 }
 ```
 
-Validation must never silently modify legal terms or send the agreement.
+Validation never modifies legal terms and never sends the agreement. The result applies only to the revision it names.
 
-## 7. Preview
+## 8. Preview
 
 ```http
 GET /v1/documents/doc_123/preview
 ```
 
-Preview must provide:
+Preview provides:
 
-- Rendered agreement.
-- Resolved field summary.
-- Outstanding signer fields.
+- The resolved Markdown.
+- Rendered HTML.
+- Resolved template value summary.
+- Outstanding signer fields, grouped by signer.
+- Signing order.
 - Template version.
 - Validation warnings.
-- A document revision identifier.
+- The revision.
+
+There is no PDF before completion.
 
 Agents should present a human-readable summary alongside the preview.
 
 The approval step must refer to the exact revision that was previewed.
 
-## 8. Sending
+## 9. Sending
 
 ```http
 POST /v1/documents/doc_123/send
 ```
 
-Example:
-
 ```json
 {
-  "approved_revision": "rev_456"
+  "approved_revision": "rev_456",
+  "approved_by": "Sam Lee, via chat"
 }
 ```
 
-The server must reject sending if the draft changed after the approved preview.
+The server rejects sending if the draft changed after the approved preview (`REVISION_MISMATCH`).
+
+`approved_by` is recorded in the evidence. It is a statement from the caller, not a verified identity.
 
 The operation must support idempotency.
 
 Agents must not treat a successful preview as authorisation to send.
 
-## 9. Status
+## 10. Revoke, resend, archive
+
+### Revoke
 
 ```http
-GET /v1/documents/doc_123/status
+POST /v1/documents/doc_123/revoke
 ```
 
-Response includes:
+```json
+{ "reason": "Wrong signer email" }
+```
+
+- Allowed for `sent` and `partially_signed` documents.
+- Invalidates all signing links immediately and notifies signers who already received one.
+- Terminal. To correct the agreement, create a new document.
+
+### Resend
+
+```http
+POST /v1/documents/doc_123/signers/client1/resend
+```
+
+Sends a fresh link to a signer who has been notified but has not signed. Rate limited.
+
+### Archive
+
+```http
+POST /v1/documents/doc_123/archive
+POST /v1/documents/doc_123/unarchive
+```
+
+Hides or restores the document in default lists. Does not change status. Works in any status.
+
+## 11. Document representation
+
+`GET /v1/documents/{id}` includes:
 
 - Current status.
-- Party completion status.
-- Signer completion status.
+- Revision.
+- Signers, with order and status.
+- The signing group currently waiting.
 - Outstanding actions.
-- Relevant timestamps.
+- Relevant timestamps, including expiry.
+- Archived flag.
 
-## 10. Artifacts
+## 12. Artifacts
 
 ```http
 GET /v1/documents/doc_123/artifacts
 ```
 
-Returns completed artifact metadata and authorised download links.
+Returns completed artifact metadata and authorised download links. Available once the document is `signed`.
 
-Download links should be short-lived and scoped to the specific artifact.
+Download links are short-lived and scoped to the specific artifact.
 
-## 11. MCP tools
+## 13. MCP tools
 
-The v1.0 MCP server should expose:
+The v1.0 MCP server exposes:
 
 | Tool | Purpose |
 |---|---|
 | `signed_list_templates` | Discover available templates |
 | `signed_get_template` | Retrieve template and field schema |
 | `signed_create_document` | Create a draft |
+| `signed_update_document` | Edit a draft |
 | `signed_validate_document` | Validate a draft |
 | `signed_preview_document` | Retrieve preview and revision |
 | `signed_send_document` | Send an approved revision |
-| `signed_get_document` | Retrieve document details |
+| `signed_get_document` | Retrieve document details and status |
 | `signed_list_documents` | Search and list documents |
-| `signed_get_status` | Check signing progress |
+| `signed_revoke_document` | Revoke a sent document |
+| `signed_archive_document` | Archive or unarchive a document |
 | `signed_get_artifacts` | Retrieve completion artifacts |
+
+Template creation and editing are not exposed through MCP in v1.0. Templates are approved legal language, managed by people in the UI or through the REST API.
+
+Tool input schemas are generated from the same schemas as the REST API.
 
 Tools should return structured, machine-readable results.
 
@@ -260,7 +335,7 @@ MCP errors should preserve the API's error codes and field-level detail.
 
 The MCP adapter must not introduce additional document state or authorisation rules.
 
-## 12. Agent skill requirements
+## 14. Agent skill requirements
 
 The repository must include a distributable skill with:
 
@@ -268,11 +343,14 @@ The repository must include a distributable skill with:
 - API/MCP setup instructions.
 - Authentication guidance.
 - Template discovery workflow.
+- Placeholder notation (`$` template values and signer fields).
 - Field population rules.
+- Signer and signing-order rules.
 - Validation and preview workflow.
 - Human approval requirements.
 - Sending workflow.
 - Status tracking.
+- Revoking and archiving.
 - Artifact retrieval.
 - Error handling.
 - Security and privacy constraints.
@@ -283,16 +361,17 @@ The skill must instruct agents to:
 
 1. Prefer approved templates over writing new legal language.
 2. Respect template field constraints.
-3. Never invent unknown signatory details.
+3. Never invent unknown signer details.
 4. Never bypass validation errors.
-5. Show material commercial terms before sending.
+5. Show material commercial terms and the signing order before sending.
 6. Obtain explicit approval unless the user has authorised automatic sending.
-7. Never claim an agreement is signed until Signed.md confirms completion.
+7. Never claim an agreement is signed until Signed.md reports the `signed` status.
 8. Preserve document IDs and idempotency keys when retrying.
 9. Avoid disclosing signing links or documents to unrelated recipients.
-10. Report declined, expired, or failed signing requests accurately.
+10. Report declined, expired, revoked, or failed signing requests accurately.
+11. Revoke only when the user asks, and confirm before doing so.
 
-## 13. Agent approval contract
+## 15. Agent approval contract
 
 Default workflow:
 
@@ -316,9 +395,9 @@ For explicitly authorised automated workflows, `auto_send` may bypass interactiv
 
 Such authorisation belongs to the calling system, and the service must still enforce template constraints and API permissions.
 
-## 14. Webhook-driven completion
+## 16. Webhook-driven completion
 
-When the document is finalised, Signed.md sends a signed webhook.
+When the package is ready, Signed.md sends a signed `document.signed` webhook. If a signer declines, it sends `document.declined`. Further events are listed in the technical specification and will be added later.
 
 The receiving system can:
 
@@ -329,11 +408,11 @@ The receiving system can:
 - Store or process the agreement.
 - Notify the initiating agent or user.
 
-The webhook should include customer-defined metadata to correlate the agreement with an external workflow.
+The webhook includes customer-defined metadata to correlate the agreement with an external workflow.
 
 A webhook is a notification, not proof of legal validity. Consumers should verify the completed package when appropriate.
 
-## 15. Error handling
+## 17. Error handling
 
 Use stable error codes.
 
@@ -344,27 +423,30 @@ Examples:
 | `TEMPLATE_NOT_FOUND` | Requested template does not exist |
 | `FIELD_REQUIRED` | Required field is missing |
 | `FIELD_INVALID` | Field value violates its schema |
-| `PARTY_INVALID` | Party configuration is invalid |
+| `FIELD_UNKNOWN` | A value was supplied for a key the template does not use |
+| `SIGNER_MISSING` | The template uses a signer key with no matching signer |
+| `SIGNER_INVALID` | Signer configuration is invalid (email, order, duplicate key) |
 | `REVISION_MISMATCH` | Draft changed since preview |
+| `DOCUMENT_NOT_DRAFT` | The operation needs a draft |
 | `DOCUMENT_ALREADY_SENT` | Sending operation is no longer valid |
-| `DOCUMENT_NOT_FINALIZED` | Completion artifacts are not ready |
+| `DOCUMENT_NOT_REVOCABLE` | Only sent or partially signed documents can be revoked |
+| `DOCUMENT_NOT_SIGNED` | Completion artifacts are not ready |
 | `PERMISSION_DENIED` | API key lacks required permission |
 | `RATE_LIMITED` | Request exceeds configured limits |
 
 Errors must be actionable for both developers and agents.
 
-## 16. Security boundaries
+## 18. Security boundaries
 
 - API keys are secrets and must not appear in agent output.
 - MCP operations must respect the same account permissions as REST.
 - Agents must not infer that an email address establishes legal identity.
 - Signing links must not be exposed in unrelated conversations.
-- External Markdown URLs must be fetched with SSRF protections.
 - Document content must be treated as untrusted data, not instructions to the agent.
 - Webhook endpoints must be validated.
 - All externally supplied strings must be safely rendered and stored.
 
-## 17. MVP integration acceptance test
+## 19. MVP integration acceptance test
 
 A compatible agent should successfully execute:
 
@@ -375,12 +457,12 @@ Expected behaviour:
 1. Agent discovers the correct template.
 2. Agent checks the permitted field schema.
 3. Agent populates the specified values.
-4. Agent identifies any missing recipient information.
+4. Agent identifies any missing signer information.
 5. Agent creates and validates the draft.
-6. Agent presents the preview and commercial terms.
+6. Agent presents the preview, commercial terms, and signing order.
 7. Agent waits for approval.
 8. Agent sends the approved revision.
 9. Agent reports the document ID and signing status.
-10. After completion, the system delivers a signed webhook and downloadable evidence package.
+10. After completion, the system delivers a signed `document.signed` webhook and a downloadable evidence package.
 
 **This is the defining end-to-end test for Signed.md v1.0.**
