@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ping } from "@signed-md/db";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
 import type { Ctx } from "./context.ts";
 import { createApi } from "./http/api.ts";
@@ -60,6 +61,15 @@ export function createApp(ctx: Ctx) {
       log.info("request", { method: c.req.method, path: c.req.path.replace(/\/s\/[^/]+/, "/s/…"), status: c.res.status, ms: Date.now() - start });
     }
   });
+
+  // Templates and inline documents are capped at 500 KB; signatures at 300 KB each.
+  app.use(
+    "*",
+    bodyLimit({
+      maxSize: 4 * 1024 * 1024,
+      onError: (c) => c.json({ error: { code: "INVALID_REQUEST", message: "Request body is too large (max 4 MB)", details: [] } }, 413),
+    }),
+  );
 
   app.onError((e, c) => errorResponse(c, e));
 

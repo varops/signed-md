@@ -261,6 +261,11 @@ export function createApi(ctx: Ctx) {
     },
   );
 
+  // Anything else under /v1 is a JSON 404, never a web page. (Template approval is deliberately not here.)
+  app.all("/v1/*", () => {
+    throw new SignedError("NOT_FOUND", "No such API endpoint. See /openapi.json.");
+  });
+
   app.doc31("/openapi.json", {
     openapi: "3.1.0",
     info: {

@@ -15,6 +15,8 @@ export interface RenderOptions {
   renderField?: SignerFieldRenderer;
   /** Field definitions from the original template, so front matter rules (labels) apply. */
   fields?: FieldDef[];
+  /** Also render unresolved template values ({{$name:type}}) as slots. Used to preview templates. */
+  valueSlots?: boolean;
 }
 
 const SENTINEL = /SMDFIELD(\d+)X/g;
@@ -49,7 +51,7 @@ export function renderHtml(resolvedMarkdown: string, opts: RenderOptions = {}): 
   let pos = 0;
   for (const occ of parsed.occurrences) {
     const def = defs.get(occ.key)!;
-    if (def.kind !== "signer") continue;
+    if (def.kind !== "signer" && !opts.valueSlots) continue;
     md += parsed.body.slice(pos, occ.start) + `SMDFIELD${slots.length}X`;
     slots.push(def);
     pos = occ.end;

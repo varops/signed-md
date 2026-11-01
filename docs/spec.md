@@ -386,9 +386,10 @@ The Markdown is the source of truth. The PDF is a rendition of it.
 
 ### Manifest signature
 
-- The manifest lists every file in the package with its SHA-256.
+- The manifest lists every file in the package with its SHA-256 and size.
 - The manifest is serialised as canonical JSON (RFC 8785).
-- It is signed with an installation-controlled Ed25519 key. The signature is detached.
+- It is signed with an installation-controlled Ed25519 key. The base64 signature is stored in `manifest.sig`, next to `manifest.json`.
+- Verification also recomputes the evidence hash chain, checks that `agreement.md` matches the content hash recorded when the document was sent, and checks each signer's recorded field hashes against `signatures.json`.
 - The public key is included in the package and published at `/.well-known/signed-md-keys.json`.
 
 A separate verification command and a documented `openssl` procedure must verify hashes and signatures without contacting the originating server.
@@ -574,30 +575,30 @@ Prefer straightforward, testable modules with explicit boundaries.
 
 | Layer | Choice | Reason |
 |---|---|---|
-| Language and runtime | TypeScript on Node.js 24 LTS | One language for server, UI, and verifier |
+| Language and runtime | TypeScript on Node.js 24 LTS, run directly with Node's built-in type stripping (no build step) | One language for server, UI, and verifier |
 | HTTP and REST | Hono with `@hono/zod-openapi` | Small and fast; OpenAPI generated from the same schemas |
 | Schemas | Zod | One schema drives REST validation, OpenAPI, and MCP tool inputs |
 | MCP | `@modelcontextprotocol/sdk`, Streamable HTTP at `/mcp`, API key as bearer token | Same process, same services; a stdio shim can follow if clients need it |
 | Database | Kysely, with `better-sqlite3` (SQLite) and `pg` (PostgreSQL) dialects | Thin, typed, dialect-agnostic queries and migrations; switch by `DATABASE_URL` |
 | Jobs | Own job table and in-process worker | No extra dependency |
 | Markdown | unified / remark (mdast) with a custom placeholder plugin; YAML front matter | Parse once, render to HTML (with `rehype-sanitize`) and to PDF |
-| PDF | Typst CLI in the container; mdast converted to Typst markup; fonts bundled | Small, fast, no network access |
+| PDF | Typst 0.13 CLI in the container; mdast converted to Typst markup; Typst's embedded fonts only (`--ignore-system-fonts`) | Small, fast, no network access, stable output |
 | Crypto | Node built-in Ed25519; canonical JSON (RFC 8785) | Verifiable with standard tools, including `openssl` |
 | Auth | argon2id (`@node-rs/argon2`), cookie sessions in the database, hashed prefixed API keys; `openid-client` for OIDC login (v1.1) | Standard and simple; one OIDC library covers Google, Microsoft, and others |
 | Email | Nodemailer (SMTP) | |
 | Import (v1.2) | Firecrawl `pdf-inspector` (PDF) and `AnyDoc` (.docx and other formats), via Node bindings | Open source (MIT), fully local, fast; local OCR for scanned PDFs, on by default (model bundled in the image) |
-| UI | React, Vite, Tailwind; admin SPA plus a separate lightweight signing page using `signature_pad` | Signing page stays fast on phones |
+| UI | Server-rendered HTML (Hono `html` templates), one CSS file, a little vanilla JS; `signature_pad` on the signing page | No front-end build, works without JavaScript except drawn signatures, fast on phones |
 | Verifier | `signed-md verify agreement.zip`, also compiled to a single binary | Offline verification with no install |
 | Tests | Vitest; Playwright for the end-to-end signing flow | Playwright runs the acceptance test |
-| Container | `node:24-slim` with Typst and fonts, one volume at `/data` | Target under 250 MB |
+| Container | `node:24-slim` with Typst, one volume at `/data` | About 480 MB unpacked, most of it the Node base image |
 
 ### Repository layout
 
 ```text
-apps/server        core wiring, REST, MCP, worker
-apps/web           admin UI and signing page
-packages/core      field engine, state machine, evidence
-packages/db        Kysely schema, migrations, dialect selection
-packages/verify    package verifier (library and CLI)
+apps/server        services, REST, MCP, web UI, signing page, worker, CLI
+packages/core      field engine, rendering, state machine, evidence format and verification
+packages/db        Kysely schema, migrations, dialect selection, job queue
+packages/verify    `signed-md verify` CLI (published as the `signed-md` npm package)
 skills/signed-md   agent skill (SKILL.md)
+examples/templates sample templates
 ```

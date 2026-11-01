@@ -11,7 +11,9 @@
     "test": "vitest run",
     "typecheck": "tsc -b",
     "verify": "node packages/verify/bin/signed-md.js verify",
-    "start": "node apps/server/src/main.ts"
+    "start": "node apps/server/src/main.ts",
+    "demo": "node apps/server/src/demo.ts",
+    "cli": "node apps/server/src/cli.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

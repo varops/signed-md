@@ -441,6 +441,12 @@ Examples:
 | Code | Meaning |
 |---|---|
 | `TEMPLATE_NOT_FOUND` | Requested template does not exist |
+| `TEMPLATE_INVALID` | Template Markdown or front matter has errors |
+| `DOCUMENT_NOT_FOUND` | Requested document does not exist |
+| `INVALID_TRANSITION` | The action is not possible in the document's current status |
+| `INVALID_REQUEST` | The request body or parameters are not valid |
+| `NOT_FOUND` | No such API endpoint |
+| `UNAUTHENTICATED` | Missing or invalid API key |
 | `TEMPLATE_NOT_APPROVED` | Template version is waiting for human approval |
 | `INLINE_DISABLED` | Inline documents are disabled for this account |
 | `DOCUMENT_NOT_APPROVED` | Inline document needs human approval in the UI before sending |

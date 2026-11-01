@@ -427,6 +427,7 @@ export function createAdmin(ctx: Ctx) {
     const v = await tpl.getTemplateVersion(ctx, id, shown);
     const csrf = c.get("csrf");
     const body = v.source.replace(/^---\n[\s\S]*?\n---\n/, "");
+    const names = await actorNames(ctx, t.versions.flatMap((x) => [x.created_by, x.approved_by ?? ""]));
     return page(c, t.name, "templates", html`
       <div class="page-head"><div><h1>${t.name}</h1><div class="small muted">${t.description}</div></div>
         <div class="row">
@@ -434,11 +435,20 @@ export function createAdmin(ctx: Ctx) {
           <a class="btn" href="/templates/${t.id}/edit">New version</a>
           <form method="post" action="/templates/${t.id}/${t.archived ? "unarchive" : "archive"}" class="inline">${csrfInput(csrf)}<button class="btn">${t.archived ? "Unarchive" : "Archive"}</button></form>
         </div></div>
-      ${v.approval_status === "pending_approval" ? html`<div class="notice warn"><div class="spread"><div><strong>Version ${v.version} is waiting for approval.</strong> Created by <code>${v.created_by}</code>. Read it carefully: once approved, agents can send it.</div>
+      ${v.approval_status === "pending_approval" ? html`<div class="notice warn"><div class="spread"><div><strong>Version ${v.version} is waiting for approval.</strong> Created by <strong>${names.get(v.created_by) ?? v.created_by}</strong>. Read it carefully: once approved, agents can send it.</div>
         <form method="post" action="/templates/${t.id}/versions/${v.version}/approve" data-confirm="Approve version ${v.version}? Agents will be able to send it.">${csrfInput(csrf)}<button class="btn primary">Approve version ${v.version}</button></form></div></div>` : ""}
       <div class="grid">
         <div>
-          <article class="doc">${raw(renderHtml(body.replace(/\{\{\s*\$/g, "\\{\\{$"), { fields: v.fields }))}</article>
+          <article class="doc">${raw(renderHtml(body, {
+            fields: v.fields,
+            valueSlots: true,
+            renderField: (f) => ({
+              type: "element",
+              tagName: "span",
+              properties: { className: ["smd-field", f.kind === "value" ? "smd-field-value" : "smd-field-signer"] },
+              children: [{ type: "text", value: f.kind === "value" ? `${f.rules.label ?? f.name}` : `${f.rules.label ?? f.key.split(".")[1]!.replace(/_/g, " ")} – ${f.signer}` }],
+            }),
+          }))}</article>
           <details class="card" style="margin-top:16px"><summary>Markdown source</summary><pre>${v.source}</pre></details>
         </div>
         <aside>
@@ -448,7 +458,7 @@ export function createAdmin(ctx: Ctx) {
           </div>
           <div class="card"><h2>Versions</h2>
             ${t.versions.map((x) => html`<div class="spread" style="margin-bottom:8px"><a href="/templates/${t.id}?v=${x.version}">${x.version === shown ? html`<strong>v${x.version}</strong>` : `v${x.version}`}</a>${badge(x.approval_status)}</div>
-              <div class="small muted" style="margin:-6px 0 10px">${when(x.created_at)} · ${x.created_by}</div>`)}
+              <div class="small muted" style="margin:-6px 0 10px">${when(x.created_at)} · ${names.get(x.created_by) ?? x.created_by}${x.approved_by ? html`<br>Approved by ${names.get(x.approved_by) ?? x.approved_by}` : ""}</div>`)}
           </div>
         </aside>
       </div>`);
@@ -646,6 +656,17 @@ export function createAdmin(ctx: Ctx) {
 }
 
 // ---------------------------------------------------------------------------
+
+/** Turn actor references ("user:usr_x", "apikey:key_x") into readable names. */
+async function actorNames(ctx: Ctx, refs: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const ids = (kind: string) => refs.filter((r) => r.startsWith(`${kind}:`)).map((r) => r.slice(kind.length + 1));
+  const users = ids("user");
+  const keys = ids("apikey");
+  if (users.length) for (const u of await ctx.db.selectFrom("users").select(["id", "email"]).where("id", "in", users).execute()) out.set(`user:${u.id}`, u.email);
+  if (keys.length) for (const k of await ctx.db.selectFrom("api_keys").select(["id", "label"]).where("id", "in", keys).execute()) out.set(`apikey:${k.id}`, `API key “${k.label}”`);
+  return out;
+}
 
 function signerKeys(fields: FieldDef[]): string[] {
   return [...new Set(fields.filter((f) => f.kind === "signer").map((f) => f.signer!))];

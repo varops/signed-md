@@ -61,3 +61,15 @@ export async function ping(db: Kysely<Database>): Promise<boolean> {
     return false;
   }
 }
+
+/** Online SQLite backup to a file. Safe while the server is running. */
+export async function backupSqlite(url: string, destFile: string): Promise<void> {
+  const path = url.replace(/^sqlite:(\/\/)?/, "");
+  if (path === ":memory:") throw new Error("Cannot back up an in-memory database");
+  const db = new SQLite(path, { readonly: true });
+  try {
+    await db.backup(destFile);
+  } finally {
+    db.close();
+  }
+}
