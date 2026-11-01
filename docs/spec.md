@@ -514,6 +514,7 @@ The account and user tables already exist in v1.0.
 v1.1 introduces:
 
 - Multiple users.
+- OpenID Connect login (Google, Microsoft, generic OIDC), configured by environment variables. New identities can only join through an invitation or a matching allowed email domain. Password login remains available.
 - Invitations.
 - Roles.
 - User permissions.
@@ -580,7 +581,7 @@ Prefer straightforward, testable modules with explicit boundaries.
 | Markdown | unified / remark (mdast) with a custom placeholder plugin; YAML front matter | Parse once, render to HTML (with `rehype-sanitize`) and to PDF |
 | PDF | Typst CLI in the container; mdast converted to Typst markup; fonts bundled | Small, fast, no network access |
 | Crypto | Node built-in Ed25519; canonical JSON (RFC 8785) | Verifiable with standard tools, including `openssl` |
-| Auth | argon2id (`@node-rs/argon2`), cookie sessions in the database, hashed prefixed API keys | Standard and simple |
+| Auth | argon2id (`@node-rs/argon2`), cookie sessions in the database, hashed prefixed API keys; `openid-client` for OIDC login (v1.1) | Standard and simple; one OIDC library covers Google, Microsoft, and others |
 | Email | Nodemailer (SMTP) | |
 | Import (v1.2) | Firecrawl `pdf-inspector` (PDF) and `AnyDoc` (.docx and other formats), via Node bindings | Open source (MIT), fully local, fast; local OCR for scanned PDFs, on by default (model bundled in the image) |
 | UI | React, Vite, Tailwind; admin SPA plus a separate lightweight signing page using `signature_pad` | Signing page stays fast on phones |
