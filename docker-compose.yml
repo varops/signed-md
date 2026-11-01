@@ -1,0 +1,22 @@
+services:
+  signed:
+    image: signedmd/signed:latest
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - signed_data:/data
+    environment:
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      # SQLite by default. For PostgreSQL: DATABASE_URL=postgres://user:pass@host:5432/signed
+      # DATABASE_URL: sqlite:///data/signed.db
+      # SMTP (optional). Without it, emails go to the Outbox page in the UI.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+
+volumes:
+  signed_data:

@@ -9,7 +9,9 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "vitest run",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "verify": "node packages/verify/bin/signed-md.js verify",
+    "start": "node apps/server/src/main.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

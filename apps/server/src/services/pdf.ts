@@ -135,7 +135,7 @@ function node(n: Nodes, slots: FieldDef[], values: Map<string, SignerFieldValue>
       const cells = n.children.flatMap((row, ri) =>
         row.children.map((cell) => (ri === 0 ? `[#strong[${kids(cell.children)}]]` : `[${kids(cell.children)}]`)),
       );
-      return `#table(columns: ${cols}, stroke: 0.5pt + gray, inset: 6pt, ${cells.join(", ")})`;
+      return `#table(columns: (${Array(cols).fill("1fr").join(", ")},), stroke: 0.5pt + gray, inset: 6pt, ${cells.join(", ")})`;
     }
     default:
       return "children" in n ? kids((n as { children: RootContent[] }).children) : "";
@@ -144,9 +144,7 @@ function node(n: Nodes, slots: FieldDef[], values: Map<string, SignerFieldValue>
 
 function formatTime(iso: string | null, tz: string): string {
   if (!iso) return "–";
-  const d = new Date(iso);
-  const local = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "long", timeZone: tz }).format(d);
-  return `${local} (${iso})`;
+  return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "long", timeZone: tz }).format(new Date(iso));
 }
 
 /** Build the Typst source and image assets for a completed agreement. */
@@ -184,6 +182,7 @@ export function buildTypst(input: PdfInput): { source: string; assets: Asset[] }
 #set par(justify: true, leading: 0.65em)
 #set heading(numbering: none)
 #show heading: set block(above: 1.4em, below: 0.8em)
+#show table: set par(justify: false)
 
 ${body}
 
@@ -191,13 +190,13 @@ ${body}
 #text(size: 16pt, weight: "bold")[Signing certificate]
 
 #v(0.5em)
-#table(columns: (auto, 1fr), stroke: none, inset: (x: 0pt, y: 4pt),
+#table(columns: (auto, 1fr), stroke: none, inset: (x: 0pt, y: 4pt), column-gutter: 14pt,
   [*Document*], [${typstText(input.title)}],
   [*Document ID*], [${typstText(input.documentId)}],
   [*Revision*], [${typstText(input.revision)}],
   [*Content SHA-256*], [#text(size: 8pt)[${typstText(input.contentSha256)}]],
   [*Sent by*], [${typstText(input.accountName)}],
-  [*Completed*], [${typstText(formatTime(input.completedAt, input.timezone))}],
+  [*Completed*], [${typstText(formatTime(input.completedAt, input.timezone))} #text(size: 8pt, fill: gray)[${typstText(input.completedAt)}]],
   [*Signing key*], [${typstText(input.keyId)}],
 )
 

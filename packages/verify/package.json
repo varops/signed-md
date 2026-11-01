@@ -1,0 +1,30 @@
+{
+  "name": "signed-md",
+  "version": "0.1.0",
+  "description": "Verify Signed.md completion packages offline.",
+  "type": "module",
+  "bin": {
+    "signed-md": "./bin/signed-md.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/cli.js"
+  },
+  "dependencies": {
+    "@signed-md/core": "workspace:*",
+    "fflate": "^0.8.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ]
+}

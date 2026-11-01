@@ -20,6 +20,7 @@ jobs:
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       TEST_POSTGRES_URL: postgres://signed:signed@localhost:5432/signed_test
+      PLAYWRIGHT_PATH: /tmp/pw/node_modules/playwright
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -27,6 +28,27 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Install Typst
+        run: |
+          curl -fsSL https://github.com/typst/typst/releases/download/v0.13.1/typst-x86_64-unknown-linux-musl.tar.xz | tar -xJ -C /tmp
+          sudo mv /tmp/typst-*/typst /usr/local/bin/typst
+      - name: Install Playwright (for the acceptance test)
+        run: |
+          npm install --prefix /tmp/pw playwright
+          npx --prefix /tmp/pw playwright install --with-deps chromium
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Acceptance test on PostgreSQL
+        run: E2E_DATABASE_URL=$TEST_POSTGRES_URL pnpm vitest run apps/server/test/acceptance
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t signedmd/signed:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name smd -p 3000:3000 signedmd/signed:ci
+          for i in $(seq 1 30); do curl -fsS localhost:3000/health && exit 0; sleep 1; done
+          docker logs smd; exit 1

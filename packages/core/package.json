@@ -7,6 +7,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./evidence": {
+      "types": "./src/evidence.ts",
+      "default": "./src/evidence.ts"
     }
   },
   "scripts": {

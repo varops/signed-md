@@ -194,7 +194,7 @@ export async function listArtifacts(ctx: Ctx, documentId: string, ttlSeconds = 3
   const rows = await ctx.db.selectFrom("artifacts").selectAll().where("document_id", "=", documentId).orderBy("type").execute();
   return rows.map((a) => ({
     id: a.id,
-    type: a.type,
+    type: a.type as "pdf" | "zip",
     filename: a.type === "zip" ? `${slug(doc.title)}-${documentId}.zip` : `${slug(doc.title)}-${documentId}.pdf`,
     sha256: a.sha256,
     size: Number(a.size),

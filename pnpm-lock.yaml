@@ -81,6 +81,9 @@ importers:
       '@types/nodemailer':
         specifier: ^8.0.2
         version: 8.0.2
+      signed-md:
+        specifier: workspace:*
+        version: link:../../packages/verify
 
   packages/core:
     dependencies:
@@ -131,6 +134,19 @@ importers:
       '@types/pg':
         specifier: ^8.23.1
         version: 8.23.1
+
+  packages/verify:
+    dependencies:
+      '@signed-md/core':
+        specifier: workspace:*
+        version: link:../core
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+    devDependencies:
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
 
 packages:
 

@@ -9,6 +9,7 @@ import {
   signingGroups,
   transition,
   formatValue,
+  type DocumentStatus,
 } from "@signed-md/core";
 import { type Database, type DocumentTable, enqueueJob, newId, now, type SignerTable } from "@signed-md/db";
 import type { Kysely, Selectable, Transaction } from "kysely";
@@ -383,7 +384,19 @@ export async function previewDocument(ctx: Ctx, id: string): Promise<PreviewResu
     errors: prepared.issues,
     warnings: warningsFor({ inlineSetting: account.config.inline_documents }, doc),
     markdown: prepared.content,
-    html: renderHtml(prepared.content, { fields }),
+    html: renderHtml(prepared.content, {
+      fields,
+      renderField: (def) => {
+        const who = prepared.signers.find((x) => x.key === def.signer)?.name ?? def.signer!;
+        const label = def.rules.label ?? def.key.split(".").pop()!.replace(/_/g, " ");
+        return {
+          type: "element",
+          tagName: "span",
+          properties: { className: ["smd-field", `smd-field-${def.type}`], dataField: def.key },
+          children: [{ type: "text", value: `${label.charAt(0).toUpperCase()}${label.slice(1)} – ${who}` }],
+        };
+      },
+    }),
     values,
     signer_fields: [...bySigner.entries()].map(([signer, fs]) => ({
       signer,
@@ -607,7 +620,7 @@ export async function approveInlineDocument(ctx: Ctx, actor: Actor, id: string, 
 export interface DocumentView {
   id: string;
   title: string;
-  status: string;
+  status: DocumentStatus;
   revision: string;
   source: "template" | "inline";
   template: { id: string; version: number } | null;
@@ -617,7 +630,7 @@ export interface DocumentView {
     name: string;
     email: string;
     order: number;
-    status: string;
+    status: SignerRow["status"];
     notified_at: string | null;
     viewed_at: string | null;
     signed_at: string | null;
@@ -671,7 +684,7 @@ export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], 
   return {
     id: doc.id,
     title: doc.title,
-    status: doc.status,
+    status: doc.status as DocumentStatus,
     revision: doc.revision,
     source: doc.source_kind,
     template,
