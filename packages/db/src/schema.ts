@@ -110,6 +110,7 @@ export interface DocumentTable {
   approved_by: string | null;
   inline_approved_by: string | null;
   inline_approved_at: string | null;
+  inline_approved_revision: string | null;
   created_at: string;
   updated_at: string;
   sent_at: string | null;
@@ -145,6 +146,8 @@ export interface FieldTable {
   kind: "value" | "signer";
   type: string;
   signer_key: string | null;
+  /** Order of first appearance in the document. */
+  position: number;
   /** JSON: FieldDef */
   definition: string;
   /** JSON-encoded value, null until completed. */

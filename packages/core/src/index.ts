@@ -10,3 +10,4 @@ export * from "./render.ts";
 export * from "./state.ts";
 export * from "./decimal.ts";
 export * from "./prepare.ts";
+export * from "./evidence.ts";
