@@ -149,8 +149,11 @@ Fields:
 - Content hash
 - Created by (user or API key)
 - Created timestamp
+- Approval status: `pending_approval` or `approved`
+- Approved by (user, never an API key)
+- Approved timestamp
 
-Template versions are immutable once created.
+Template versions are immutable once created. Approval changes only the approval fields.
 
 ### Document
 
@@ -165,6 +168,8 @@ Template versions are immutable once created.
 - Timezone
 - Metadata
 - Webhook URL override
+- Source: `template` or `inline`
+- Inline approval (user and timestamp), when the account requires it
 - Approved revision and approved by
 - Created timestamp
 - Sent timestamp
@@ -232,7 +237,7 @@ There is no separate party table. Signers with the same `order` sign in parallel
 ## 5. Document lifecycle
 
 ```text
-draft ──send──> sent ──first signature──> partially_signed ──last signature──> completing ──package built──> signed
+draft ──send──> sent ──first signature──> partially_signed ──last signature──> signed ──package built──> finalized
                  |                              |
                  +------------------------------+----> declined
                  |                              |
@@ -246,8 +251,8 @@ draft ──send──> sent ──first signature──> partially_signed ─�
 | `draft` | Editable. Not visible to signers. |
 | `sent` | Frozen. Links issued to the first signing group. |
 | `partially_signed` | At least one signer has signed. |
-| `completing` | All signers have signed. The PDF and package are being built. |
-| `signed` | The package is built and verified. Terminal. |
+| `signed` | All signers have signed. The PDF and package are being built. |
+| `finalized` | The package is built and ready to download. Terminal. |
 | `declined` | A signer declined. Terminal. |
 | `expired` | The expiry passed before completion. Terminal. |
 | `revoked` | The sender revoked the document. Terminal. |
@@ -327,7 +332,19 @@ An agent must not be able to bypass constraints by submitting a modified copy of
 
 Template-based documents must retain their template version and provenance. Inline-content documents are marked as such and show no template provenance.
 
-**Known v1.0 risk:** any API key can create templates. Template versions record whether they were created through the UI or the API, and the UI shows this. v1.1 attributes every key to a user.
+### Human approval
+
+- Template versions created through REST or MCP start as `pending_approval`.
+- The approve operation exists only in the web UI and requires a logged-in user session. It is not exposed through REST or MCP, and API keys cannot call it.
+- Creating a document from a `pending_approval` version fails with `TEMPLATE_NOT_APPROVED`.
+- Approval is recorded as an event and included in the evidence of every document that uses the version.
+
+### Inline documents
+
+The account setting `inline_documents` is `allowed` (default), `needs_approval`, or `disabled`.
+
+- `needs_approval`: sending fails with `DOCUMENT_NOT_APPROVED` until a user approves the exact revision in the UI.
+- `disabled`: creating a document with `content` fails with `INLINE_DISABLED`.
 
 ## 8. Signing security
 
@@ -409,7 +426,9 @@ Support an account default and document-level override.
 
 | Event | When | Release |
 |---|---|---|
-| `document.signed` | All signers signed and the package is ready | v1.0 |
+| `document.awaiting_last_signer` | A signature leaves exactly one signer unsigned. Includes that signer's key, name, and whether they have been notified yet. Not sent for single-signer documents. | v1.0 |
+| `document.signed` | All signers signed | v1.0 |
+| `document.finalized` | The PDF and package are ready | v1.0 |
 | `document.declined` | A signer declined | v1.0 |
 | `document.sent` | The document was sent | Later |
 | `signer.notified` | A signer received a link (including later signing groups) | Later |
@@ -423,11 +442,11 @@ Example:
 ```json
 {
   "id": "evt_123",
-  "type": "document.signed",
+  "type": "document.finalized",
   "created_at": "2026-11-01T12:00:00Z",
   "data": {
     "document_id": "doc_123",
-    "status": "signed",
+    "status": "finalized",
     "metadata": {
       "customer_id": "acme"
     },
@@ -478,6 +497,7 @@ When the last signer signs, a background job:
 1. Renders the signed Markdown and captured signatures to PDF.
 2. Stores the PDF and records its SHA-256.
 3. Builds and signs the package.
+4. Moves the document to `finalized`.
 
 The PDF is generated once and never regenerated. Re-rendering does not need to produce identical bytes, because verification uses the stored file and its hash.
 
@@ -519,7 +539,7 @@ Existing installations must migrate without losing documents, keys, or signing e
 ## 16. Testing priorities
 
 1. Template parsing and validation.
-2. Permission and signer isolation, including signing order.
+2. Permission and signer isolation, including signing order and template approval (no API path can approve).
 3. Document state transitions, including revoke and expiry.
 4. Idempotent API operations.
 5. Webhook retry and signature verification.
@@ -561,6 +581,7 @@ Prefer straightforward, testable modules with explicit boundaries.
 | Crypto | Node built-in Ed25519; canonical JSON (RFC 8785) | Verifiable with standard tools, including `openssl` |
 | Auth | argon2id (`@node-rs/argon2`), cookie sessions in the database, hashed prefixed API keys | Standard and simple |
 | Email | Nodemailer (SMTP) | |
+| Import (v1.2) | `mammoth` for .docx; `unpdf` (pdf.js) for local PDF text; optional Firecrawl for PDF | Word stays local; Firecrawl only when configured |
 | UI | React, Vite, Tailwind; admin SPA plus a separate lightweight signing page using `signature_pad` | Signing page stays fast on phones |
 | Verifier | `signed-md verify agreement.zip`, also compiled to a single binary | Offline verification with no install |
 | Tests | Vitest; Playwright for the end-to-end signing flow | Playwright runs the acceptance test |

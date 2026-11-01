@@ -81,6 +81,16 @@ POST   /v1/templates/{id}/unarchive
 
 Templates are never edited in place. `POST /versions` creates a new version.
 
+Templates and versions created through the API start as `pending_approval`. There is no approve endpoint. A human approves templates in the web UI. Template representations include the approval status of each version.
+
+### Imports (v1.2)
+
+```http
+POST   /v1/imports
+```
+
+Uploads a PDF or .docx file. Returns Markdown with suggested placeholders and creates a `pending_approval` template.
+
 ### Documents
 
 ```http
@@ -302,7 +312,7 @@ Hides or restores the document in default lists. Does not change status. Works i
 GET /v1/documents/doc_123/artifacts
 ```
 
-Returns completed artifact metadata and authorised download links. Available once the document is `signed`.
+Returns completed artifact metadata and authorised download links. Available once the document is `finalized`.
 
 Download links are short-lived and scoped to the specific artifact.
 
@@ -314,6 +324,7 @@ The v1.0 MCP server exposes:
 |---|---|
 | `signed_list_templates` | Discover available templates |
 | `signed_get_template` | Retrieve template and field schema |
+| `signed_create_template` | Create a template or new version (starts as `pending_approval`) |
 | `signed_create_document` | Create a draft |
 | `signed_update_document` | Edit a draft |
 | `signed_validate_document` | Validate a draft |
@@ -325,7 +336,7 @@ The v1.0 MCP server exposes:
 | `signed_archive_document` | Archive or unarchive a document |
 | `signed_get_artifacts` | Retrieve completion artifacts |
 
-Template creation and editing are not exposed through MCP in v1.0. Templates are approved legal language, managed by people in the UI or through the REST API.
+Agents can create templates and versions, but cannot approve them. Approval happens only in the web UI. Only approved versions can be used for documents.
 
 Tool input schemas are generated from the same schemas as the REST API.
 
@@ -343,6 +354,7 @@ The repository must include a distributable skill with:
 - API/MCP setup instructions.
 - Authentication guidance.
 - Template discovery workflow.
+- Template approval: agent-created templates wait for human approval in the UI.
 - Placeholder notation (`$` template values and signer fields).
 - Field population rules.
 - Signer and signing-order rules.
@@ -365,11 +377,12 @@ The skill must instruct agents to:
 4. Never bypass validation errors.
 5. Show material commercial terms and the signing order before sending.
 6. Obtain explicit approval unless the user has authorised automatic sending.
-7. Never claim an agreement is signed until Signed.md reports the `signed` status.
+7. Never claim an agreement is signed until Signed.md reports the `signed` status. Retrieve the package only after `finalized`.
 8. Preserve document IDs and idempotency keys when retrying.
 9. Avoid disclosing signing links or documents to unrelated recipients.
 10. Report declined, expired, revoked, or failed signing requests accurately.
 11. Revoke only when the user asks, and confirm before doing so.
+12. When creating a template, tell the user it must be approved in the web UI before it can be used. Never ask the user for their admin password.
 
 ## 15. Agent approval contract
 
@@ -397,7 +410,14 @@ Such authorisation belongs to the calling system, and the service must still enf
 
 ## 16. Webhook-driven completion
 
-When the package is ready, Signed.md sends a signed `document.signed` webhook. If a signer declines, it sends `document.declined`. Further events are listed in the technical specification and will be added later.
+v1.0 sends these signed webhooks:
+
+- `document.awaiting_last_signer`: one signer is left. Useful for a countersignature prompt.
+- `document.signed`: everyone has signed.
+- `document.finalized`: the package is ready to download.
+- `document.declined`: a signer declined.
+
+Further events are listed in the technical specification and will be added later.
 
 The receiving system can:
 
@@ -421,6 +441,9 @@ Examples:
 | Code | Meaning |
 |---|---|
 | `TEMPLATE_NOT_FOUND` | Requested template does not exist |
+| `TEMPLATE_NOT_APPROVED` | Template version is waiting for human approval |
+| `INLINE_DISABLED` | Inline documents are disabled for this account |
+| `DOCUMENT_NOT_APPROVED` | Inline document needs human approval in the UI before sending |
 | `FIELD_REQUIRED` | Required field is missing |
 | `FIELD_INVALID` | Field value violates its schema |
 | `FIELD_UNKNOWN` | A value was supplied for a key the template does not use |
@@ -430,7 +453,7 @@ Examples:
 | `DOCUMENT_NOT_DRAFT` | The operation needs a draft |
 | `DOCUMENT_ALREADY_SENT` | Sending operation is no longer valid |
 | `DOCUMENT_NOT_REVOCABLE` | Only sent or partially signed documents can be revoked |
-| `DOCUMENT_NOT_SIGNED` | Completion artifacts are not ready |
+| `DOCUMENT_NOT_FINALIZED` | Completion artifacts are not ready |
 | `PERMISSION_DENIED` | API key lacks required permission |
 | `RATE_LIMITED` | Request exceeds configured limits |
 
@@ -463,6 +486,6 @@ Expected behaviour:
 7. Agent waits for approval.
 8. Agent sends the approved revision.
 9. Agent reports the document ID and signing status.
-10. After completion, the system delivers a signed `document.signed` webhook and a downloadable evidence package.
+10. After completion, the system delivers `document.signed` and `document.finalized` webhooks and a downloadable evidence package.
 
 **This is the defining end-to-end test for Signed.md v1.0.**
