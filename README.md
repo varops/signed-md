@@ -20,22 +20,15 @@ An independent open-source product by VarOps.
 
 ## How it works
 
-A template:
+A template is plain Markdown with placeholders:
 
 ```markdown
----
-fields:
-  $fee:
-    minimum: "100.00"
-  $notice_days:
-    allowed_values: [30, 60, 90]
----
-
 # Service agreement
 
 Client: {{$client_name:text}}
 Monthly fee: {{$fee:currency(USD)}}
 Notice period: {{$notice_days:number}} days
+Plan: {{$plan:choice(standard|premium)}}
 
 Client signature: {{client.signature:signature}}
 Provider signature: {{provider.signature:signature}}
@@ -43,6 +36,18 @@ Provider signature: {{provider.signature:signature}}
 
 - `{{$name:type}}` is a template value, filled when the document is created.
 - `{{signer.name:type}}` is a signer field, filled by that signer while signing.
+
+Need limits? Add optional front matter. The server enforces it, so an agent can't send a fee below your minimum:
+
+```yaml
+---
+fields:
+  $fee:
+    minimum: "100.00"
+  $notice_days:
+    allowed_values: [30, 60, 90]
+---
+```
 
 The flow:
 

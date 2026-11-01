@@ -308,6 +308,8 @@ A placeholder has:
 - Type, with optional parameters (for example, `currency(USD)`).
 - Optional constraints, defaults, labels, and `required` flag from front matter.
 
+Front matter is optional. A template with only placeholders is valid. Choice options can be written inline (`{{$plan:choice(standard|premium)}}`), so front matter is only needed for rules such as minimums, allowed values, defaults, and labels.
+
 Rules:
 
 - Template values are filled at creation. Signer fields are filled during signing by the signer whose key matches.
