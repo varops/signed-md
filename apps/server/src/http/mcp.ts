@@ -147,7 +147,7 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
         document_id: z.string(),
         approved_revision: z.string(),
         approved_by: z.string().optional().describe("Who approved, e.g. 'Ran, in chat'"),
-        message: z.string().max(2000).optional().describe("Optional message to signers in the signing email. Defaults to the account's message. Show it to the user with the preview."),
+        message: z.string().max(2000).optional().describe("Optional message to signers in the signing email. Defaults to the account's message. Placeholders filled per signer: {{recipient.name}}, {{recipient.first_name}}, {{recipient.email}}, {{document.title}}. Show it to the user with the preview."),
       },
     },
     ({ document_id, approved_revision, approved_by, message }) =>

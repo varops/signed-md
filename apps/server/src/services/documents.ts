@@ -16,6 +16,7 @@ import type { Kysely, Selectable, Transaction } from "kysely";
 import { type Actor, actorRef, type Ctx } from "../context.ts";
 import { randomToken, seal, sha256 } from "../crypto.ts";
 import { getAccount } from "./accounts.ts";
+import { checkMessageVariables } from "./messagevars.ts";
 import { appendEvent } from "./events.ts";
 import { resolveVersionForDocument } from "./templates.ts";
 import { assertWebhookUrlShape } from "./webhooks.ts";
@@ -425,6 +426,7 @@ export async function sendDocument(
   if (input.message !== undefined && input.message.length > 2000) {
     throw new SignedError("INVALID_REQUEST", "The message to signers must be at most 2000 characters", [{ code: "INVALID_REQUEST", field: "message", message: "Too long" }]);
   }
+  if (input.message !== undefined) checkMessageVariables(input.message);
   const message = (input.message ?? account.config.branding.email_message).trim() || null;
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, id);

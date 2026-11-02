@@ -254,7 +254,7 @@ POST /v1/documents/doc_123/send
 }
 ```
 
-`message` is optional. It appears in the signing email. Without it, the account's default message (Settings → Branding) is used.
+`message` is optional. It appears in the signing email. Without it, the account's default message (Settings → Branding) is used. It can contain `{{recipient.name}}`, `{{recipient.first_name}}`, `{{recipient.email}}`, and `{{document.title}}`, which are filled in for each signer. Any other `{{…}}` is rejected with `INVALID_REQUEST`.
 
 The server rejects sending if the draft changed after the approved preview (`REVISION_MISMATCH`).
 

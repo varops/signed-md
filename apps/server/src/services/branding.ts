@@ -2,6 +2,7 @@ import { SignedError } from "@signed-md/core";
 import type { Ctx } from "../context.ts";
 import { sha256 } from "../crypto.ts";
 import { getAccount, updateAccount } from "./accounts.ts";
+import { checkMessageVariables } from "./messagevars.ts";
 
 const MAX_LOGO_BYTES = 300_000;
 
@@ -32,6 +33,7 @@ export async function removeLogo(ctx: Ctx): Promise<void> {
 
 export async function setDefaultMessage(ctx: Ctx, message: string): Promise<void> {
   if (message.length > 2000) throw new SignedError("INVALID_REQUEST", "The message must be at most 2000 characters");
+  checkMessageVariables(message);
   const account = await getAccount(ctx);
   await updateAccount(ctx, { config: { branding: { ...account.config.branding, email_message: message.trim() } } });
 }

@@ -7,6 +7,7 @@ import { loadDocument, loadSigners } from "./documents.ts";
 import { type EmailParts, LOGO_CID, renderEmail } from "./emailtemplate.ts";
 import { downloadLink, slug } from "./finalize.ts";
 import type { MailAttachment, MailMessage } from "./mail.ts";
+import { personalizeMessage } from "./messagevars.ts";
 
 export interface EmailJob {
   kind: "signing_request" | "reminder" | "last_signer" | "revoked" | "declined" | "expired" | "completed" | "completed_sender";
@@ -76,7 +77,7 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
         headline: `${account.name} sent you a document to review and sign.`,
         button: { label: "Review document", url: link },
         from: { name: account.name, ...(senderEmail ? { email: senderEmail } : {}) },
-        message: doc.signer_message,
+        message: doc.signer_message ? personalizeMessage(doc.signer_message, { name: signer.name, email: signer.email, title: doc.title }) : null,
         // The sender's message replaces the standard line, as in familiar e-signature emails.
         paragraphs: [
           ...(doc.signer_message ? [] : [`Hi ${signer.name}, please review and sign "${doc.title}". It takes a few minutes and works on your phone.`]),

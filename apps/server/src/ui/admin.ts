@@ -15,6 +15,7 @@ import * as tpl from "../services/templates.ts";
 import { listDeliveries } from "../services/webhooks.ts";
 import { readLogo, removeLogo, setDefaultMessage, setLogo } from "../services/branding.ts";
 import { renderEmail } from "../services/emailtemplate.ts";
+import { MESSAGE_VARIABLES, personalizeMessage } from "../services/messagevars.ts";
 import { type FormBody, parseSigners, parseValues, signerRows, str, valueInput } from "./forms.ts";
 import { badge, csrfInput, type H, issuesList, shell, when } from "./layout.ts";
 
@@ -275,7 +276,7 @@ export function createAdmin(ctx: Ctx) {
                 : html`<p class="small muted">You are approving revision <code>${preview!.revision.slice(0, 16)}…</code>. Any edit needs a new approval.</p>
                   <form method="post" action="/documents/${d.id}/send" data-confirm="Send this document for signature now?">${csrfInput(csrf)}
                     <input type="hidden" name="approved_revision" value="${preview!.revision}">
-                    <div class="field"><label>Message to signers <span class="muted">· optional</span></label><textarea name="message" style="min-height:90px" maxlength="2000" placeholder="Shown in the signing email">${account.config.branding.email_message}</textarea></div>
+                    <div class="field"><label>Message to signers <span class="muted">· optional</span></label><textarea name="message" style="min-height:90px" maxlength="2000" placeholder="Shown in the signing email">${account.config.branding.email_message}</textarea>${variablesHint()}</div>
                     <div class="field"><label>Approved by</label><input type="text" name="approved_by" value="${c.get("user").label}"></div>
                     <button class="btn primary block">Send for signature</button></form>`
               : html`<p class="muted">Fix the errors, then send.</p>`}
@@ -670,7 +671,8 @@ export function createAdmin(ctx: Ctx) {
           <form method="post" action="/settings/branding/message" class="card">${csrfInput(csrf)}
             <h2>Message to signers</h2>
             <p class="small muted">The default message in every signing email. You can change it each time you send. Agents can pass their own message too.</p>
-            <div class="field"><textarea name="message" maxlength="2000" placeholder="e.g. Hi, please review and sign at your convenience. Reply to this email with any questions.">${account.config.branding.email_message}</textarea></div>
+            <div class="field"><textarea name="message" maxlength="2000" placeholder="e.g. Hi {{recipient.first_name}}, please review and sign {{document.title}}. Reply to this email with any questions.">${account.config.branding.email_message}</textarea></div>
+            ${variablesHint()}
             <button class="btn primary">Save</button>
           </form>
         </div>
@@ -689,7 +691,9 @@ export function createAdmin(ctx: Ctx) {
       headline: `${account.name} sent you a document to review and sign.`,
       button: { label: "Review document", url: "#" },
       from: { name: account.name, email: c.get("user").label },
-      message: account.config.branding.email_message || null,
+      message: account.config.branding.email_message
+        ? personalizeMessage(account.config.branding.email_message, { name: "Jane Doe", email: "jane@acme.example", title: "Standard services agreement" })
+        : null,
       paragraphs: account.config.branding.email_message ? [] : ['Hi Jane Doe, please review and sign "Standard services agreement". It takes a few minutes and works on your phone.'],
       details: [["Document", "Standard services agreement"], ["Signers", "Jane Doe, Sam Lee"]],
       security: true,
@@ -748,6 +752,10 @@ export function createAdmin(ctx: Ctx) {
 }
 
 // ---------------------------------------------------------------------------
+
+function variablesHint(): H {
+  return html`<p class="small muted" style="margin:6px 0 0">Placeholders, filled in for each signer: ${MESSAGE_VARIABLES.map((v, i) => html`${i ? ", " : ""}<code>{{${v}}}</code>`)}.</p>`;
+}
 
 function settingsTabs(active: "general" | "branding"): H {
   return html`<nav class="tabs-nav"><a href="/settings" class="${active === "general" ? "active" : ""}">General</a><a href="/settings/branding" class="${active === "branding" ? "active" : ""}">Branding</a></nav>`;

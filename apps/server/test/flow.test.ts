@@ -154,7 +154,7 @@ describe("branding", async () => {
     const d = await createDocument(ctx, user, { content: "# NDA\n\n{{a.signature:signature}}", signers: [{ key: "a", name: "A", email: "a@brand.example" }] });
     await sendDocument(ctx, user, d.id, { approved_revision: (await previewDocument(ctx, d.id)).revision });
     const d2 = await createDocument(ctx, user, { content: "# NDA 2\n\n{{b.signature:signature}}", signers: [{ key: "b", name: "B", email: "b@brand.example" }] });
-    await sendDocument(ctx, user, d2.id, { approved_revision: (await previewDocument(ctx, d2.id)).revision, message: "Custom <b>note</b>" });
+    await sendDocument(ctx, user, d2.id, { approved_revision: (await previewDocument(ctx, d2.id)).revision, message: "Custom <b>note</b> for {{recipient.first_name}} ({{ recipient.email }}) re {{document.title}}" });
     await drainJobs(ctx);
     const dir = join(dataDir, "outbox");
     const mails = readdirSync(dir).map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as { to: string; html: string });
@@ -162,7 +162,13 @@ describe("branding", async () => {
     const b = mails.find((m) => m.to === "b@brand.example")!;
     expect(a.html).toContain("Default hello &amp; welcome");
     expect(a.html).toContain("data:image/png;base64,"); // logo inlined
-    expect(b.html).toContain("Custom &lt;b&gt;note&lt;/b&gt;"); // escaped
+    expect(b.html).toContain("Custom &lt;b&gt;note&lt;/b&gt; for B (b@brand.example) re NDA 2"); // personalised, then escaped
     expect(b.html).not.toContain("Default hello");
+  });
+
+  it("rejects unknown placeholders in the message", async () => {
+    await expect(setDefaultMessage(ctx, "Hi {{recipient.nmae}}")).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    const d = await createDocument(ctx, user, { content: "# X\n\n{{c.signature:signature}}", signers: [{ key: "c", name: "C", email: "c@brand.example" }] });
+    await expect(sendDocument(ctx, user, d.id, { approved_revision: (await previewDocument(ctx, d.id)).revision, message: "{{sender.name}}" })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
   });
 });
