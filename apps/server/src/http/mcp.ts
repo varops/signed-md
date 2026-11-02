@@ -189,7 +189,12 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
 /** Streamable HTTP MCP endpoint at /mcp. Stateless: one server per request, authenticated by API key. */
 export function createMcpRoutes(ctx: Ctx) {
   const app = new Hono();
-  app.all("/mcp", async (c) => {
+  // Stateless server: nothing to push and no sessions to end. Per the MCP spec, answering 405 to GET
+  // tells clients not to open a notification stream. (Opening one and closing it at once makes
+  // clients reconnect every second.)
+  app.on(["GET", "DELETE"], "/mcp", (c) => c.body(null, 405, { Allow: "POST" }));
+
+  app.post("/mcp", async (c) => {
     const header = c.req.header("authorization") ?? "";
     const key = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : undefined;
     const actor = await apiKeyActor(ctx, key, "mcp");

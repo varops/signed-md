@@ -99,6 +99,13 @@ describe("REST API", async () => {
     await strict.ctx.close();
   });
 
+  it("answers GET /mcp with 405 so clients don't open a notification stream", async () => {
+    const r = await app.request("/mcp", { headers: { authorization: `Bearer ${key}`, accept: "text/event-stream" } });
+    expect(r.status).toBe(405);
+    expect(r.headers.get("allow")).toBe("POST");
+    expect((await app.request("/mcp", { method: "DELETE" })).status).toBe(405);
+  });
+
   it("publishes OpenAPI, health, and the public key", async () => {
     const spec = (await (await app.request("/openapi.json")).json()) as any;
     expect(Object.keys(spec.paths)).toEqual(expect.arrayContaining(["/v1/documents", "/v1/documents/{id}/send", "/v1/templates"]));
