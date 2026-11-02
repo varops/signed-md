@@ -8,7 +8,11 @@ An independent open-source product by VarOps.
 
 > **Status:** v1.0 MVP. The end-to-end workflow works and is tested. Have the security, signing validity, and evidence design reviewed before you use it for production legal agreements.
 
-![Signing page](docs/screenshots/05-signing-page.png)
+<p>
+  <img src="docs/screenshots/05-signing-intro.png" width="260" alt="Let's start">
+  <img src="docs/screenshots/07-adopt-signature.png" width="260" alt="Adopt your signature">
+  <img src="docs/screenshots/08-signing-filled.png" width="260" alt="Inline fields, ready to finish">
+</p>
 
 ## Why Signed.md
 

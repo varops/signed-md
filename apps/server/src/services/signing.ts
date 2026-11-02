@@ -1,4 +1,4 @@
-import { type FieldDef, type FieldValue, normalizeValue, renderHtml, SignedError, transition } from "@signed-md/core";
+import { type FieldDef, type FieldValue, normalizeValue, SignedError, transition } from "@signed-md/core";
 import { enqueueJob, now } from "@signed-md/db";
 import type { ElementContent } from "hast";
 import type { Actor, Ctx } from "../context.ts";
@@ -9,7 +9,7 @@ import { emitWebhook } from "./webhooks.ts";
 
 /** The consent statement every signer accepts. Its hash is recorded in the evidence. */
 export const CONSENT_TEXT =
-  "I agree to use electronic records and signatures for this document. I understand that my electronic signature has the same effect as a handwritten signature, and that I can download a copy of the completed document.";
+  "You can review and sign this document electronically instead of on paper. Your electronic signature has the same legal effect as a handwritten one. You'll get a copy of the completed document by email, and you can download it. You can decline to sign at any time before you finish.";
 
 export type SignatureValue = { kind: "drawn"; image: string } | { kind: "typed"; text: string };
 export type SignerFieldValue = FieldValue | SignatureValue;
@@ -73,10 +73,19 @@ export interface SignerView {
   title: string;
   account_name: string;
   signer: { key: string; name: string; email: string };
-  html: string;
+  /** True once the signer agreed to sign electronically (the "Let's start" step). */
+  consented: boolean;
+  /** Resolved Markdown with signer placeholders, plus everything needed to render it. */
+  content: string;
+  defs: FieldDef[];
+  /** Values already completed by signers who signed before. */
+  completed: Record<string, SignerFieldValue>;
+  /** Signer key → name, to label other signers' fields. */
+  names: Record<string, string>;
   fields: { key: string; label: string; type: string; required: boolean; options?: string[] }[];
   consent_text: string;
   progress: { signed: number; total: number };
+  expires_at: string | null;
 }
 
 function isExpired(doc: DocRow): boolean {
@@ -114,45 +123,32 @@ async function buildSignerView(ctx: Ctx, doc: DocRow, signer: SignerRow): Promis
   const names = new Map(signers.map((s) => [s.key, s.name]));
   const account = await ctx.db.selectFrom("accounts").select("name").executeTakeFirstOrThrow();
 
-  const html = renderHtml(doc.content, {
-    fields: defs,
-    renderField: (def) => {
-      const done = completed.get(def.key);
-      if (done !== undefined) return renderCompletedValue(def, done);
-      const mine = def.signer === signer.key;
-      return {
-        type: "element",
-        tagName: mine ? "a" : "span",
-        properties: {
-          className: ["smd-slot", mine ? "smd-slot-mine" : "smd-slot-other"],
-          ...(mine ? { href: `#field-${def.key.replace(/[^a-z0-9_-]/gi, "-")}`, dataField: def.key } : {}),
-        },
-        children: [{ type: "text", value: mine ? `${def.rules.label ?? labelFor(def)} (you)` : `${labelFor(def)} – ${names.get(def.signer!) ?? def.signer}` }],
-      };
-    },
-  });
-
   return {
     document_id: doc.id,
     title: doc.title,
     account_name: account.name,
     signer: { key: signer.key, name: signer.name, email: signer.email },
-    html,
+    consented: signer.consented_at !== null,
+    content: doc.content,
+    defs,
+    completed: Object.fromEntries(completed),
+    names: Object.fromEntries(names),
     fields: defs
       .filter((d) => d.kind === "signer" && d.signer === signer.key)
       .map((d) => ({
         key: d.key,
-        label: d.rules.label ?? labelFor(d),
+        label: d.rules.label ?? fieldLabel(d),
         type: d.type,
         required: d.rules.required !== false,
         ...(d.rules.options ? { options: d.rules.options.map(String) } : {}),
       })),
     consent_text: CONSENT_TEXT,
     progress: { signed: signers.filter((s) => s.status === "signed").length, total: signers.length },
+    expires_at: doc.expires_at,
   };
 }
 
-function labelFor(def: FieldDef): string {
+export function fieldLabel(def: FieldDef): string {
   const name = def.key.split(".").pop()!.replace(/_/g, " ");
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
@@ -168,6 +164,23 @@ export function renderCompletedValue(def: FieldDef, v: SignerFieldValue): Elemen
   return { type: "element", tagName: "span", properties: { className: ["smd-value"] }, children: [{ type: "text", value: text }] };
 }
 
+/**
+ * The "Let's start" step: the signer agrees to use electronic records and signatures.
+ * Recorded as evidence before they can complete any field.
+ */
+export async function recordConsent(ctx: Ctx, token: string, meta: RequestMeta): Promise<void> {
+  const s = await findByToken(ctx, token);
+  if (!s) throw new SignedError("PERMISSION_DENIED", "This signing link is not valid");
+  await ctx.db.transaction().execute(async (trx) => {
+    const doc = await lockDocument(ctx, trx, s.doc.id);
+    const signer = await trx.selectFrom("signers").selectAll().where("id", "=", s.signer.id).executeTakeFirstOrThrow();
+    if (!["sent", "partially_signed"].includes(doc.status) || isExpired(doc)) throw new SignedError("INVALID_TRANSITION", "This document can no longer be signed");
+    if (signer.consented_at || signer.status === "signed" || signer.status === "declined") return;
+    await trx.updateTable("signers").set({ consented_at: now() }).where("id", "=", signer.id).execute();
+    await appendEvent(trx, doc.id, "signer.consented", signerActor(signer), { signer: signer.key, consent_text_sha256: sha256(CONSENT_TEXT), ...meta });
+  });
+}
+
 /** Submit the signer's fields and signature. All-or-nothing. */
 export async function submitSignature(
   ctx: Ctx,
@@ -177,8 +190,6 @@ export async function submitSignature(
 ): Promise<{ document_status: string }> {
   const s = await findByToken(ctx, token);
   if (!s) throw new SignedError("PERMISSION_DENIED", "This signing link is not valid");
-  if (!input.consent) throw new SignedError("FIELD_REQUIRED", "You must agree to sign electronically", [{ code: "FIELD_REQUIRED", field: "consent", message: "Consent is required" }]);
-
   return ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, s.doc.id);
     const signer = await trx.selectFrom("signers").selectAll().where("id", "=", s.signer.id).executeTakeFirstOrThrow();
@@ -187,6 +198,9 @@ export async function submitSignature(
     }
     if (signer.token_hash !== sha256(token)) throw new SignedError("PERMISSION_DENIED", "This signing link is no longer valid");
     if (signer.status !== "notified" && signer.status !== "viewed") throw new SignedError("INVALID_TRANSITION", "You have already completed this document");
+    if (!signer.consented_at && !input.consent) {
+      throw new SignedError("FIELD_REQUIRED", "You must agree to sign electronically", [{ code: "FIELD_REQUIRED", field: "consent", message: "Consent is required" }]);
+    }
 
     const fieldRows = await trx.selectFrom("fields").selectAll().where("document_id", "=", doc.id).where("signer_key", "=", signer.key).orderBy("position").execute();
     const issues = [];
@@ -195,7 +209,7 @@ export async function submitSignature(
       const def = JSON.parse(row.definition) as FieldDef;
       const raw = input.fields[def.key];
       if (raw === undefined || raw === null || raw === "") {
-        if (def.rules.required !== false) issues.push({ code: "FIELD_REQUIRED" as const, field: def.key, message: `${def.rules.label ?? labelFor(def)} is required` });
+        if (def.rules.required !== false) issues.push({ code: "FIELD_REQUIRED" as const, field: def.key, message: `${def.rules.label ?? fieldLabel(def)} is required` });
         continue;
       }
       const r = normalizeSignerValue(def, raw);
@@ -208,10 +222,12 @@ export async function submitSignature(
     for (const v of values) {
       await trx.updateTable("fields").set({ value: JSON.stringify(v.value), completed_at: t }).where("id", "=", v.id).execute();
     }
-    await trx.updateTable("signers").set({ status: "signed", signed_at: t, consented_at: t }).where("id", "=", signer.id).execute();
+    await trx.updateTable("signers").set({ status: "signed", signed_at: t, consented_at: signer.consented_at ?? t }).where("id", "=", signer.id).execute();
 
     const actor = signerActor(signer);
-    await appendEvent(trx, doc.id, "signer.consented", actor, { signer: signer.key, consent_text_sha256: sha256(CONSENT_TEXT), ...meta });
+    if (!signer.consented_at) {
+      await appendEvent(trx, doc.id, "signer.consented", actor, { signer: signer.key, consent_text_sha256: sha256(CONSENT_TEXT), ...meta });
+    }
     await appendEvent(trx, doc.id, "signer.signed", actor, {
       signer: signer.key,
       fields: values.map((v) => ({ key: v.key, type: v.type, value_sha256: sha256(JSON.stringify(v.value)) })),

@@ -248,29 +248,42 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
 
     const signer = await browser.newPage({ viewport: { width: 420, height: 900 }, isMobile: true, hasTouch: true });
     await signer.goto(await linkFor("jane@acme.example"));
-    await shot("05-signing-page", signer);
+    // "Let's start": agree to sign electronically before the document opens.
+    await shot("05-signing-intro", signer);
+    await signer.check("input[name=consent]");
+    await signer.click("button:has-text('Continue')");
+    await signer.waitForSelector("#guide-next");
+    await shot("06-signing-document", signer);
+    // Guided: Start jumps to the first required field.
+    await signer.click("#guide-next");
     await signer.fill("input[name='f:client.full_name']", "Jane Doe");
     await signer.fill("input[name='f:client.date']", "2026-11-02");
-    // Draw a signature on the canvas.
-    const canvas = signer.locator("canvas").first();
+    // Sign inline: the Sign tag opens "Adopt your signature". Draw it.
+    await signer.click("[data-field='client.signature'] .smd-sign-tag");
+    await signer.click("#adopt .tabs button[data-mode=drawn]");
+    const canvas = signer.locator("#adopt-pad");
     const box = (await canvas.boundingBox())!;
     await signer.mouse.move(box.x + 30, box.y + 100);
     await signer.mouse.down();
     for (let i = 0; i <= 20; i++) await signer.mouse.move(box.x + 30 + i * 14, box.y + 100 - Math.sin(i / 2) * 40, { steps: 2 });
     await signer.mouse.up();
-    await signer.check("input[name=consent]");
-    await shot("06-signing-filled", signer);
-    await signer.click("button:has-text('Sign document')");
-    await signer.waitForSelector("h1:has-text('Signed')");
+    await shot("07-adopt-signature", signer);
+    await signer.click("#adopt-ok");
+    await signer.waitForSelector("[data-field='client.signature'].smd-done img");
+    await shot("08-signing-filled", signer);
+    await signer.click("#guide-finish");
+    await signer.waitForSelector("h1:has-text('done')");
 
     // The provider countersigns (order 2) with a typed signature, after the client.
     const provider = await browser.newPage();
     await provider.goto(await linkFor("ran@automaze.example"));
-    await provider.click(".tabs button[data-mode=typed]");
-    await provider.fill("input[name='f:provider.signature:text']", "Ran Aroussi");
     await provider.check("input[name=consent]");
-    await provider.click("button:has-text('Sign document')");
-    await provider.waitForSelector("h1:has-text('Signed')");
+    await provider.click("button:has-text('Continue')");
+    await provider.click("[data-field='provider.signature'] .smd-sign-tag");
+    expect(await provider.inputValue("#adopt-text")).toBe("Ran Aroussi"); // prefilled from the signer's name
+    await provider.click("#adopt-ok");
+    await provider.click("#guide-finish");
+    await provider.waitForSelector("h1:has-text('done')");
 
     // 10. Receive webhooks: awaiting_last_signer, signed, finalized. All signed with HMAC.
     for (let i = 0; i < 100 && !hooks.some((h) => JSON.parse(h.body).type === "document.finalized"); i++) await new Promise((r) => setTimeout(r, 200));
@@ -302,9 +315,9 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     expect(status.data.status).toBe("finalized");
 
     await page.goto(`${base}/documents/${docId}`);
-    await shot("07-finalized");
+    await shot("09-finalized");
     await page.goto(`${base}/documents`);
-    await shot("08-documents");
+    await shot("10-documents");
     await mcp.close();
     await browser.close();
   }, 120_000);

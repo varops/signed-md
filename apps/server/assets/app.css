@@ -120,3 +120,56 @@ details summary { cursor: pointer; color: var(--muted); }
 .empty { text-align: center; padding: 40px 10px; color: var(--muted); }
 .hidden { display: none !important; }
 .smd-field-value { border-style: solid; border-color: var(--warn); color: var(--warn); background: var(--warn-bg); }
+
+/* ---- Guided signing ---- */
+:root { --go: #f5b301; --go-text: #1c1917; --field: #fff7d6; --field-line: #e8a400; }
+@media (prefers-color-scheme: dark) { :root { --field: #2a2306; --field-line: #a87700; } }
+.btn.go { background: var(--go); color: var(--go-text); border-color: var(--go); }
+.btn.go:hover { filter: brightness(.96); background: var(--go); }
+.intro-card { max-width: 560px; margin: 32px auto 16px; }
+.intro-icon { width: 48px; height: 48px; border-radius: 12px; background: var(--field); color: var(--field-line); display: grid; place-items: center; font-size: 26px; margin-bottom: 14px; }
+.disclosure { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-size: .9rem; }
+.disclosure p { margin: 6px 0 0; color: var(--muted); }
+.other-actions { max-width: 560px; margin: 0 auto 40px; }
+.other-actions > summary { color: var(--muted); font-size: .9rem; }
+
+.guide-bar { position: sticky; top: 0; z-index: 10; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 1px 6px rgba(0,0,0,.04); }
+.guide-bar .inner { max-width: 860px; margin: 0 auto; padding: 10px 20px; display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.guide-info { display: flex; flex-direction: column; min-width: 0; }
+.guide-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.guide-bar .btn.primary, .finish-row .btn.primary { opacity: .55; }
+.guide-bar .btn.primary.ready, .finish-row .btn.primary.ready { opacity: 1; }
+.finish-row { display: flex; justify-content: flex-end; margin-top: 18px; }
+.guide-hint { margin: 0 0 12px; }
+
+.doc.signing .smd-input { font: inherit; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: .9em; padding: 2px 8px; margin: 0 2px; border: 1.5px dashed var(--field-line); background: var(--field); border-radius: 5px; color: var(--text); width: auto; max-width: 100%; vertical-align: baseline; }
+.doc.signing input[type=date].smd-input { min-width: 150px; }
+.doc.signing select.smd-input { padding-right: 24px; }
+.doc.signing .smd-textarea { display: block; width: 100%; min-height: 90px; margin: 6px 0; }
+.doc.signing .smd-input:not([data-required]) { border-color: var(--line-strong); background: transparent; }
+.doc.signing .smd-input.smd-done { border-style: solid; border-color: var(--line-strong); background: transparent; }
+.doc.signing .smd-check { width: 18px; height: 18px; vertical-align: middle; accent-color: var(--field-line); outline: 1.5px dashed var(--field-line); outline-offset: 2px; }
+.doc.signing .smd-check.smd-done { outline: none; }
+.smd-current { box-shadow: 0 0 0 3px rgba(245,179,1,.45); border-radius: 6px; }
+
+.smd-sign { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
+.smd-sign-tag { position: relative; font: 600 .82em -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--go); color: var(--go-text); border: 0; border-radius: 4px 0 0 4px; padding: 6px 12px 6px 10px; cursor: pointer; margin-right: 10px; }
+.smd-sign-tag::after { content: ""; position: absolute; right: -10px; top: 0; border-style: solid; border-width: 14px 0 14px 10px; border-color: transparent transparent transparent var(--go); }
+.smd-sign-tag::before { content: "✎ "; }
+.smd-sign.smd-done .smd-sign-tag { display: none; }
+.smd-sign-value { cursor: pointer; }
+.smd-sign-value:empty { display: none; }
+.smd-sign-value img { height: 54px; vertical-align: middle; border-bottom: 1px solid var(--line-strong); }
+.smd-sign-fallback { font: inherit; font-size: .9em; padding: 2px 8px; border: 1.5px dashed var(--field-line); background: var(--field); border-radius: 5px; }
+body.js .smd-sign-fallback { display: none; }
+.smd-mirror { font-weight: 600; }
+
+dialog#adopt { border: 0; border-radius: 14px; padding: 0; width: min(560px, calc(100vw - 24px)); background: var(--panel); color: var(--text); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+dialog#adopt::backdrop { background: rgba(15,15,15,.45); }
+.adopt { padding: 22px; }
+.adopt .tabs { margin: 12px 0; }
+.typed-preview.initials { font-size: 2.4rem; }
+.typed-preview { border-bottom: 1px solid var(--line-strong); padding: 6px 2px; margin-bottom: 10px; color: var(--text); }
+.shake { animation: shake .35s; }
+@keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+@media (max-width: 600px) { .guide-bar .inner { padding: 8px 12px; } .guide-hint { display: none; } }
