@@ -15,6 +15,8 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { serve } from "@hono/node-server";
+import { openDatabase } from "@signed-md/db";
+import { sql } from "kysely";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -112,6 +114,13 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     if (process.env.E2E_BASE_URL) {
       base = process.env.E2E_BASE_URL.replace(/\/$/, "");
       return;
+    }
+    // The acceptance test needs a fresh install. Reset a shared Postgres test database first.
+    if (process.env.E2E_DATABASE_URL?.startsWith("postgres")) {
+      const pg = openDatabase(process.env.E2E_DATABASE_URL);
+      await sql`drop schema public cascade`.execute(pg.db);
+      await sql`create schema public`.execute(pg.db);
+      await pg.close();
     }
     const port = 3200 + Math.floor(Math.random() * 500);
     base = `http://localhost:${port}`;
