@@ -25,6 +25,7 @@ import { createContext } from "../src/bootstrap.ts";
 import { loadConfig } from "../src/config.ts";
 import { startWorker, type WorkerHandle } from "../src/worker.ts";
 import { trustedKeysFrom, verifyPackage } from "signed-md";
+import { startFakeTsa } from "./fakeTsa.ts";
 
 const require = createRequire(import.meta.url);
 // Playwright is not a project dependency. Use the one on this machine, or set PLAYWRIGHT_PATH.
@@ -97,6 +98,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
   let worker: WorkerHandle;
   let hookServer: Server;
   let avatarServer: Server;
+  let tsa: Awaited<ReturnType<typeof startFakeTsa>>;
   const avatarRequests: string[] = [];
   let base = "";
   const hooks: Hook[] = [];
@@ -132,11 +134,12 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
       await sql`create schema public`.execute(pg.db);
       await pg.close();
     }
+    tsa = await startFakeTsa();
     const port = 3200 + Math.floor(Math.random() * 500);
     base = `http://localhost:${port}`;
     const dataDir = mkdtempSync(join(tmpdir(), "signedmd-e2e-"));
     const ctx = await createContext(
-      loadConfig({ DATA_DIR: dataDir, PORT: String(port), PUBLIC_URL: base, AVATAR_BASE_URL: `http://localhost:${(avatarServer.address() as AddressInfo).port}`, LOG_LEVEL: "warn", ALLOW_INSECURE_WEBHOOKS: "1", WORKER_INTERVAL_MS: "100", ...(process.env.E2E_DATABASE_URL ? { DATABASE_URL: process.env.E2E_DATABASE_URL } : {}) }),
+      loadConfig({ DATA_DIR: dataDir, PORT: String(port), PUBLIC_URL: base, TSA_URL: tsa.url, AVATAR_BASE_URL: `http://localhost:${(avatarServer.address() as AddressInfo).port}`, LOG_LEVEL: "warn", ALLOW_INSECURE_WEBHOOKS: "1", WORKER_INTERVAL_MS: "100", ...(process.env.E2E_DATABASE_URL ? { DATABASE_URL: process.env.E2E_DATABASE_URL } : {}) }),
     );
     server = serve({ fetch: createApp(ctx).fetch, port });
     worker = startWorker(ctx);
@@ -148,6 +151,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     server?.close();
     hookServer?.close();
     avatarServer?.close();
+    await tsa?.close();
     await close?.();
   });
 
@@ -350,6 +354,13 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     expect(report.checks.filter((c) => !c.ok)).toEqual([]);
     expect(report.ok).toBe(true);
     expect(report.trusted_key).toBe(true);
+    if (!process.env.E2E_BASE_URL) {
+      // Sealed PDF (PAdES) and trusted timestamps on both the seal and the package.
+      expect(report.pdf_signature?.timestamp_authority).toContain("Test Timestamp Authority");
+      expect(report.timestamp).not.toBeNull();
+    } else {
+      expect(report.pdf_signature).not.toBeNull();
+    }
     if (SHOTS) {
       writeFileSync(join(SHOTS, "agreement.zip"), zip);
       writeFileSync(join(SHOTS, "signed-md-keys.json"), keys);

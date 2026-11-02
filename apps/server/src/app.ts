@@ -13,6 +13,7 @@ import { createMcpRoutes } from "./http/mcp.ts";
 import { log } from "./log.ts";
 import { avatarOrigin } from "./services/avatars.ts";
 import { readLogo } from "./services/branding.ts";
+import { certificatePem, pdfIdentity } from "./services/pdfsign.ts";
 import { checkDownloadSignature, readArtifact } from "./services/finalize.ts";
 import { createAdmin } from "./ui/admin.ts";
 import { setSourceUrl } from "./ui/layout.ts";
@@ -82,9 +83,11 @@ export function createApp(ctx: Ctx) {
     return c.json({ status: db ? "ok" : "degraded", database: db ? "ok" : "unreachable", version: "1.0.0" }, db ? 200 : 503);
   });
 
-  app.get("/.well-known/signed-md-keys.json", (c) => {
+  app.get("/.well-known/signed-md-keys.json", async (c) => {
     c.header("cache-control", "public, max-age=300");
-    return c.json({ keys: [ctx.keys.info] });
+    const account = await ctx.db.selectFrom("accounts").select("name").limit(1).executeTakeFirst();
+    const pdfCert = account ? certificatePem(pdfIdentity(ctx.config.dataDir, account.name).chain[0]!) : null;
+    return c.json({ keys: [ctx.keys.info], pdf_signing_certificates: pdfCert ? [pdfCert] : [] });
   });
 
   app.get("/assets/:name", (c) => {

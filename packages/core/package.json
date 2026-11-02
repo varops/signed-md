@@ -11,6 +11,14 @@
     "./evidence": {
       "types": "./src/evidence.ts",
       "default": "./src/evidence.ts"
+    },
+    "./cms": {
+      "types": "./src/cms.ts",
+      "default": "./src/cms.ts"
+    },
+    "./der": {
+      "types": "./src/der.ts",
+      "default": "./src/der.ts"
     }
   },
   "scripts": {

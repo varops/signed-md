@@ -17,7 +17,11 @@ import { getAccount } from "./accounts.ts";
 import { appendEvent, listEvents } from "./events.ts";
 import { loadDocument, loadSigners, lockDocument } from "./documents.ts";
 import { renderPdf } from "./pdf.ts";
-import type { SignerFieldValue } from "./signing.ts";
+import { certificatePem, pdfIdentity, signPdf } from "./pdfsign.ts";
+import { requestTimestamp } from "./tsa.ts";
+import { createHash } from "node:crypto";
+import { log } from "../log.ts";
+import { DISCLOSURE_VERSION, type SignerFieldValue } from "./signing.ts";
 import { emitWebhook } from "./webhooks.ts";
 
 /** Fixed timestamp inside the ZIP so the archive bytes depend only on its contents. */
@@ -49,13 +53,27 @@ export async function finalizeDocument(ctx: Ctx, documentId: string): Promise<vo
   const finalizedAt = now();
   const contentSha = sha256(doc.content);
   const preEvents = await listEvents(ctx.db, documentId);
-  const lastSignIp = new Map<string, string | null>();
-  for (const e of preEvents) if (e.type === "signer.signed") lastSignIp.set(String(e.data.signer), (e.data.ip as string | null) ?? null);
+  const signedMeta = new Map<string, { ip: string | null; user_agent: string | null }>();
+  for (const e of preEvents) {
+    if (e.type === "signer.signed") signedMeta.set(String(e.data.signer), { ip: (e.data.ip as string | null) ?? null, user_agent: (e.data.user_agent as string | null) ?? null });
+  }
+  // Each signer's adopted signature (their first signature field), shown on the certificate.
+  const signatureOf = (key: string) => {
+    const f = fieldRows.find((r) => r.signer_key === key && r.type === "signature" && r.value !== null) ?? fieldRows.find((r) => r.signer_key === key && r.type === "initials" && r.value !== null);
+    return f ? (JSON.parse(f.value!) as SignerFieldValue) : null;
+  };
 
   // Reuse a PDF from an earlier, interrupted attempt so its hash in the evidence stays correct.
   const dir = `documents/${documentId}`;
   const existing = await ctx.storage.read(`${dir}/signed.pdf`).catch(() => null);
-  const pdf = existing ?? await renderPdf(ctx.config.typstBin, {
+  const identity = pdfIdentity(ctx.config.dataDir, account.name);
+  const owner = doc.owner_user_id ? await ctx.db.selectFrom("users").select(["name", "email"]).where("id", "=", doc.owner_user_id).executeTakeFirst() : undefined;
+  // The certificate (inside the PDF) states that timestamps are present only when the authority answers now.
+  let tsaReachable = false;
+  if (!existing && ctx.config.tsaUrl) {
+    tsaReachable = await requestTimestamp(ctx.config.tsaUrl, createHash("sha256").update(doc.content).digest(), 8_000).then(() => true, () => false);
+  }
+  const rendered = existing ? null : await renderPdf(ctx.config.typstBin, {
     title: doc.title,
     documentId,
     revision: doc.revision,
@@ -63,14 +81,48 @@ export async function finalizeDocument(ctx: Ctx, documentId: string): Promise<vo
     contentSha256: contentSha,
     fields,
     values: signerValues,
-    signers: signers.map((s) => ({ key: s.key, name: s.name, email: s.email, signed_at: s.signed_at, ip: lastSignIp.get(s.key) ?? null })),
+    signers: signers.map((s) => ({
+      key: s.key,
+      name: s.name,
+      email: s.email,
+      order: Number(s.signing_order),
+      notified_at: s.notified_at,
+      viewed_at: s.viewed_at,
+      consented_at: s.consented_at,
+      signed_at: s.signed_at,
+      ip: signedMeta.get(s.key)?.ip ?? null,
+      user_agent: signedMeta.get(s.key)?.user_agent ?? null,
+      signature: signatureOf(s.key),
+    })),
+    sender: owner ? { name: owner.name || owner.email, email: owner.email } : null,
+    source: template ? `Template version ${template.version}` : "Inline Markdown",
+    sentAt: doc.sent_at,
+    sealedBy: (/CN=([^\n,]+)/.exec(identity.chain[0]!.subject)?.[1] ?? identity.chain[0]!.subject).trim(),
+    timestampAuthority: tsaReachable && ctx.config.tsaUrl ? new URL(ctx.config.tsaUrl).host : null,
+    disclosureVersion: DISCLOSURE_VERSION,
     completedAt: doc.completed_at ?? finalizedAt,
     accountName: account.name,
     publicUrl: ctx.config.publicUrl,
     keyId: ctx.keys.info.kid,
     timezone: doc.timezone,
   });
-  if (!existing) await ctx.storage.write(`${dir}/signed.pdf`, pdf);
+  // Seal the PDF: a PAdES signature (with a trusted timestamp when the authority is reachable).
+  let pdf: Buffer;
+  let pdfTimestamped = false;
+  if (existing) pdf = existing;
+  else {
+    const sealed = await signPdf(rendered!, identity, {
+      reason: "All parties signed this document electronically with Signed.md",
+      location: new URL(ctx.config.publicUrl).host,
+      name: account.name,
+      contactInfo: owner?.email ?? "",
+      signingTime: new Date(),
+      tsaUrl: tsaReachable ? ctx.config.tsaUrl : null,
+    });
+    pdf = sealed.pdf;
+    pdfTimestamped = sealed.timestamped;
+    await ctx.storage.write(`${dir}/signed.pdf`, pdf);
+  }
 
   await ctx.db.transaction().execute(async (trx) => {
     const locked = await lockDocument(ctx, trx, documentId);
@@ -80,6 +132,7 @@ export async function finalizeDocument(ctx: Ctx, documentId: string): Promise<vo
       await appendEvent(trx, documentId, "document.finalized", { kind: "system", id: "system", label: "Signed.md" }, {
         pdf_sha256: sha256(pdf),
         key_id: ctx.keys.info.kid,
+        pdf_signature: { standard: "PAdES (ETSI.CAdES.detached)", certificate: identity.chain[0]!.subject.replace(/\n/g, ", "), timestamped: pdfTimestamped },
       });
     }
   });
@@ -129,7 +182,8 @@ export async function finalizeDocument(ctx: Ctx, documentId: string): Promise<vo
     "signatures.json": enc(signatures),
     "evidence.json": enc({ format: EVIDENCE_FORMAT, events }),
     "signed.pdf": pdf,
-    "public-key.json": enc(ctx.keys.info),
+    // The manifest key, plus the certificate that signed the PDF, bound together by the manifest signature.
+    "public-key.json": enc({ ...ctx.keys.info, pdf_signing_certificate: certificatePem(identity.chain[0]!) }),
   };
   const manifest: Manifest = {
     format: MANIFEST_FORMAT,
@@ -142,6 +196,14 @@ export async function finalizeDocument(ctx: Ctx, documentId: string): Promise<vo
   };
   files["manifest.json"] = enc(manifest);
   files["manifest.sig"] = Buffer.from(ctx.keys.sign(canonicalJson(manifest)) + "\n");
+  // An independent timestamp authority attests when the package existed (RFC 3161). Best effort.
+  if (ctx.config.tsaUrl) {
+    try {
+      files["manifest.tsr"] = await requestTimestamp(ctx.config.tsaUrl, createHash("sha256").update(canonicalJson(manifest)).digest());
+    } catch (e) {
+      log.warn("timestamp authority unavailable; package not timestamped", { error: (e as Error).message });
+    }
+  }
 
   const zip = zipSync(Object.fromEntries(Object.entries(files).map(([k, v]) => [k, [v, { mtime: ZIP_MTIME }]])), { level: 6 });
 

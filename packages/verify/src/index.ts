@@ -9,7 +9,7 @@ export function verifyPackage(zip: Uint8Array, opts: VerifyOptions = {}): Verify
   try {
     files = unzipSync(zip);
   } catch {
-    return { ok: false, document_id: null, title: null, revision: null, key_id: null, trusted_key: false, signers: [], checks: [{ name: "readable ZIP", ok: false }] };
+    return { ok: false, document_id: null, title: null, revision: null, key_id: null, trusted_key: false, signers: [], timestamp: null, pdf_signature: null, checks: [{ name: "readable ZIP", ok: false }] };
   }
   return verifyPackageFiles(files, opts);
 }

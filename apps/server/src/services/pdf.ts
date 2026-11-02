@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { type FieldDef, parseTemplate } from "@signed-md/core";
+import { type FieldDef, formatValue, parseTemplate } from "@signed-md/core";
 import type { Nodes, Root, RootContent } from "mdast";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
@@ -11,6 +12,8 @@ import { unified } from "unified";
 import type { SignatureValue, SignerFieldValue } from "./signing.ts";
 
 const run = promisify(execFile);
+/** Bundled fonts (OFL): Source Serif 4 for the agreement, Inter for headings and the certificate. */
+const FONT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "assets", "fonts");
 
 /** Escape text for Typst markup: every non-alphanumeric, non-space character gets a backslash. */
 export function typstText(s: string): string {
@@ -26,8 +29,15 @@ export interface PdfSigner {
   key: string;
   name: string;
   email: string;
+  order: number;
+  notified_at: string | null;
+  viewed_at: string | null;
+  consented_at: string | null;
   signed_at: string | null;
   ip: string | null;
+  user_agent: string | null;
+  /** How the signer adopted their signature, if they had a signature field. */
+  signature: SignerFieldValue | null;
 }
 
 export interface PdfInput {
@@ -40,11 +50,19 @@ export interface PdfInput {
   fields: FieldDef[];
   values: Map<string, SignerFieldValue>;
   signers: PdfSigner[];
+  sender: { name: string; email: string } | null;
+  source: string;
+  sentAt: string | null;
   completedAt: string;
   accountName: string;
   publicUrl: string;
   keyId: string;
   timezone: string;
+  /** Subject of the certificate that seals the PDF (PAdES). */
+  sealedBy: string;
+  /** Host of the timestamp authority, if timestamps are on. */
+  timestampAuthority: string | null;
+  disclosureVersion: string;
 }
 
 interface Asset {
@@ -55,18 +73,19 @@ interface Asset {
 const SENTINEL = /SMDFIELD(\d+)X/g;
 
 function fieldTypst(def: FieldDef, value: SignerFieldValue | undefined, assets: Asset[]): string {
-  if (value === undefined) return `#box(stroke: (bottom: 0.5pt), width: 4cm)[#text(fill: gray)[${typstText(def.key)}]]`;
+  if (value === undefined) return `#box(stroke: (bottom: 0.5pt), width: 4cm)[#text(fill: rgb("#a8a29e"))[${typstText(def.key)}]]`;
   if (typeof value === "object" && value !== null && "kind" in value) {
     const sig = value as SignatureValue;
     if (sig.kind === "drawn") {
       const name = `sig-${assets.length}.png`;
       assets.push({ name, data: Buffer.from(sig.image.split(",")[1] ?? "", "base64") });
       const h = def.type === "initials" ? "0.9cm" : "1.5cm";
-      return `#box(baseline: 20%, stroke: (bottom: 0.5pt + gray), inset: (bottom: 2pt))[#image(${typstString(name)}, height: ${h})]`;
+      return `#box(baseline: 20%, stroke: (bottom: 0.5pt + rgb("#a8a29e")), inset: (bottom: 2pt))[#image(${typstString(name)}, height: ${h})]`;
     }
-    return `#box(stroke: (bottom: 0.5pt + gray), inset: (bottom: 2pt))[#text(size: 16pt, style: "italic")[${typstText(sig.text)}]]`;
+    return `#box(stroke: (bottom: 0.5pt + rgb("#a8a29e")), inset: (bottom: 2pt, x: 2pt))[#text(size: 17pt, style: "italic")[${typstText(sig.text)}]]`;
   }
   if (def.type === "checkbox") return value ? "☑" : "☐";
+  if (def.type === "date" && typeof value === "string") return typstText(formatValue(def, value, { locale: "en-GB" }));
   return typstText(String(value));
 }
 
@@ -144,7 +163,19 @@ function node(n: Nodes, slots: FieldDef[], values: Map<string, SignerFieldValue>
 
 function formatTime(iso: string | null, tz: string): string {
   if (!iso) return "–";
-  return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "long", timeZone: tz }).format(new Date(iso));
+  const d = new Date(iso);
+  const date = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: tz }).format(d);
+  const time = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: tz, timeZoneName: "short" }).format(d);
+  return `${date}, ${time}`;
+}
+
+/** Shorten a user agent to something readable: browser and OS. */
+function device(ua: string | null): string {
+  if (!ua) return "–";
+  const os = /Windows NT|Mac OS X|iPhone OS|Android|Linux/.exec(ua)?.[0]?.replace("Windows NT", "Windows").replace("Mac OS X", "macOS").replace("iPhone OS", "iOS") ?? "";
+  const browser = /(Edg|Chrome|Firefox|Safari)\/[\d.]+/.exec(ua)?.[0]?.replace("Edg", "Edge").split(".")[0] ?? "";
+  const short = [browser, os].filter(Boolean).join(" on ");
+  return short || ua.slice(0, 80);
 }
 
 /** Build the Typst source and image assets for a completed agreement. */
@@ -167,51 +198,119 @@ export function buildTypst(input: PdfInput): { source: string; assets: Asset[] }
   const tree = unified().use(remarkParse).use(remarkGfm).parse(md) as Root;
   const assets: Asset[] = [];
   const body = node(tree, slots, input.values, assets);
+  const t = (s: string) => typstText(s);
+  const when = (iso: string | null) => t(formatTime(iso, input.timezone));
 
-  const footer = typstText(`${input.documentId} · ${input.revision}`);
-  const signerRows = input.signers
-    .map((s) => `[${typstText(s.name)}], [${typstText(s.email)}], [${typstText(formatTime(s.signed_at, input.timezone))}], [${typstText(s.ip ?? "–")}]`)
-    .join(",\n  ");
+  const signatureBox = (sig: SignerFieldValue | null): string => {
+    if (!sig || typeof sig !== "object" || !("kind" in sig)) return "";
+    if (sig.kind === "drawn") {
+      const name = `cert-sig-${assets.length}.png`;
+      assets.push({ name, data: Buffer.from(sig.image.split(",")[1] ?? "", "base64") });
+      return `#box(height: 1.1cm, image(${typstString(name)}, height: 1.1cm))`;
+    }
+    return `#text(font: "Source Serif 4", style: "italic", size: 16pt)[${t(sig.text)}]`;
+  };
 
+  const signerBlocks = input.signers
+    .map((s) => {
+      const adopted = s.signature && typeof s.signature === "object" && "kind" in s.signature ? (s.signature.kind === "drawn" ? "Drawn on device" : "Typed") : "–";
+      return `#block(width: 100%, breakable: false, stroke: 0.5pt + rule, radius: 4pt, inset: 12pt, above: 10pt)[
+  #grid(columns: (1fr, 1.15fr), column-gutter: 18pt,
+    [
+      #text(weight: "semibold", size: 10pt)[${t(s.name)}] \\
+      #text(fill: muted)[${t(s.email)}]
+      #v(6pt)
+      #grid(columns: (auto, 1fr), column-gutter: 8pt, row-gutter: 5pt,
+        text(fill: muted)[Signing order], [${s.order}],
+        text(fill: muted)[Identified by], [Email link sent to ${t(s.email)}],
+        text(fill: muted)[Signature], [${t(adopted)}],
+      )
+      #v(6pt)
+      ${signatureBox(s.signature)}
+    ],
+    [
+      #grid(columns: (auto, 1fr), column-gutter: 8pt, row-gutter: 5pt,
+        text(fill: muted)[Sent], [${when(s.notified_at)}],
+        text(fill: muted)[Viewed], [${when(s.viewed_at)}],
+        text(fill: muted)[Agreed to disclosure], [${when(s.consented_at)}],
+        text(fill: muted)[Signed], [${when(s.signed_at)}],
+        text(fill: muted)[IP address], [${t(s.ip ?? "–")}],
+        text(fill: muted)[Device], [${t(device(s.user_agent))}],
+      )
+    ],
+  )
+]`;
+    })
+    .join("\n");
+
+  const footer = t(`${input.documentId} · ${input.revision}`);
   const source = `#set document(title: ${typstString(input.title)}, author: ${typstString(input.accountName)})
-#set page(paper: "a4", margin: (x: 2.2cm, top: 2.2cm, bottom: 2.6cm), footer: context [
-  #set text(size: 8pt, fill: gray)
-  ${footer} #h(1fr) #counter(page).display("1 / 1", both: true)
+#let ink = rgb("#1c1917")
+#let muted = rgb("#78716c")
+#let rule = rgb("#d6d3d1")
+#let wash = rgb("#f5f5f4")
+#set page(paper: "a4", margin: (x: 2.4cm, top: 2.4cm, bottom: 2.6cm), footer: context [
+  #set text(font: "Inter", size: 7pt, fill: muted)
+  ${footer} #h(1fr) Page #counter(page).display() of #counter(page).final().first()
 ])
-#set text(font: "Libertinus Serif", size: 11pt, lang: "en")
-#set par(justify: true, leading: 0.65em)
-#set heading(numbering: none)
-#show heading: set block(above: 1.4em, below: 0.8em)
+#set text(font: "Source Serif 4", size: 10.5pt, fill: ink, lang: "en", hyphenate: false)
+#set par(justify: false, leading: 0.72em, spacing: 1.15em)
+#show heading: set text(font: "Inter", weight: "semibold", fill: ink)
+#show heading.where(level: 1): it => block(below: 16pt)[#text(size: 19pt, it.body)]
+#show heading.where(level: 2): it => block(above: 20pt, below: 9pt)[#text(size: 12.5pt, it.body)]
+#show heading.where(level: 3): it => block(above: 16pt, below: 7pt)[#text(size: 10.5pt, it.body)]
+#set list(indent: 4pt, body-indent: 8pt, spacing: 0.75em)
+#set enum(indent: 4pt, body-indent: 8pt, spacing: 0.75em)
+#set table(stroke: 0.5pt + rule, inset: (x: 8pt, y: 7pt), fill: (_, y) => if y == 0 { wash })
 #show table: set par(justify: false)
+#show table.cell.where(y: 0): set text(font: "Inter", size: 9pt, weight: "semibold")
+#show raw: set text(font: "DejaVu Sans Mono", size: 9pt)
+#show strong: set text(weight: "semibold")
 
 ${body}
 
 #pagebreak()
-#text(size: 16pt, weight: "bold")[Signing certificate]
+#set text(font: "Inter", size: 8.5pt)
+#set par(leading: 0.6em, spacing: 0.9em)
+#grid(columns: (1fr, auto), align: (left + bottom, right + bottom),
+  text(size: 17pt, weight: "semibold")[Certificate of completion],
+  box(fill: rgb("#dcfce7"), inset: (x: 8pt, y: 4pt), radius: 10pt)[#text(fill: rgb("#15803d"), weight: "semibold")[Completed]],
+)
+#text(fill: muted)[Signed electronically with Signed.md for ${t(input.accountName)}.]
+#v(14pt)
 
-#v(0.5em)
-#table(columns: (auto, 1fr), stroke: none, inset: (x: 0pt, y: 4pt), column-gutter: 14pt,
-  [*Document*], [${typstText(input.title)}],
-  [*Document ID*], [${typstText(input.documentId)}],
-  [*Revision*], [${typstText(input.revision)}],
-  [*Content SHA-256*], [#text(size: 8pt)[${typstText(input.contentSha256)}]],
-  [*Sent by*], [${typstText(input.accountName)}],
-  [*Completed*], [${typstText(formatTime(input.completedAt, input.timezone))} #text(size: 8pt, fill: gray)[${typstText(input.completedAt)}]],
-  [*Signing key*], [${typstText(input.keyId)}],
+#text(weight: "semibold", size: 10pt)[Document]
+#v(2pt)
+#line(length: 100%, stroke: 0.5pt + rule)
+#grid(columns: (auto, 1fr), column-gutter: 14pt, row-gutter: 6pt,
+  text(fill: muted)[Title], [${t(input.title)}],
+  text(fill: muted)[Document ID], [${t(input.documentId)}],
+  text(fill: muted)[Revision], [${t(input.revision)}],
+  text(fill: muted)[Content SHA-256], [#text(font: "DejaVu Sans Mono", size: 7pt)[${t(input.contentSha256)}]],
+  text(fill: muted)[Source], [${t(input.source)}],
+  text(fill: muted)[Sent by], [${t(input.sender ? `${input.sender.name} (${input.sender.email}), ${input.accountName}` : input.accountName)}],
+  text(fill: muted)[Sent], [${when(input.sentAt)}],
+  text(fill: muted)[Completed], [${when(input.completedAt)}],
+  text(fill: muted)[Signers], [${input.signers.length}],
 )
 
-#v(1em)
-#text(weight: "bold")[Signers]
-#table(columns: (1fr, 1.4fr, 1.6fr, auto), stroke: 0.5pt + gray, inset: 6pt,
-  [*Name*], [*Email*], [*Signed*], [*IP address*],
-  ${signerRows}
-)
+#v(16pt)
+#text(weight: "semibold", size: 10pt)[Signers]
+#v(2pt)
+#line(length: 100%, stroke: 0.5pt + rule)
+${signerBlocks}
 
-#v(1em)
-#text(size: 9pt)[
-  Each signer received a unique link by email, agreed to sign electronically, and completed their fields. Email delivery shows control of the email address. It does not by itself prove legal identity.
-
-  This PDF is part of a completion package (ZIP) that contains the signed Markdown, the evidence log, and a manifest signed with this installation's key. Verify the package with: #raw("npx signed-md verify agreement.zip"). The public key is published at ${typstText(input.publicUrl)}/.well-known/signed-md-keys.json.
+#v(16pt)
+#block(breakable: false)[
+#text(weight: "semibold", size: 10pt)[Integrity and verification]
+#v(2pt)
+#line(length: 100%, stroke: 0.5pt + rule)
+#set par(spacing: 0.8em)
+- This PDF is digitally sealed (PAdES) by #text(weight: "semibold")[${t(input.sealedBy)}]. If anyone changes it after sealing, PDF readers show the signature as invalid.
+${input.timestampAuthority ? `- The seal and the evidence package carry trusted timestamps (RFC 3161) from ${t(input.timestampAuthority)}.` : ""}
+- Each signer agreed to the electronic record and signature disclosure (version ${t(input.disclosureVersion)}) before signing. The exact text is in the evidence log.
+- The evidence package (ZIP) holds the signed Markdown, this PDF, and a hash-chained evidence log, with a manifest signed by key ${t(input.keyId)}. Verify it offline with #raw("npx signed-md verify agreement.zip"). Public keys: ${t(input.publicUrl)}/.well-known/signed-md-keys.json.
+- Each signer was identified by a unique link sent to their email address. This shows control of that email address. It does not by itself prove legal identity.
 ]
 `;
   return { source, assets };
@@ -226,7 +325,7 @@ export async function renderPdf(typstBin: string, input: PdfInput): Promise<Buff
     const created = Math.floor(Date.parse(input.completedAt) / 1000);
     await run(
       typstBin,
-      ["compile", "--ignore-system-fonts", "--root", dir, "--creation-timestamp", String(created), join(dir, "main.typ"), join(dir, "out.pdf")],
+      ["compile", "--ignore-system-fonts", "--font-path", FONT_DIR, "--pdf-standard", "a-2b", "--root", dir, "--creation-timestamp", String(created), join(dir, "main.typ"), join(dir, "out.pdf")],
       { timeout: 60_000 },
     );
     return await readFile(join(dir, "out.pdf"));

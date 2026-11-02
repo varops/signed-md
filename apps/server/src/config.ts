@@ -28,6 +28,8 @@ export interface Config {
   sourceUrl: string;
   /** Avatar service base URL: unavatar.io, or a CDN pull zone in front of it. Used only when avatars are on. */
   avatarBaseUrl: string;
+  /** RFC 3161 timestamp authority. Only a hash is sent. Null disables trusted timestamps. */
+  tsaUrl: string | null;
 }
 
 function bool(v: string | undefined, def = false): boolean {
@@ -54,6 +56,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!/^https:\/\/[^/\s]+/.test(avatarBase) && !/^http:\/\/localhost/.test(avatarBase)) {
     throw new ConfigError(`AVATAR_BASE_URL must be an https URL, got '${avatarBase}'`);
   }
+
+  const tsaRaw = (env.TSA_URL ?? "http://timestamp.digicert.com").trim();
+  const tsa = tsaRaw === "" || tsaRaw.toLowerCase() === "off" ? null : tsaRaw;
+  if (tsa && !/^https?:\/\/[^/\s]+/.test(tsa)) throw new ConfigError(`TSA_URL must be an http(s) URL or "off", got '${tsaRaw}'`);
 
   let smtp: SmtpConfig | null = null;
   if (env.SMTP_HOST) {
@@ -83,5 +89,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     logLevel: ["debug", "info", "warn", "error"].includes(level) ? level : "info",
     sourceUrl: env.SOURCE_URL ?? "https://github.com/varops/signed-md",
     avatarBaseUrl: (env.AVATAR_BASE_URL ?? "https://unavatar.io").replace(/\/+$/, ""),
+    tsaUrl: tsa,
   };
 }

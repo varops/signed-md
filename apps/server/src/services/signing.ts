@@ -7,9 +7,51 @@ import { appendEvent } from "./events.ts";
 import { activateNextGroup, type DocRow, loadDocument, loadSigners, lockDocument, type SignerRow } from "./documents.ts";
 import { emitWebhook } from "./webhooks.ts";
 
-/** The consent statement every signer accepts. Its hash is recorded in the evidence. */
+/** Short summary shown above the consent checkbox. */
 export const CONSENT_TEXT =
   "You can review and sign this document electronically instead of on paper. Your electronic signature has the same legal effect as a handwritten one. You'll get a copy of the completed document by email, and you can download it. You can decline to sign at any time before you finish.";
+
+export const DISCLOSURE_VERSION = "2026-11-02";
+
+/**
+ * Electronic record and signature disclosure. Covers what the US ESIGN Act asks consumers to be told:
+ * the right to paper copies, how to withdraw consent, what the consent covers, how to update contact
+ * details, and the hardware and software needed. The exact text each signer agreed to is stored in
+ * their consent event, so the evidence shows what they saw.
+ */
+export function disclosureText(input: { account: string; contactName: string | null; contactEmail: string | null }): string {
+  const contact = input.contactEmail ? `${input.contactName ?? input.account} at ${input.contactEmail}` : input.account;
+  return `Electronic record and signature disclosure (version ${DISCLOSURE_VERSION})
+
+${input.account} wants to send you this document and get your signature electronically, using Signed.md.
+
+Agreeing to use electronic records and signatures
+By selecting "I agree", you confirm that you can open and read this disclosure, and that you agree to receive and sign this document electronically. Your electronic signature has the same legal effect as a handwritten signature.
+
+Paper copies
+You can ask for a paper copy of this document at any time, free of charge, by contacting ${contact}.
+
+Withdrawing your consent
+You can withdraw your consent before you finish signing, by choosing "Decline to sign" or by contacting ${contact}. Withdrawing consent does not affect documents you already signed electronically.
+
+What this consent covers
+It covers this document only, and the notices about it, such as reminders and the completed copy.
+
+Keeping a copy
+When everyone has signed, you receive the completed document by email as a PDF. You can also download it from the signing page.
+
+What you need
+A device with a current web browser, an email address, and software that can open PDF files. If these change in a way that stops you from opening the document, contact ${contact}.
+
+Updating your contact details
+To change the email address used for this document, contact ${contact}.`;
+}
+
+async function disclosureFor(ctx: Ctx, doc: DocRow): Promise<string> {
+  const account = await ctx.db.selectFrom("accounts").select("name").limit(1).executeTakeFirstOrThrow();
+  const owner = doc.owner_user_id ? await ctx.db.selectFrom("users").select(["name", "email"]).where("id", "=", doc.owner_user_id).executeTakeFirst() : undefined;
+  return disclosureText({ account: account.name, contactName: owner ? owner.name || owner.email : null, contactEmail: owner?.email ?? null });
+}
 
 export type SignatureValue = { kind: "drawn"; image: string } | { kind: "typed"; text: string };
 export type SignerFieldValue = FieldValue | SignatureValue;
@@ -86,6 +128,8 @@ export interface SignerView {
   names: Record<string, string>;
   fields: { key: string; label: string; type: string; required: boolean; options?: string[] }[];
   consent_text: string;
+  /** Full electronic record and signature disclosure. */
+  disclosure: string;
   progress: { signed: number; total: number };
   expires_at: string | null;
 }
@@ -148,6 +192,7 @@ async function buildSignerView(ctx: Ctx, doc: DocRow, signer: SignerRow): Promis
         ...(d.rules.options ? { options: d.rules.options.map(String) } : {}),
       })),
     consent_text: CONSENT_TEXT,
+    disclosure: await disclosureFor(ctx, doc),
     progress: { signed: signers.filter((s) => s.status === "signed").length, total: signers.length },
     expires_at: doc.expires_at,
   };
@@ -176,13 +221,21 @@ export function renderCompletedValue(def: FieldDef, v: SignerFieldValue): Elemen
 export async function recordConsent(ctx: Ctx, token: string, meta: RequestMeta): Promise<void> {
   const s = await findByToken(ctx, token);
   if (!s) throw new SignedError("PERMISSION_DENIED", "This signing link is not valid");
+  // Read outside the transaction: SQLite has one connection, and the transaction holds it.
+  const disclosure = await disclosureFor(ctx, s.doc);
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, s.doc.id);
     const signer = await trx.selectFrom("signers").selectAll().where("id", "=", s.signer.id).executeTakeFirstOrThrow();
     if (!["sent", "partially_signed"].includes(doc.status) || isExpired(doc)) throw new SignedError("INVALID_TRANSITION", "This document can no longer be signed");
     if (signer.consented_at || signer.status === "signed" || signer.status === "declined") return;
     await trx.updateTable("signers").set({ consented_at: now() }).where("id", "=", signer.id).execute();
-    await appendEvent(trx, doc.id, "signer.consented", signerActor(signer), { signer: signer.key, consent_text_sha256: sha256(CONSENT_TEXT), ...meta });
+    await appendEvent(trx, doc.id, "signer.consented", signerActor(signer), {
+      signer: signer.key,
+      disclosure_version: DISCLOSURE_VERSION,
+      disclosure_sha256: sha256(disclosure),
+      disclosure,
+      ...meta,
+    });
   });
 }
 
@@ -195,6 +248,7 @@ export async function submitSignature(
 ): Promise<{ document_status: string }> {
   const s = await findByToken(ctx, token);
   if (!s) throw new SignedError("PERMISSION_DENIED", "This signing link is not valid");
+  const disclosure = await disclosureFor(ctx, s.doc);
   return ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, s.doc.id);
     const signer = await trx.selectFrom("signers").selectAll().where("id", "=", s.signer.id).executeTakeFirstOrThrow();
@@ -231,7 +285,7 @@ export async function submitSignature(
 
     const actor = signerActor(signer);
     if (!signer.consented_at) {
-      await appendEvent(trx, doc.id, "signer.consented", actor, { signer: signer.key, consent_text_sha256: sha256(CONSENT_TEXT), ...meta });
+      await appendEvent(trx, doc.id, "signer.consented", actor, { signer: signer.key, disclosure_version: DISCLOSURE_VERSION, disclosure_sha256: sha256(disclosure), disclosure, ...meta });
     }
     await appendEvent(trx, doc.id, "signer.signed", actor, {
       signer: signer.key,

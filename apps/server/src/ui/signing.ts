@@ -70,7 +70,8 @@ function introPage(token: string, view: SignerView, error: string | null): H {
           ${due ? html`<dt>Due</dt><dd>${due}</dd>` : ""}</dl>
         ${error ? html`<div class="notice bad">${error}</div>` : ""}
         <form method="post" action="/s/${token}/start">
-          <div class="disclosure"><strong>Electronic record and signature disclosure</strong><p>${view.consent_text}</p></div>
+          <div class="disclosure"><strong>Electronic record and signature disclosure</strong><p>${view.consent_text}</p>
+            <details style="margin-top:8px"><summary>Read the full disclosure</summary><pre class="disclosure-full">${view.disclosure}</pre></details></div>
           <label class="check" style="margin:14px 0 18px"><input type="checkbox" name="consent" required> <span>I agree to use electronic records and signatures.</span></label>
           <button class="btn go block">Continue</button>
         </form>

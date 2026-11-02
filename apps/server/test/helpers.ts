@@ -40,6 +40,8 @@ export async function testContext(env: Record<string, string> = {}) {
     PUBLIC_URL: "http://localhost:3999",
     LOG_LEVEL: "warn",
     ALLOW_INSECURE_WEBHOOKS: "1",
+    // Tests never reach a real timestamp authority; the PAdES tests start a local one.
+    TSA_URL: "off",
     ...env,
   });
   const ctx = await createContext(config);

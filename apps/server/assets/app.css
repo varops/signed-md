@@ -195,3 +195,4 @@ dialog#adopt::backdrop { background: rgba(15,15,15,.45); }
 .whoami { color: var(--text); white-space: nowrap; }
 @media (max-width: 700px) { .whoami { display: none; } }
 .role-select { width: auto; padding: 4px 8px; }
+.disclosure-full { white-space: pre-wrap; font: .85rem/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--panel); margin-top: 8px; max-height: 320px; overflow: auto; }

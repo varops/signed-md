@@ -419,9 +419,30 @@ A separate verification command and a documented `openssl` procedure must verify
 
 Key generation, storage, rotation, export, backup, and recovery are part of the security design. If the key is lost, existing packages still verify against the public key they contain, but the published trust anchor is lost. Backups must include the key.
 
+### Sealed PDF (PAdES)
+
+The completed PDF is rendered as PDF/A-2b, then sealed with a PAdES signature (`ETSI.CAdES.detached`, baseline B-T when a timestamp is available) as an incremental update:
+
+- CMS SignedData with contentType, messageDigest, and signing-certificate-v2 as signed attributes (no signingTime; the time is in the signature dictionary).
+- An RFC 3161 signature-time-stamp token as an unsigned attribute.
+- The sealing certificate is a per-installation RSA-3072 certificate (`DATA_DIR/keys/pdf-signing-*.pem`), or an operator-provided one (`PDF_SIGNING_KEY_FILE`, `PDF_SIGNING_CERT_FILE`). It is published in `public-key.json` and `/.well-known/signed-md-keys.json`, so the manifest signature binds the PDF certificate to the installation key.
+
 ### Trusted timestamps
 
-Optionally, request an RFC 3161 timestamp over the manifest hash from a configured timestamp authority. Off by default.
+RFC 3161 timestamps from `TSA_URL` (default `http://timestamp.digicert.com`; `off` disables). Only SHA-256 hashes are sent. Two timestamps per completed document:
+
+- On the PDF signature value (inside the PDF).
+- On the canonical manifest (`manifest.tsr` in the package).
+
+Timestamps are best effort: if the authority is unreachable, the document still completes, and the certificate of completion does not claim a timestamp.
+
+### Disclosure
+
+Each signer agrees to the electronic record and signature disclosure before the document opens. The `signer.consented` event stores the disclosure version, its SHA-256, and the full text the signer saw.
+
+### Offline verification
+
+`signed-md verify` checks: the manifest signature and file hashes; the manifest timestamp; the PDF signature (digest, signature, signing-certificate binding, full-document coverage, the expected installation certificate, and its timestamp); the evidence hash chain; that `agreement.md` matches what was sent; and that each signer's recorded values match.
 
 A hash chain alone does not prove identity or establish that an event occurred at a particular real-world time.
 

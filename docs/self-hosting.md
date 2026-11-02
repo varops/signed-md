@@ -35,6 +35,8 @@ All settings are environment variables. Invalid values stop the server at start 
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. Logs are JSON, one line per event. |
 | `SOURCE_URL` | `https://github.com/varops/signed-md` | The "Source" link in the app. If you run a modified version, point it at your source code (AGPL-3.0 section 13). |
 | `AVATAR_BASE_URL` | `https://unavatar.io` | Where avatars come from, when avatars are on (Settings → Branding). Point it at a CDN pull zone in front of unavatar.io. |
+| `TSA_URL` | `http://timestamp.digicert.com` | RFC 3161 timestamp authority for the PDF seal and the evidence package. Only hashes are sent. Set to `off` to disable. |
+| `PDF_SIGNING_KEY_FILE`, `PDF_SIGNING_CERT_FILE` | – | Your own certificate (PEM key, PEM certificate chain) for sealing PDFs. Without them, each installation creates a self-signed certificate. |
 | `ALLOW_INSECURE_WEBHOOKS` | – | Development only. Allows `http://` and private-network webhook targets. |
 
 ## Reverse proxy and HTTPS
@@ -79,6 +81,14 @@ For automated installs:
 node apps/server/src/cli.ts setup --account "Acme" --name "Ada Lovelace" --email admin@acme.com --password '...'
 node apps/server/src/cli.ts api-key --label "Sales agent" --user admin@acme.com
 ```
+
+## Sealed PDFs and timestamps
+
+Every completed PDF is PDF/A-2b and digitally sealed (PAdES), with a trusted timestamp. PDF readers show it as signed and flag any later change.
+
+By default the seal uses a self-signed certificate created on first use (`keys/pdf-signing-key.pem` and `keys/pdf-signing-cert.pem`; back them up with the other keys). Adobe Reader then shows "signature is valid" for the content but the signer as not trusted. For the green check in Adobe Reader, buy a document-signing certificate from a provider on the [Adobe Approved Trust List](https://helpx.adobe.com/acrobat/kb/approved-trust-list1.html) and set `PDF_SIGNING_KEY_FILE` and `PDF_SIGNING_CERT_FILE`.
+
+Timestamps come from DigiCert's free service by default. Use any RFC 3161 authority with `TSA_URL`, or `off` to disable. If the authority is unreachable, documents still complete without a timestamp.
 
 ## Avatars
 
