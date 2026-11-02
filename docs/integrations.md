@@ -170,6 +170,7 @@ Content-Type: application/json
 ```
 
 - `values` holds template values. Keys are written without the `$` prefix.
+- `font` is `"serif"` or `"sans-serif"`, for the PDF and the signing page. Without it, the account default (Settings → Branding) is used. It is part of the revision.
 - `signers` lists every signer. Each `key` must match the signer keys used in the template. Signers with the same `order` sign in parallel; the next group is notified when the current group is done.
 - Currency values are decimal strings.
 

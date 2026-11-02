@@ -196,3 +196,20 @@ dialog#adopt::backdrop { background: rgba(15,15,15,.45); }
 @media (max-width: 700px) { .whoami { display: none; } }
 .role-select { width: auto; padding: 4px 8px; }
 .disclosure-full { white-space: pre-wrap; font: .85rem/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--panel); margin-top: 8px; max-height: 320px; overflow: auto; }
+
+/* ---- Contract fonts (the same bundled faces as the PDF) ---- */
+@font-face { font-family: "Source Serif 4"; src: url("/assets/fonts/SourceSerif4-Regular.otf") format("opentype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Source Serif 4"; src: url("/assets/fonts/SourceSerif4-It.otf") format("opentype"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Source Serif 4"; src: url("/assets/fonts/SourceSerif4-Semibold.otf") format("opentype"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Source Serif 4"; src: url("/assets/fonts/SourceSerif4-Bold.otf") format("opentype"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("/assets/fonts/Inter-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("/assets/fonts/Inter-Italic.ttf") format("truetype"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("/assets/fonts/Inter-SemiBold.ttf") format("truetype"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("/assets/fonts/Inter-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+.doc.smd-font-serif { font-family: "Source Serif 4", Charter, "Iowan Old Style", Georgia, serif; }
+.doc.smd-font-sans { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 15.5px; }
+.doc h1, .doc h2, .doc h3 { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+.font-choice { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 10px 14px; font-weight: 500; cursor: pointer; }
+.font-choice:has(input:checked) { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
+.font-choice.smd-font-serif .font-sample { font-family: "Source Serif 4", Georgia, serif; font-size: 1.5rem; }
+.font-choice.smd-font-sans .font-sample { font-family: "Inter", Helvetica, Arial, sans-serif; font-size: 1.5rem; }

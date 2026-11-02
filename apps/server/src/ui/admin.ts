@@ -16,7 +16,8 @@ import { listDeliveries } from "../services/webhooks.ts";
 import { listActivity } from "../services/audit.ts";
 import { can, canManageDocument, requirePermission, ROLE_LABELS, ROLES } from "../services/permissions.ts";
 import * as team from "../services/team.ts";
-import { readLogo, removeLogo, setBannerAndAvatars, setDefaultMessage, setLogo } from "../services/branding.ts";
+import { readLogo, removeLogo, setBannerAndAvatars, setContractFont, setDefaultMessage, setLogo } from "../services/branding.ts";
+import { CONTRACT_FONTS, CONTRACT_FONT_NAMES } from "../services/fonts.ts";
 import { avatarOrigin, avatarUrl, initialsOf } from "../services/avatars.ts";
 import { renderEmail } from "../services/emailtemplate.ts";
 import { MESSAGE_VARIABLES, personalizeMessage } from "../services/messagevars.ts";
@@ -280,6 +281,7 @@ export function createAdmin(ctx: Ctx) {
         signers,
         ...(str(b, "title") ? { title: str(b, "title") } : {}),
         ...(str(b, "expires_in_days") ? { expires_in_days: Number(str(b, "expires_in_days")) } : {}),
+        ...(str(b, "font") ? { font: str(b, "font") } : {}),
       });
       return c.redirect(`/documents/${d.id}?msg=created`);
     } catch (e) {
@@ -314,7 +316,7 @@ export function createAdmin(ctx: Ctx) {
       <div class="grid">
         <div>
           ${preview && preview.errors.length ? html`<div class="notice bad"><strong>Not ready to send.</strong>${issuesList(preview.errors)}</div>` : ""}
-          <article class="doc">${raw(docHtml)}</article>
+          <article class="doc ${CONTRACT_FONTS[d.font].css}">${raw(docHtml)}</article>
         </div>
         <aside>
           ${d.status === "draft" && manage ? html`<div class="card"><h2>Send</h2>
@@ -346,6 +348,7 @@ export function createAdmin(ctx: Ctx) {
             <dt>Owner</dt><dd>${d.owner ? html`${d.owner.name} <span class="muted">(${d.owner.email})</span>` : "–"}</dd>
             <dt>Source</dt><dd>${d.template ? html`<a href="/templates/${d.template.id}">template v${d.template.version}</a>` : "inline"}</dd>
             <dt>Revision</dt><dd class="mono">${d.revision.slice(0, 20)}…</dd>
+            <dt>Font</dt><dd>${CONTRACT_FONTS[d.font].label}</dd>
             ${d.approved_by ? html`<dt>Approved by</dt><dd>${d.approved_by}</dd>` : ""}
             ${d.message ? html`<dt>Message</dt><dd>${d.message}</dd>` : ""}
             <dt>Created</dt><dd>${when(d.created_at)}</dd>
@@ -377,6 +380,7 @@ export function createAdmin(ctx: Ctx) {
       mode: d.source, editId: id, ...(d.source === "inline" ? { content: row.source } : { templateId: d.template!.id }),
       fields, values: d.values, signers: d.signers.map((s) => ({ key: s.key, name: s.name, email: s.email, order: s.order })), title: d.title,
       expires: d.expires_in_days,
+      font: d.font,
     }));
   });
 
@@ -396,6 +400,7 @@ export function createAdmin(ctx: Ctx) {
         ...(content !== undefined ? { content } : {}),
         ...(str(b, "title") ? { title: str(b, "title") } : {}),
         ...(str(b, "expires_in_days") ? { expires_in_days: Number(str(b, "expires_in_days")) } : {}),
+        ...(str(b, "font") ? { font: str(b, "font") } : {}),
       });
       return c.redirect(`/documents/${id}?msg=saved`);
     } catch (e) {
@@ -855,6 +860,12 @@ export function createAdmin(ctx: Ctx) {
             <label class="check"><input type="checkbox" name="avatars" ${account.config.branding.avatars ? "checked" : ""}> <span>Show avatars in emails and in this app<br><span class="small muted">Pictures come from unavatar.io${ctx.config.avatarBaseUrl !== "https://unavatar.io" ? html` through <code>${ctx.config.avatarBaseUrl}</code>` : ""}. This shares email addresses with that service, and email clients load the pictures from it. Without a picture, initials are shown.</span></span></label>
             <button class="btn primary" style="margin-top:12px">Save</button>
           </form>
+          <form method="post" action="/settings/branding/font" class="card">${csrfInput(csrf)}
+            <h2>Contract font</h2>
+            <p class="small muted">The default font family for agreements, in the PDF and on the signing page. Each document can choose its own.</p>
+            <div class="row" style="gap:12px;margin-bottom:12px">${CONTRACT_FONT_NAMES.map((f) => html`<label class="font-choice ${CONTRACT_FONTS[f].css}"><input type="radio" name="font" value="${f}" ${account.config.branding.contract_font === f ? "checked" : ""}> <span class="font-sample">Aa</span> ${CONTRACT_FONTS[f].label}</label>`)}</div>
+            <button class="btn primary">Save</button>
+          </form>
           <form method="post" action="/settings/branding/message" class="card">${csrfInput(csrf)}
             <h2>Message to signers</h2>
             <p class="small muted">The default message in every signing email. You can change it each time you send. Agents can pass their own message too.</p>
@@ -911,6 +922,16 @@ export function createAdmin(ctx: Ctx) {
     const b = (await c.req.parseBody()) as FormBody;
     try {
       await setBannerAndAvatars(ctx, c.get("user"), { banner_color: str(b, "banner_color"), avatars: str(b, "avatars") === "on" });
+      return c.redirect("/settings/branding?msg=saved");
+    } catch (e) {
+      if (!(e instanceof SignedError)) throw e;
+      return page(c, "Branding", "settings", html`<div class="notice bad">${e.message}</div><a class="btn" href="/settings/branding">Back</a>`);
+    }
+  });
+  app.post("/settings/branding/font", async (c) => {
+    const b = (await c.req.parseBody()) as FormBody;
+    try {
+      await setContractFont(ctx, c.get("user"), str(b, "font"));
       return c.redirect("/settings/branding?msg=saved");
     } catch (e) {
       if (!(e instanceof SignedError)) throw e;
@@ -1061,6 +1082,7 @@ interface DocFormState {
   signers: { key: string; name: string; email: string; order: number }[];
   title?: string;
   expires?: number;
+  font?: string;
 }
 
 function documentForm(csrf: string, s: DocFormState): H {
@@ -1072,6 +1094,10 @@ function documentForm(csrf: string, s: DocFormState): H {
       <div class="card"><h2>Details</h2>
         <div class="inline-fields" style="grid-template-columns:2fr 1fr"><div class="field"><label>Title <span class="muted">· optional</span></label><input type="text" name="title" value="${s.title ?? ""}"></div>
         <div class="field"><label>Expires after (days)</label><input type="number" min="1" max="365" name="expires_in_days" value="${s.expires ?? ""}" placeholder="default"></div></div>
+        <div class="field" style="max-width:260px"><label>Font</label><select name="font">
+          <option value="" ${!s.font ? "selected" : ""}>Account default</option>
+          ${CONTRACT_FONT_NAMES.map((f) => html`<option value="${f}" ${s.font === f ? "selected" : ""}>${CONTRACT_FONTS[f].label}</option>`)}
+        </select></div>
       </div>
       ${valueFields.length ? html`<div class="card"><h2>Values</h2>${valueFields.map((f) => valueInput(f, s.values[f.name!]))}</div>` : ""}
       <div class="card"><h2>Signers</h2>${signerRows(s.signers, s.mode === "template")}${s.mode === "inline" ? html`<button class="btn small" id="add-signer" style="margin-top:8px">Add signer</button>` : ""}</div>

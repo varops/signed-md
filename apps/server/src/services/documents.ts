@@ -18,6 +18,7 @@ import { randomToken, seal, sha256 } from "../crypto.ts";
 import { getAccount } from "./accounts.ts";
 import { can, requireManageDocument, requirePermission, requireReadDocument, userIdOf } from "./permissions.ts";
 import { userById } from "./team.ts";
+import { CONTRACT_FONT_NAMES, type ContractFont, fontOf, isContractFont } from "./fonts.ts";
 import { checkMessageVariables } from "./messagevars.ts";
 import { appendEvent } from "./events.ts";
 import { resolveVersionForDocument } from "./templates.ts";
@@ -45,6 +46,8 @@ export interface CreateDocumentInput {
   locale?: string;
   webhook_url?: string | null;
   metadata?: Record<string, unknown>;
+  /** "serif" or "sans-serif". Defaults to the account's contract font. */
+  font?: string;
   auto_send?: boolean;
   approved_by?: string;
 }
@@ -60,6 +63,7 @@ export interface UpdateDocumentInput {
   locale?: string;
   webhook_url?: string | null;
   metadata?: Record<string, unknown>;
+  font?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,8 +92,9 @@ function signerInputs(rows: SignerRow[]): SignerInput[] {
   return rows.map((s) => ({ key: s.key, name: s.name, email: s.email, order: Number(s.signing_order) }));
 }
 
-function settingsOf(doc: Pick<DocRow, "title" | "expires_in_days" | "timezone" | "locale">) {
-  return { title: doc.title, expires_in_days: Number(doc.expires_in_days), timezone: doc.timezone, locale: doc.locale };
+function settingsOf(doc: Pick<DocRow, "title" | "expires_in_days" | "timezone" | "locale" | "font">) {
+  // The font changes what signers see, so it is part of the revision a person approves.
+  return { title: doc.title, expires_in_days: Number(doc.expires_in_days), timezone: doc.timezone, locale: doc.locale, font: doc.font };
 }
 
 /** Re-run parsing and validation for a stored draft. Pure computation over stored inputs. */
@@ -103,7 +108,10 @@ export function prepareFrom(doc: DocRow, signers: SignerInput[]): PreparedDocume
   });
 }
 
-function checkSettings(input: { timezone?: string; locale?: string; expires_in_days?: number; webhook_url?: string | null }, ctx: Ctx): void {
+function checkSettings(input: { timezone?: string; locale?: string; expires_in_days?: number; webhook_url?: string | null; font?: string }, ctx: Ctx): void {
+  if (input.font !== undefined && !isContractFont(input.font)) {
+    throw new SignedError("INVALID_REQUEST", `font must be one of: ${CONTRACT_FONT_NAMES.join(", ")}`, [{ code: "INVALID_REQUEST", field: "font", message: "Unknown font" }]);
+  }
   if (input.timezone !== undefined) {
     try {
       new Intl.DateTimeFormat("en", { timeZone: input.timezone });
@@ -222,6 +230,8 @@ export async function createDocument(ctx: Ctx, actor: Actor, input: CreateDocume
     metadata: JSON.stringify(input.metadata ?? {}),
     webhook_url: input.webhook_url ?? null,
     owner_user_id: ownerId,
+    // Saved on the document, so a later change to the account default doesn't change it.
+    font: input.font ?? account.config.branding.contract_font,
     signer_message: null,
     created_by: actorRef(actor),
     approved_revision: null,
@@ -300,6 +310,7 @@ export async function updateDocument(ctx: Ctx, actor: Actor, id: string, input: 
       expires_in_days: input.expires_in_days ?? doc.expires_in_days,
       timezone: input.timezone ?? doc.timezone,
       locale: input.locale ?? doc.locale,
+      font: input.font ?? doc.font,
       webhook_url: input.webhook_url === undefined ? doc.webhook_url : input.webhook_url,
       metadata: input.metadata ? JSON.stringify(input.metadata) : doc.metadata,
       updated_at: now(),
@@ -357,6 +368,7 @@ export interface PreviewResult extends ValidationResult {
   signing_order: { order: number; signers: { key: string; name: string; email: string }[] }[];
   template: { id: string; version: number } | null;
   source: "template" | "inline";
+  font: ContractFont;
 }
 
 export async function previewDocument(ctx: Ctx, actor: Actor, id: string): Promise<PreviewResult> {
@@ -422,6 +434,7 @@ export async function previewDocument(ctx: Ctx, actor: Actor, id: string): Promi
     })),
     template,
     source: doc.source_kind,
+    font: fontOf(doc.font),
   };
 }
 
@@ -676,6 +689,7 @@ export interface DocumentView {
   timezone: string;
   locale: string;
   webhook_url: string | null;
+  font: ContractFont;
   message: string | null;
   metadata: Record<string, unknown>;
   archived: boolean;
@@ -750,6 +764,7 @@ export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], 
     timezone: doc.timezone,
     locale: doc.locale,
     webhook_url: doc.webhook_url,
+    font: fontOf(doc.font),
     message: doc.signer_message,
     metadata: JSON.parse(doc.metadata) as Record<string, unknown>,
     archived: doc.archived_at !== null,

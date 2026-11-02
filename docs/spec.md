@@ -190,6 +190,7 @@ Template versions are immutable once created. Approval changes only the approval
 - Metadata
 - Webhook URL override
 - Owner user ID (the sender)
+- Font family: `serif` or `sans-serif`, saved from the account default at creation unless given. The faces are set in `services/fonts.ts` (now Source Serif 4 and Inter).
 - Message to signers
 - Source: `template` or `inline`
 - Inline approval (user and timestamp), when the account requires it

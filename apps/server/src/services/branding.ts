@@ -1,6 +1,7 @@
 import { SignedError } from "@signed-md/core";
 import type { Actor, Ctx } from "../context.ts";
 import { requirePermission } from "./permissions.ts";
+import { CONTRACT_FONT_NAMES, isContractFont } from "./fonts.ts";
 import { sha256 } from "../crypto.ts";
 import { getAccount, updateAccount } from "./accounts.ts";
 import { checkMessageVariables } from "./messagevars.ts";
@@ -45,6 +46,12 @@ export async function setBannerAndAvatars(ctx: Ctx, actor: Actor, input: { banne
   if (!/^#[0-9a-f]{6}$/.test(color)) throw new SignedError("INVALID_REQUEST", "The banner colour must be a hex colour like #1c1917");
   const account = await getAccount(ctx);
   await updateAccount(ctx, actor, { config: { branding: { ...account.config.branding, banner_color: color, avatars: input.avatars } } });
+}
+
+export async function setContractFont(ctx: Ctx, actor: Actor, font: string): Promise<void> {
+  if (!isContractFont(font)) throw new SignedError("INVALID_REQUEST", `Font must be one of: ${CONTRACT_FONT_NAMES.join(", ")}`);
+  const account = await getAccount(ctx);
+  await updateAccount(ctx, actor, { config: { branding: { ...account.config.branding, contract_font: font } } });
 }
 
 export async function readLogo(ctx: Ctx): Promise<{ data: Buffer; contentType: string; sha256: string } | null> {

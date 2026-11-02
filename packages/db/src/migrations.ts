@@ -269,10 +269,18 @@ const m003: Migration = {
   },
 };
 
+/** Contract font family per document. Existing documents keep the serif look they were sent with. */
+const m004: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema.alterTable("documents").addColumn("font", "text", (c) => c.notNull().defaultTo("serif")).execute();
+  },
+};
+
 export const migrations: Record<string, Migration> = {
   "001_initial": m001,
   "002_signer_message": m002,
   "003_teams": m003,
+  "004_document_font": m004,
 };
 
 export const migrationProvider: MigrationProvider = {

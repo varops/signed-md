@@ -10,6 +10,7 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import type { SignatureValue, SignerFieldValue } from "./signing.ts";
+import { CONTRACT_FONTS, type ContractFont } from "./fonts.ts";
 
 const run = promisify(execFile);
 /** Bundled fonts (OFL): Source Serif 4 for the agreement, Inter for headings and the certificate. */
@@ -63,6 +64,8 @@ export interface PdfInput {
   /** Host of the timestamp authority, if timestamps are on. */
   timestampAuthority: string | null;
   disclosureVersion: string;
+  /** Contract body font family. */
+  font: ContractFont;
 }
 
 interface Asset {
@@ -253,7 +256,7 @@ export function buildTypst(input: PdfInput): { source: string; assets: Asset[] }
   #set text(font: "Inter", size: 7pt, fill: muted)
   ${footer} #h(1fr) Page #counter(page).display() of #counter(page).final().first()
 ])
-#set text(font: "Source Serif 4", size: 10.5pt, fill: ink, lang: "en", hyphenate: false)
+#set text(font: ${typstString(CONTRACT_FONTS[input.font].pdf)}, size: ${input.font === "sans-serif" ? "10pt" : "10.5pt"}, fill: ink, lang: "en", hyphenate: false)
 #set par(justify: false, leading: 0.72em, spacing: 1.15em)
 #show heading: set text(font: "Inter", weight: "semibold", fill: ink)
 #show heading.where(level: 1): it => block(below: 16pt)[#text(size: 19pt, it.body)]

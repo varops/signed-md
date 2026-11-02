@@ -90,6 +90,16 @@ export function createApp(ctx: Ctx) {
     return c.json({ keys: [ctx.keys.info], pdf_signing_certificates: pdfCert ? [pdfCert] : [] });
   });
 
+  // Bundled contract fonts (OFL), so the signing page matches the PDF.
+  const FONT_FILES = new Set(["Inter-Regular.ttf", "Inter-Italic.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf", "SourceSerif4-Regular.otf", "SourceSerif4-It.otf", "SourceSerif4-Semibold.otf", "SourceSerif4-Bold.otf", "SourceSerif4-BoldIt.otf"]);
+  app.get("/assets/fonts/:name", (c) => {
+    const name = c.req.param("name");
+    if (!FONT_FILES.has(name)) return c.notFound();
+    c.header("content-type", name.endsWith(".otf") ? "font/otf" : "font/ttf");
+    c.header("cache-control", "public, max-age=604800, immutable");
+    return c.body(readFileSync(join(here, "..", "assets", "fonts", name)));
+  });
+
   app.get("/assets/:name", (c) => {
     const a = assets[c.req.param("name")];
     if (!a) return c.notFound();

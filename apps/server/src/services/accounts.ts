@@ -34,6 +34,8 @@ export interface Branding {
   banner_color: string;
   /** Show people's avatars from unavatar.io (or AVATAR_BASE_URL). Off by default: it shares email addresses with that service. */
   avatars: boolean;
+  /** Default font family for contracts: "serif" or "sans-serif". Documents can override it. */
+  contract_font: "serif" | "sans-serif";
 }
 
 export interface Account {
@@ -51,7 +53,7 @@ const DEFAULTS: Omit<AccountConfig, "webhook_secret"> = {
   locale: "en-US",
   smtp: null,
   attach_zip: false,
-  branding: { logo: null, email_message: "", banner_color: "#1c1917", avatars: false },
+  branding: { logo: null, email_message: "", banner_color: "#1c1917", avatars: false, contract_font: "serif" },
 };
 
 export function newWebhookSecret(): string {

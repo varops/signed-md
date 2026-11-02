@@ -19,6 +19,7 @@ import {
 } from "../services/signing.ts";
 import { type FormBody, str } from "./forms.ts";
 import { footer, type H } from "./layout.ts";
+import { CONTRACT_FONTS } from "../services/fonts.ts";
 
 function publicShell(title: string, account: string | null, body: H, opts: { scripts?: boolean; bodyClass?: string } = {}): H {
   return html`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -164,7 +165,7 @@ function signingPage(token: string, view: SignerView, error: SignedError | null,
         ${logoVersion ? html`<div class="sign-logo"><img class="brand-logo" src="/branding/logo?v=${logoVersion}" alt="${view.account_name}"></div>` : ""}
         ${error ? html`<div class="notice bad" id="sign-error">${error.message}${error.issues.length ? html`<ul>${error.issues.map((i) => html`<li>${i.message}</li>`)}</ul>` : ""}</div>` : ""}
         <p class="small muted guide-hint">Fill in the highlighted fields in the document. Use <strong>Next</strong> to jump between them, then <strong>Finish</strong>.</p>
-        <article class="doc signing">${raw(docHtml)}</article>
+        <article class="doc signing ${CONTRACT_FONTS[view.font].css}">${raw(docHtml)}</article>
         <div class="finish-row"><button type="submit" class="btn primary">Finish</button></div>
       </main>
     </form>

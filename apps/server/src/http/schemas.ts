@@ -37,6 +37,7 @@ export const CreateDocumentSchema = z
     locale: z.string().optional().openapi({ example: "en-US" }),
     webhook_url: z.string().url().nullable().optional(),
     metadata: Metadata.optional(),
+    font: z.enum(["serif", "sans-serif"]).optional().openapi({ description: "Contract font family. Defaults to the account's setting (Settings → Branding)." }),
     auto_send: z.boolean().optional().openapi({ description: "Send immediately if valid. Only for workflows where sending was already authorised." }),
     approved_by: z.string().max(500).optional().openapi({ description: "Recorded with auto_send." }),
   })
@@ -54,6 +55,7 @@ export const UpdateDocumentSchema = z
     locale: z.string().optional(),
     webhook_url: z.string().url().nullable().optional(),
     metadata: Metadata.optional(),
+    font: z.enum(["serif", "sans-serif"]).optional(),
   })
   .openapi("UpdateDocument");
 
@@ -104,6 +106,7 @@ export const DocumentSchema = z
     timezone: z.string(),
     locale: z.string(),
     webhook_url: z.string().nullable(),
+    font: z.enum(["serif", "sans-serif"]),
     message: z.string().nullable(),
     metadata: z.record(z.string(), z.unknown()),
     archived: z.boolean(),
@@ -133,6 +136,7 @@ export const PreviewSchema = ValidationSchema.extend({
   signing_order: z.array(z.object({ order: z.number(), signers: z.array(z.object({ key: z.string(), name: z.string(), email: z.string() })) })),
   template: z.object({ id: z.string(), version: z.number() }).nullable(),
   source: z.enum(["template", "inline"]),
+  font: z.enum(["serif", "sans-serif"]),
 }).openapi("Preview");
 
 export const TemplateCreateSchema = z

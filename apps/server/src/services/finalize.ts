@@ -17,6 +17,7 @@ import { getAccount } from "./accounts.ts";
 import { appendEvent, listEvents } from "./events.ts";
 import { loadDocument, loadSigners, lockDocument } from "./documents.ts";
 import { renderPdf } from "./pdf.ts";
+import { fontOf } from "./fonts.ts";
 import { certificatePem, pdfIdentity, signPdf } from "./pdfsign.ts";
 import { requestTimestamp } from "./tsa.ts";
 import { createHash } from "node:crypto";
@@ -100,6 +101,7 @@ export async function finalizeDocument(ctx: Ctx, documentId: string): Promise<vo
     sealedBy: (/CN=([^\n,]+)/.exec(identity.chain[0]!.subject)?.[1] ?? identity.chain[0]!.subject).trim(),
     timestampAuthority: tsaReachable && ctx.config.tsaUrl ? new URL(ctx.config.tsaUrl).host : null,
     disclosureVersion: DISCLOSURE_VERSION,
+    font: fontOf(doc.font),
     completedAt: doc.completed_at ?? finalizedAt,
     accountName: account.name,
     publicUrl: ctx.config.publicUrl,

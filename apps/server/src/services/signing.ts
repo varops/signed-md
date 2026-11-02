@@ -6,6 +6,7 @@ import { sha256 } from "../crypto.ts";
 import { appendEvent } from "./events.ts";
 import { activateNextGroup, type DocRow, loadDocument, loadSigners, lockDocument, type SignerRow } from "./documents.ts";
 import { emitWebhook } from "./webhooks.ts";
+import { type ContractFont, fontOf } from "./fonts.ts";
 
 /** Short summary shown above the consent checkbox. */
 export const CONSENT_TEXT =
@@ -119,6 +120,7 @@ export interface SignerView {
   signer: { key: string; name: string; email: string };
   /** True once the signer agreed to sign electronically (the "Let's start" step). */
   consented: boolean;
+  font: ContractFont;
   /** Resolved Markdown with signer placeholders, plus everything needed to render it. */
   content: string;
   defs: FieldDef[];
@@ -178,6 +180,7 @@ async function buildSignerView(ctx: Ctx, doc: DocRow, signer: SignerRow): Promis
       : null,
     signer: { key: signer.key, name: signer.name, email: signer.email },
     consented: signer.consented_at !== null,
+    font: fontOf(doc.font),
     content: doc.content,
     defs,
     completed: Object.fromEntries(completed),

@@ -29,7 +29,7 @@ Follow these steps in order. Do not skip the approval step.
    - `{{signer.field:type}}` placeholders are **signer fields**. Signers fill them in. Each signer key (`client`, `provider`, …) needs a signer.
    - Front matter `rules` (`minimum`, `allowed_values`, …) are enforced by the server.
 3. **Collect missing facts from the user.** Never invent signer names or emails. Ask.
-4. **Create the draft.** `signed_create_document` (REST `POST /v1/documents` with an `Idempotency-Key`). Currency values are decimal strings (`"1000.00"`), dates are `YYYY-MM-DD`.
+4. **Create the draft.** `signed_create_document` (REST `POST /v1/documents` with an `Idempotency-Key`). Currency values are decimal strings (`"1000.00"`), dates are `YYYY-MM-DD`. Pass `font: "serif"` or `"sans-serif"` only if the user asks; otherwise the account default applies.
 5. **Fix validation errors.** If `validation.valid` is false, read each error's `code` and `field`, fix it with `signed_update_document` (REST `PATCH /v1/documents/{id}`), and check again. Never work around a constraint. If the user's terms break a rule (for example, a fee below the minimum), tell them.
 6. **Preview.** `signed_preview_document` (REST `GET /v1/documents/{id}/preview`). It returns the agreement Markdown, the values, the signers, the signing order, and a `revision`.
 7. **Ask for approval.** Show the user a short summary: title, the material commercial terms (fees, dates, notice periods), each signer's name and email, and the signing order. Ask them to approve sending. Do not treat silence or a successful preview as approval.

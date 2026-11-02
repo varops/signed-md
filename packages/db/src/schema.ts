@@ -141,6 +141,8 @@ export interface DocumentTable {
   webhook_url: string | null;
   /** The user who owns (sent) the document. */
   owner_user_id: string | null;
+  /** Contract font family: "serif" or "sans-serif". */
+  font: string;
   /** Message shown to signers in the signing email. Set when the document is sent. */
   signer_message: string | null;
   created_by: string;
