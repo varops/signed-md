@@ -108,7 +108,19 @@ POST   /v1/documents/{id}/unarchive
 GET    /v1/documents/{id}/artifacts
 ```
 
-`GET /v1/documents` hides archived documents unless `?archived=true` is passed. The same applies to templates.
+`GET /v1/documents` hides archived documents unless `?archived=true` is passed. The same applies to templates. `?mine=true` returns only the API key owner's documents.
+
+### Permissions
+
+Every API key belongs to a person on the team and acts with that person's role:
+
+| Role | Through the API |
+|---|---|
+| Owner, Administrator | All documents; templates; webhooks and settings. |
+| Member | Creates and sends documents, and sees only their own. Creates templates (pending approval). |
+| Viewer | Read-only. |
+
+Documents a key can't read return `DOCUMENT_NOT_FOUND`. Actions a role can't take return `PERMISSION_DENIED`. Template approval is never available through the API.
 
 There is no `DELETE` endpoint for any resource.
 

@@ -1,5 +1,6 @@
 import { SignedError } from "@signed-md/core";
-import type { Ctx } from "../context.ts";
+import type { Actor, Ctx } from "../context.ts";
+import { requirePermission } from "./permissions.ts";
 import { sha256 } from "../crypto.ts";
 import { getAccount, updateAccount } from "./accounts.ts";
 import { checkMessageVariables } from "./messagevars.ts";
@@ -13,7 +14,8 @@ function sniff(bytes: Uint8Array): "image/png" | "image/jpeg" | null {
   return null;
 }
 
-export async function setLogo(ctx: Ctx, bytes: Uint8Array): Promise<void> {
+export async function setLogo(ctx: Ctx, actor: Actor, bytes: Uint8Array): Promise<void> {
+  requirePermission(actor, "settings.manage");
   if (bytes.length === 0) throw new SignedError("INVALID_REQUEST", "Choose a logo file to upload");
   if (bytes.length > MAX_LOGO_BYTES) throw new SignedError("INVALID_REQUEST", "The logo must be at most 300 KB");
   const type = sniff(bytes);
@@ -23,26 +25,26 @@ export async function setLogo(ctx: Ctx, bytes: Uint8Array): Promise<void> {
   const path = `branding/logo-${hash.slice(0, 16)}.${type === "image/png" ? "png" : "jpg"}`;
   await ctx.storage.write(path, bytes);
   const account = await getAccount(ctx);
-  await updateAccount(ctx, { config: { branding: { ...account.config.branding, logo: { path, content_type: type, sha256: hash } } } });
+  await updateAccount(ctx, actor, { config: { branding: { ...account.config.branding, logo: { path, content_type: type, sha256: hash } } } });
 }
 
-export async function removeLogo(ctx: Ctx): Promise<void> {
+export async function removeLogo(ctx: Ctx, actor: Actor): Promise<void> {
   const account = await getAccount(ctx);
-  await updateAccount(ctx, { config: { branding: { ...account.config.branding, logo: null } } });
+  await updateAccount(ctx, actor, { config: { branding: { ...account.config.branding, logo: null } } });
 }
 
-export async function setDefaultMessage(ctx: Ctx, message: string): Promise<void> {
+export async function setDefaultMessage(ctx: Ctx, actor: Actor, message: string): Promise<void> {
   if (message.length > 2000) throw new SignedError("INVALID_REQUEST", "The message must be at most 2000 characters");
   checkMessageVariables(message);
   const account = await getAccount(ctx);
-  await updateAccount(ctx, { config: { branding: { ...account.config.branding, email_message: message.trim() } } });
+  await updateAccount(ctx, actor, { config: { branding: { ...account.config.branding, email_message: message.trim() } } });
 }
 
-export async function setBannerAndAvatars(ctx: Ctx, input: { banner_color: string; avatars: boolean }): Promise<void> {
+export async function setBannerAndAvatars(ctx: Ctx, actor: Actor, input: { banner_color: string; avatars: boolean }): Promise<void> {
   const color = input.banner_color.trim().toLowerCase();
   if (!/^#[0-9a-f]{6}$/.test(color)) throw new SignedError("INVALID_REQUEST", "The banner colour must be a hex colour like #1c1917");
   const account = await getAccount(ctx);
-  await updateAccount(ctx, { config: { branding: { ...account.config.branding, banner_color: color, avatars: input.avatars } } });
+  await updateAccount(ctx, actor, { config: { branding: { ...account.config.branding, banner_color: color, avatars: input.avatars } } });
 }
 
 export async function readLogo(ctx: Ctx): Promise<{ data: Buffer; contentType: string; sha256: string } | null> {

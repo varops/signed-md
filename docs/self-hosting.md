@@ -76,8 +76,8 @@ Pull the new image and restart. Migrations run at start. Back up first.
 For automated installs:
 
 ```bash
-node apps/server/src/cli.ts setup --account "Acme" --email admin@acme.com --password '...'
-node apps/server/src/cli.ts api-key --label "Sales agent"
+node apps/server/src/cli.ts setup --account "Acme" --name "Ada Lovelace" --email admin@acme.com --password '...'
+node apps/server/src/cli.ts api-key --label "Sales agent" --user admin@acme.com
 ```
 
 ## Avatars

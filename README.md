@@ -21,7 +21,8 @@ An independent open-source product by VarOps.
 - **Approved terms stay approved.** Agents can draft templates, but only a person can approve them, in the web UI. The server enforces each template's limits (minimum fee, allowed notice periods, …).
 - **Verifiable packages.** Each completed agreement is a ZIP with the signed Markdown, a PDF, the evidence log, and a signed manifest. Verify it without contacting the server.
 - **Runs anywhere.** One Docker container, SQLite, local disk. PostgreSQL with one setting. SMTP optional.
-- **Never deletes.** Documents and templates are revoked or archived, never deleted.
+- **Built for teams.** Invite people as owners, administrators, members, or viewers. Every action and API key is tied to a person.
+- **Never deletes.** Documents and templates are revoked or archived, never deleted. People are deactivated.
 - **No generative AI.** Signed.md is not an AI product. The agent brings the intelligence; Signed.md does the execution.
 
 ## Try it

@@ -108,21 +108,42 @@ Fields:
 
 ### User
 
-v1.0 has one administrator.
-
-Fields:
+People on the team. Never deleted; deactivated instead.
 
 - ID
 - Account ID
 - Email
+- Name
+- Role: `owner`, `admin`, `member`, or `viewer`
 - Password hash
-- Status
+- Status: `active` or `disabled`
+- Invited by
+- Last login timestamp
+- Deactivated timestamp
+
+### Invitation
+
+- ID
+- Email and role
+- Token hash (the raw token only exists in the email)
+- Invited by
+- Created, expires (7 days), accepted, and revoked timestamps
+
+### Audit event
+
+Team, settings, API key, and template events for the activity history. Document events stay in the per-document hash chain.
+
+- ID
+- Actor reference and display label
+- Type (for example `team.invited`, `team.role_changed`, `settings.updated`, `template.approved`)
+- Details (JSON)
+- Created timestamp
 
 ### API key
 
 - ID
 - Account ID
-- User ID (nullable in v1.0, required from v1.1)
+- User ID (the key acts as this person, with their current role)
 - Key hash
 - Label
 - Scope
@@ -168,6 +189,8 @@ Template versions are immutable once created. Approval changes only the approval
 - Timezone
 - Metadata
 - Webhook URL override
+- Owner user ID (the sender)
+- Message to signers
 - Source: `template` or `inline`
 - Inline approval (user and timestamp), when the account requires it
 - Approved revision and approved by
@@ -510,22 +533,21 @@ The final PDF includes signature representations, a signing summary page, and a 
 
 No external resources or fonts are fetched during rendering. Fonts are bundled in the container.
 
-## 14. v1.1 migration
+## 14. Teams and v1.1
 
-The account and user tables already exist in v1.0.
+Teams shipped in v1.0 (migration `003_teams`). Upgrading an earlier install keeps everything:
 
-v1.1 introduces:
+- The existing administrator becomes the owner.
+- Existing documents are owned by them.
+- Existing API keys are assigned to them.
 
-- Multiple users.
-- OpenID Connect login (Google, Microsoft, generic OIDC), configured by environment variables. New identities can only join through an invitation or a matching allowed email domain. Password login remains available.
-- Invitations.
-- Roles.
-- User permissions.
-- Per-user API keys.
-- Team activity.
-- Template approval (and inline document approval) restricted to the `owner` role, still UI-only.
+### Permissions
 
-Existing installations must migrate without losing documents, keys, or signing evidence. Existing API keys are assigned to the original administrator.
+All checks live in `services/permissions.ts`. Services call `requirePermission`, `requireReadDocument`, and `requireManageDocument`, so the web UI, REST, and MCP share the same rules. API keys act with their owner's current role, and stop working when the owner is deactivated.
+
+### v1.1
+
+v1.1 adds OpenID Connect login (Google, Microsoft, generic OIDC), configured by environment variables. New identities can only join through an invitation or a matching allowed email domain. Password login remains available.
 
 ## 15. Operational requirements
 

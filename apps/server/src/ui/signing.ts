@@ -62,7 +62,7 @@ function introPage(token: string, view: SignerView, error: string | null): H {
     <main class="sign-wrap">
       <div class="card intro-card">
         <div class="intro-icon" aria-hidden="true">✍︎</div>
-        <p class="muted" style="margin-bottom:4px">${view.account_name} sent you a document to review and sign</p>
+        <p class="muted" style="margin-bottom:4px">${view.sender_name ? `${view.sender_name} at ${view.account_name}` : view.account_name} sent you a document to review and sign</p>
         <h1>${view.title}</h1>
         <dl class="kv small" style="margin:14px 0 20px"><dt>For</dt><dd>${view.signer.name} (${view.signer.email})</dd>
           <dt>Fields</dt><dd>${view.fields.length} to complete</dd>

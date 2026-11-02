@@ -13,6 +13,9 @@ import { listEvents } from "../services/events.ts";
 import { listArtifacts } from "../services/finalize.ts";
 import * as tpl from "../services/templates.ts";
 import { listDeliveries } from "../services/webhooks.ts";
+import { listActivity } from "../services/audit.ts";
+import { can, canManageDocument, requirePermission, ROLE_LABELS, ROLES } from "../services/permissions.ts";
+import * as team from "../services/team.ts";
 import { readLogo, removeLogo, setBannerAndAvatars, setDefaultMessage, setLogo } from "../services/branding.ts";
 import { avatarOrigin, avatarUrl, initialsOf } from "../services/avatars.ts";
 import { renderEmail } from "../services/emailtemplate.ts";
@@ -35,6 +38,9 @@ const MESSAGES: Record<string, ["ok" | "bad" | "warn" | "info", string]> = {
   created: ["ok", "Created."],
   password: ["ok", "Password changed."],
   testmail: ["ok", "Test email sent."],
+  invited: ["ok", "Invitation sent."],
+  team: ["ok", "Team updated."],
+  profile: ["ok", "Profile saved."],
   logo: ["ok", "Logo updated."],
   nologo: ["ok", "Logo removed."],
 };
@@ -72,12 +78,22 @@ export function createAdmin(ctx: Ctx) {
   const app = new Hono<Env>();
   const secure = ctx.config.publicUrl.startsWith("https://");
 
+  // Permission and not-found errors become pages, not JSON.
+  app.onError((e, c) => {
+    if (e instanceof SignedError && ["PERMISSION_DENIED", "NOT_FOUND", "DOCUMENT_NOT_FOUND", "TEMPLATE_NOT_FOUND"].includes(e.code)) {
+      const user = c.get("user");
+      const body = html`<div class="notice bad">${e.message}</div><a class="btn" href="/documents">Back to documents</a>`;
+      return c.html(shell({ title: "Not allowed", ...(user ? { user: { email: user.label, name: user.name, role: user.role } } : {}), csrf: c.get("csrf") ?? "" }, body), e.code === "PERMISSION_DENIED" ? 403 : 404);
+    }
+    throw e;
+  });
+
   const flash = (c: Context) => {
     const m = MESSAGES[c.req.query("msg") ?? ""];
     return m ? { kind: m[0], text: m[1] } : null;
   };
   const page = (c: Context<Env>, title: string, active: string, body: H, extra?: { kind: "ok" | "bad" | "warn" | "info"; text: string } | null) =>
-    c.html(shell({ title, user: { email: c.get("user").label }, csrf: c.get("csrf"), active, flash: extra ?? flash(c) }, body));
+    c.html(shell({ title, user: { email: c.get("user").label, name: c.get("user").name, role: c.get("user").role }, csrf: c.get("csrf"), active, flash: extra ?? flash(c) }, body));
 
   // ---- Public: setup and login ----
 
@@ -91,7 +107,7 @@ export function createAdmin(ctx: Ctx) {
     if (await isSetUp(ctx)) return c.redirect("/login");
     const b = (await c.req.parseBody()) as FormBody;
     try {
-      await setup(ctx, { accountName: str(b, "account"), email: str(b, "email"), password: str(b, "password") });
+      await setup(ctx, { accountName: str(b, "account"), name: str(b, "name"), email: str(b, "email"), password: str(b, "password") });
       const s = await login(ctx, str(b, "email"), str(b, "password"));
       setCookie(c, COOKIE, s!.token, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: 14 * 86400 });
       return c.redirect("/documents?welcome=1");
@@ -112,11 +128,33 @@ export function createAdmin(ctx: Ctx) {
     return c.redirect("/documents");
   });
 
+  // ---- Public: accept an invitation ----
+
+  app.get("/invite/:token", async (c) => {
+    const inv = await team.findInvitation(ctx, c.req.param("token"));
+    if (!inv) return c.html(shell({ title: "Invitation" }, html`<div class="narrow" style="margin:60px auto"><div class="card"><h1>Invitation not valid</h1><p class="muted">This invitation has expired, was revoked, or was already used. Ask for a new one.</p><a class="btn" href="/login">Log in</a></div></div>`), 404);
+    return c.html(invitePage(inv, null));
+  });
+  app.post("/invite/:token", loginLimit, async (c) => {
+    const token = c.req.param("token");
+    const b = (await c.req.parseBody()) as FormBody;
+    const inv = await team.findInvitation(ctx, token);
+    if (!inv) return c.redirect(`/invite/${token}`);
+    try {
+      const session = await team.acceptInvitation(ctx, token, { name: str(b, "name"), password: str(b, "password") });
+      setCookie(c, COOKIE, session, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: 14 * 86400 });
+      return c.redirect("/documents?welcome=1");
+    } catch (e) {
+      if (!(e instanceof SignedError)) throw e;
+      return c.html(invitePage(inv, e.message, str(b, "name")), 422);
+    }
+  });
+
   // ---- Session + CSRF for everything else ----
 
   const PUBLIC = ["/setup", "/login"];
   app.use("*", async (c, next) => {
-    if (PUBLIC.includes(c.req.path)) return next();
+    if (PUBLIC.includes(c.req.path) || c.req.path.startsWith("/invite/")) return next();
     const token = getCookie(c, COOKIE);
     const user = await sessionActor(ctx, token);
     if (!user) {
@@ -148,7 +186,10 @@ export function createAdmin(ctx: Ctx) {
     const archived = c.req.query("archived") === "1";
     const status = c.req.query("status") || undefined;
     const q = c.req.query("q") || undefined;
-    const list = await docs.listDocuments(ctx, { archived, ...(status ? { status } : {}), ...(q ? { q } : {}), limit: 100 });
+    const user = c.get("user");
+    const seesAll = can(user, "documents.read_all");
+    const mine = !seesAll || c.req.query("mine") === "1";
+    const list = await docs.listDocuments(ctx, user, { archived, mine, ...(status ? { status } : {}), ...(q ? { q } : {}), limit: 100 });
     const avatarsOn = (await getAccount(ctx)).config.branding.avatars;
     const welcome = c.req.query("welcome") === "1";
     return page(
@@ -156,27 +197,30 @@ export function createAdmin(ctx: Ctx) {
       "Documents",
       "documents",
       html`
-      ${welcome ? html`<div class="notice info"><strong>Welcome to Signed.md.</strong> Next steps: create a template, then an API key in Settings so your agent can send agreements.</div>` : ""}
-      <div class="page-head"><h1>Documents</h1><div class="row"><a class="btn primary" href="/documents/new">New document</a></div></div>
+      ${welcome ? html`<div class="notice info"><strong>Welcome to Signed.md.</strong> ${user.role === "owner" ? "Next steps: create a template, invite your team, and create an API key in Settings so your agent can send agreements." : user.role === "viewer" ? "You can read every document and template." : "Create an API key in Settings to connect your agent, or start a document from an approved template."}</div>` : ""}
+      <div class="page-head"><h1>Documents</h1><div class="row">${can(user, "documents.create") ? html`<a class="btn primary" href="/documents/new">New document</a>` : ""}</div></div>
+      ${seesAll ? html`<nav class="tabs-nav"><a href="/documents${archived ? "?archived=1" : ""}" class="${mine ? "" : "active"}">All documents</a><a href="/documents?mine=1${archived ? "&archived=1" : ""}" class="${mine ? "active" : ""}">Mine</a></nav>` : ""}
       <form class="row" method="get" style="margin-bottom:14px">
         <input type="text" name="q" value="${q ?? ""}" placeholder="Search title, signer name or email" style="max-width:320px">
         <select name="status" style="max-width:200px"><option value="">Any status</option>
           ${["draft", "sent", "partially_signed", "signed", "finalized", "declined", "expired", "revoked"].map((s) => html`<option value="${s}" ${s === status ? "selected" : ""}>${s.replace("_", " ")}</option>`)}
         </select>
         ${archived ? html`<input type="hidden" name="archived" value="1">` : ""}
+        ${mine && seesAll ? html`<input type="hidden" name="mine" value="1">` : ""}
         <button class="btn">Filter</button>
         <a href="${archived ? "/documents" : "/documents?archived=1"}" class="small">${archived ? "Back to active documents" : "View archive"}</a>
       </form>
       <div class="card table-wrap" style="padding:0">
       ${list.data.length === 0
         ? html`<div class="empty">${archived ? "Nothing archived." : html`No documents yet. <a href="/documents/new">Create one</a> or connect an agent.`}</div>`
-        : html`<table class="list"><thead><tr><th>Title</th><th>Status</th><th>Signers</th><th>Created</th></tr></thead><tbody>
+        : html`<table class="list"><thead><tr><th>Title</th><th>Status</th><th>Signers</th>${seesAll && !mine ? html`<th>Owner</th>` : ""}<th>Created</th></tr></thead><tbody>
           ${list.data.map((d) => {
             const signed = d.signers.filter((s) => s.status === "signed").length;
             return html`<tr>
               <td><a href="/documents/${d.id}"><strong>${d.title}</strong></a><div class="small muted mono">${d.id}</div></td>
               <td>${badge(d.status)}</td>
               <td><div class="avatar-stack">${d.signers.map((s) => avatar(ctx, avatarsOn, s.name, s.email, "sm"))}</div><div class="small muted">${signed} of ${d.signers.length} signed</div></td>
+              ${seesAll && !mine ? html`<td>${d.owner ? html`<div class="row" style="gap:8px;flex-wrap:nowrap">${avatar(ctx, avatarsOn, d.owner.name, d.owner.email, "sm")}<span class="small">${d.owner.name}</span></div>` : html`<span class="muted">–</span>`}</td>` : ""}
               <td class="nowrap">${when(d.created_at)}</td></tr>`;
           })}
         </tbody></table>`}
@@ -185,6 +229,7 @@ export function createAdmin(ctx: Ctx) {
   });
 
   app.get("/documents/new", async (c) => {
+    requirePermission(c.get("user"), "documents.create");
     const templateId = c.req.query("template");
     if (templateId) {
       const v = await tpl.resolveVersionForDocument(ctx, templateId).catch((e: Error) => e);
@@ -246,11 +291,13 @@ export function createAdmin(ctx: Ctx) {
 
   app.get("/documents/:id", async (c) => {
     const id = c.req.param("id");
-    const d = await docs.getDocument(ctx, id);
+    const user = c.get("user");
+    const d = await docs.getDocument(ctx, user, id);
+    const manage = canManageDocument(user, { owner_user_id: d.owner?.id ?? null });
     const account = await getAccount(ctx);
     const events = await listEvents(ctx.db, id);
-    const preview = d.status === "draft" ? await docs.previewDocument(ctx, id) : null;
-    const artifacts = d.status === "finalized" ? await listArtifacts(ctx, id, 300) : [];
+    const preview = d.status === "draft" ? await docs.previewDocument(ctx, user, id) : null;
+    const artifacts = d.status === "finalized" ? await listArtifacts(ctx, user, id, 300) : [];
     const docHtml = preview ? preview.html : await completedHtml(ctx, id);
     const csrf = c.get("csrf");
     const active = d.status === "sent" || d.status === "partially_signed";
@@ -261,8 +308,8 @@ export function createAdmin(ctx: Ctx) {
       "documents",
       html`<div class="page-head"><div><h1>${d.title}</h1><div class="row small muted"><span class="mono">${d.id}</span> ${badge(d.status)} ${d.archived ? badge("archived") : ""} ${d.source === "inline" ? html`<span class="badge warn">inline</span>` : ""}</div></div>
         <div class="row">
-          ${d.status === "draft" ? html`<a class="btn" href="/documents/${d.id}/edit">Edit</a>` : ""}
-          <form method="post" action="/documents/${d.id}/${d.archived ? "unarchive" : "archive"}" class="inline">${csrfInput(csrf)}<button class="btn">${d.archived ? "Unarchive" : "Archive"}</button></form>
+          ${manage && d.status === "draft" ? html`<a class="btn" href="/documents/${d.id}/edit">Edit</a>` : ""}
+          ${manage ? html`<form method="post" action="/documents/${d.id}/${d.archived ? "unarchive" : "archive"}" class="inline">${csrfInput(csrf)}<button class="btn">${d.archived ? "Unarchive" : "Archive"}</button></form>` : ""}
         </div></div>
       <div class="grid">
         <div>
@@ -270,11 +317,13 @@ export function createAdmin(ctx: Ctx) {
           <article class="doc">${raw(docHtml)}</article>
         </div>
         <aside>
-          ${d.status === "draft" ? html`<div class="card"><h2>Send</h2>
+          ${d.status === "draft" && manage ? html`<div class="card"><h2>Send</h2>
             ${preview!.valid
               ? inlineNeedsApproval
-                ? html`<p>This account requires a person to approve inline documents.</p>
+                ? can(user, "inline.approve")
+                  ? html`<p>This account requires an owner to approve inline documents.</p>
                   <form method="post" action="/documents/${d.id}/approve-inline">${csrfInput(csrf)}<input type="hidden" name="revision" value="${preview!.revision}"><button class="btn block">Approve this revision</button></form>`
+                  : html`<p class="muted">This account requires an owner to approve inline documents before they're sent. Ask an owner to open this document.</p>`
                 : html`<p class="small muted">You are approving revision <code>${preview!.revision.slice(0, 16)}…</code>. Any edit needs a new approval.</p>
                   <form method="post" action="/documents/${d.id}/send" data-confirm="Send this document for signature now?">${csrfInput(csrf)}
                     <input type="hidden" name="approved_revision" value="${preview!.revision}">
@@ -290,10 +339,11 @@ export function createAdmin(ctx: Ctx) {
             ${d.signers.map((s) => html`<div class="signer-item"><div class="spread"><div class="row" style="gap:10px;flex-wrap:nowrap">${avatar(ctx, account.config.branding.avatars, s.name, s.email)}<strong>${s.name}</strong></div>${badge(s.status)}</div>
               <div class="small muted" style="margin-left:46px">${s.email} · <code>${s.key}</code> · order ${s.order}</div>
               ${s.decline_reason ? html`<div class="small">Reason: “${s.decline_reason}”</div>` : ""}
-              ${active && (s.status === "notified" || s.status === "viewed") ? html`<form method="post" action="/documents/${d.id}/signers/${s.key}/resend" class="inline">${csrfInput(csrf)}<button class="btn small" style="margin-top:6px">Resend link</button></form>` : ""}
+              ${manage && active && (s.status === "notified" || s.status === "viewed") ? html`<form method="post" action="/documents/${d.id}/signers/${s.key}/resend" class="inline">${csrfInput(csrf)}<button class="btn small" style="margin-top:6px">Resend link</button></form>` : ""}
             </div>`)}
           </div>
           <div class="card"><h2>Details</h2><dl class="kv small">
+            <dt>Owner</dt><dd>${d.owner ? html`${d.owner.name} <span class="muted">(${d.owner.email})</span>` : "–"}</dd>
             <dt>Source</dt><dd>${d.template ? html`<a href="/templates/${d.template.id}">template v${d.template.version}</a>` : "inline"}</dd>
             <dt>Revision</dt><dd class="mono">${d.revision.slice(0, 20)}…</dd>
             ${d.approved_by ? html`<dt>Approved by</dt><dd>${d.approved_by}</dd>` : ""}
@@ -305,7 +355,7 @@ export function createAdmin(ctx: Ctx) {
             ${d.revoked_at ? html`<dt>Revoked</dt><dd>${when(d.revoked_at)}${d.revoke_reason ? html` – ${d.revoke_reason}` : ""}</dd>` : ""}
             ${Object.keys(d.metadata).length ? html`<dt>Metadata</dt><dd class="mono">${JSON.stringify(d.metadata)}</dd>` : ""}
           </dl></div>
-          ${active ? html`<div class="card"><h2>Revoke</h2><p class="small muted">Signing links stop working at once. To fix a mistake, revoke and create a new document.</p>
+          ${active && manage ? html`<div class="card"><h2>Revoke</h2><p class="small muted">Signing links stop working at once. To fix a mistake, revoke and create a new document.</p>
             <form method="post" action="/documents/${d.id}/revoke" data-confirm="Revoke this document? This cannot be undone.">${csrfInput(csrf)}
             <div class="field"><input type="text" name="reason" placeholder="Reason (optional)"></div><button class="btn danger block">Revoke</button></form></div>` : ""}
           <div class="card"><h2>Evidence log</h2><ul class="timeline">
@@ -319,8 +369,8 @@ export function createAdmin(ctx: Ctx) {
 
   app.get("/documents/:id/edit", async (c) => {
     const id = c.req.param("id");
-    const d = await docs.getDocument(ctx, id);
-    if (d.status !== "draft") return c.redirect(`/documents/${id}`);
+    const d = await docs.getDocument(ctx, c.get("user"), id);
+    if (d.status !== "draft" || !canManageDocument(c.get("user"), { owner_user_id: d.owner?.id ?? null })) return c.redirect(`/documents/${id}`);
     const row = await docs.loadDocument(ctx.db, id);
     const fields = parseTemplate(row.source).fields;
     return page(c, `Edit ${d.title}`, "documents", documentForm(c.get("csrf"), {
@@ -401,8 +451,8 @@ export function createAdmin(ctx: Ctx) {
     const list = await tpl.listTemplates(ctx, { archived });
     const pending = list.filter((t) => t.versions.some((v) => v.approval_status === "pending_approval"));
     return page(c, "Templates", "templates", html`
-      <div class="page-head"><h1>Templates</h1><a class="btn primary" href="/templates/new">New template</a></div>
-      ${pending.length && !archived ? html`<div class="notice warn"><strong>${pending.length} template${pending.length > 1 ? "s" : ""} waiting for approval.</strong> Agents can draft templates, but only you can approve them.</div>` : ""}
+      <div class="page-head"><h1>Templates</h1>${can(c.get("user"), "templates.create") ? html`<a class="btn primary" href="/templates/new">New template</a>` : ""}</div>
+      ${pending.length && !archived ? html`<div class="notice warn"><strong>${pending.length} template${pending.length > 1 ? "s" : ""} waiting for approval.</strong> ${can(c.get("user"), "templates.approve") ? "Agents and teammates can draft templates, but only an owner can approve them." : "An owner must approve them before they can be used."}</div>` : ""}
       <div class="card table-wrap" style="padding:0">
       ${list.length === 0 ? html`<div class="empty">${archived ? "Nothing archived." : html`No templates yet. <a href="/templates/new">Create your first template</a>.`}</div>`
         : html`<table class="list"><thead><tr><th>Name</th><th>Approved</th><th>Latest</th><th>Created via</th></tr></thead><tbody>
@@ -415,7 +465,10 @@ export function createAdmin(ctx: Ctx) {
       <a class="small" href="${archived ? "/templates" : "/templates?archived=1"}">${archived ? "Back to active templates" : "View archive"}</a>`);
   });
 
-  app.get("/templates/new", (c) => page(c, "New template", "templates", templateForm(c.get("csrf"), { name: "", description: "", source: EXAMPLE_TEMPLATE })));
+  app.get("/templates/new", (c) => {
+    requirePermission(c.get("user"), "templates.create");
+    return page(c, "New template", "templates", templateForm(c.get("csrf"), { name: "", description: "", source: EXAMPLE_TEMPLATE }, can(c.get("user"), "templates.approve")));
+  });
 
   app.post("/templates", async (c) => {
     const b = (await c.req.parseBody()) as FormBody;
@@ -425,7 +478,7 @@ export function createAdmin(ctx: Ctx) {
       return c.redirect(`/templates/${t.id}?msg=created`);
     } catch (e) {
       if (!(e instanceof SignedError)) throw e;
-      return page(c, "New template", "templates", html`<div class="notice bad">${e.message}${issuesList(e.issues)}</div>${templateForm(c.get("csrf"), input)}`);
+      return page(c, "New template", "templates", html`<div class="notice bad">${e.message}${issuesList(e.issues)}</div>${templateForm(c.get("csrf"), input, can(c.get("user"), "templates.approve"))}`);
     }
   });
 
@@ -440,12 +493,12 @@ export function createAdmin(ctx: Ctx) {
     return page(c, t.name, "templates", html`
       <div class="page-head"><div><h1>${t.name}</h1><div class="small muted">${t.description}</div></div>
         <div class="row">
-          ${t.approved_version ? html`<a class="btn primary" href="/documents/new?template=${t.id}">Use template</a>` : ""}
-          <a class="btn" href="/templates/${t.id}/edit">New version</a>
-          <form method="post" action="/templates/${t.id}/${t.archived ? "unarchive" : "archive"}" class="inline">${csrfInput(csrf)}<button class="btn">${t.archived ? "Unarchive" : "Archive"}</button></form>
+          ${t.approved_version && can(c.get("user"), "documents.create") ? html`<a class="btn primary" href="/documents/new?template=${t.id}">Use template</a>` : ""}
+          ${can(c.get("user"), "templates.create") ? html`<a class="btn" href="/templates/${t.id}/edit">New version</a>` : ""}
+          ${can(c.get("user"), "templates.manage") ? html`<form method="post" action="/templates/${t.id}/${t.archived ? "unarchive" : "archive"}" class="inline">${csrfInput(csrf)}<button class="btn">${t.archived ? "Unarchive" : "Archive"}</button></form>` : ""}
         </div></div>
       ${v.approval_status === "pending_approval" ? html`<div class="notice warn"><div class="spread"><div><strong>Version ${v.version} is waiting for approval.</strong> Created by <strong>${names.get(v.created_by) ?? v.created_by}</strong>. Read it carefully: once approved, agents can send it.</div>
-        <form method="post" action="/templates/${t.id}/versions/${v.version}/approve" data-confirm="Approve version ${v.version}? Agents will be able to send it.">${csrfInput(csrf)}<button class="btn primary">Approve version ${v.version}</button></form></div></div>` : ""}
+        ${can(c.get("user"), "templates.approve") ? html`<form method="post" action="/templates/${t.id}/versions/${v.version}/approve" data-confirm="Approve version ${v.version}? Agents will be able to send it.">${csrfInput(csrf)}<button class="btn primary">Approve version ${v.version}</button></form>` : html`<span class="small">Only an owner can approve it.</span>`}</div></div>` : ""}
       <div class="grid">
         <div>
           <article class="doc">${raw(renderHtml(body, {
@@ -477,7 +530,8 @@ export function createAdmin(ctx: Ctx) {
     const id = c.req.param("id");
     const t = await tpl.getTemplate(ctx, id);
     const v = await tpl.getTemplateVersion(ctx, id);
-    return page(c, `Edit ${t.name}`, "templates", templateForm(c.get("csrf"), { id, name: t.name, description: t.description, source: v.source }));
+    requirePermission(c.get("user"), "templates.create");
+    return page(c, `Edit ${t.name}`, "templates", templateForm(c.get("csrf"), { id, name: t.name, description: t.description, source: v.source }, can(c.get("user"), "templates.approve")));
   });
 
   app.post("/templates/:id/edit", async (c) => {
@@ -489,7 +543,7 @@ export function createAdmin(ctx: Ctx) {
       return c.redirect(`/templates/${id}?msg=saved`);
     } catch (e) {
       if (!(e instanceof SignedError)) throw e;
-      return page(c, "Edit template", "templates", html`<div class="notice bad">${e.message}${issuesList(e.issues)}</div>${templateForm(c.get("csrf"), { id, ...input })}`);
+      return page(c, "Edit template", "templates", html`<div class="notice bad">${e.message}${issuesList(e.issues)}</div>${templateForm(c.get("csrf"), { id, ...input }, can(c.get("user"), "templates.approve"))}`);
     }
   });
 
@@ -499,11 +553,11 @@ export function createAdmin(ctx: Ctx) {
     return c.redirect(`/templates/${id}?v=${c.req.param("v")}&msg=approved`);
   });
   app.post("/templates/:id/archive", async (c) => {
-    await tpl.setTemplateArchived(ctx, c.req.param("id"), true);
+    await tpl.setTemplateArchived(ctx, c.get("user"), c.req.param("id"), true);
     return c.redirect(`/templates/${c.req.param("id")}?msg=archived`);
   });
   app.post("/templates/:id/unarchive", async (c) => {
-    await tpl.setTemplateArchived(ctx, c.req.param("id"), false);
+    await tpl.setTemplateArchived(ctx, c.get("user"), c.req.param("id"), false);
     return c.redirect(`/templates/${c.req.param("id")}?msg=unarchived`);
   });
 
@@ -511,34 +565,45 @@ export function createAdmin(ctx: Ctx) {
 
   app.get("/settings", async (c) => {
     const account = await getAccount(ctx);
-    const keys = await listApiKeys(ctx);
-    const deliveries = await listDeliveries(ctx, 10);
+    const user = c.get("user");
+    const admin = can(user, "settings.manage");
+    const keys = await listApiKeys(ctx, user);
+    const deliveries = admin ? await listDeliveries(ctx, 10) : [];
     const smtp = account.config.smtp;
     const envSmtp = ctx.config.smtp;
     const csrf = c.get("csrf");
     const newKey = c.req.query("key");
     return page(c, "Settings", "settings", html`
       <div class="page-head"><h1>Settings</h1></div>
-      ${settingsTabs("general")}
+      ${admin ? settingsTabs("general") : ""}
       ${newKey ? html`<div class="notice ok"><strong>New API key.</strong> Copy it now. It will not be shown again.<pre>${newKey}</pre><button class="btn small" data-copy="${newKey}">Copy</button></div>` : ""}
 
+      <form method="post" action="/settings/profile" class="card">${csrfInput(csrf)}<h2>Your profile</h2>
+        <div class="inline-fields" style="grid-template-columns:1fr 1fr">
+          <div class="field"><label>Name</label><input type="text" name="name" value="${user.name}" required></div>
+          <div class="field"><label>Email</label><input type="email" value="${user.label}" disabled></div>
+        </div>
+        <p class="small muted">Role: <strong>${ROLE_LABELS[user.role]}</strong>. Signers see your name, email, and avatar on documents you send, and their replies come to you.</p>
+        <button class="btn primary">Save</button>
+      </form>
+
       <div class="card"><h2>Connect an agent</h2>
-        <p>Create an API key, then connect your agent over MCP or REST.</p>
+        <p>Create an API key, then connect your agent over MCP or REST. The agent acts as you, with your role${user.role === "member" ? ": it sees and sends only your documents" : user.role === "viewer" ? ": it can only read" : ""}.</p>
         <dl class="kv small"><dt>MCP endpoint</dt><dd class="mono">${ctx.config.publicUrl}/mcp</dd>
           <dt>REST API</dt><dd class="mono">${ctx.config.publicUrl}/v1</dd>
           <dt>OpenAPI</dt><dd><a href="/openapi.json">/openapi.json</a></dd></dl>
         <pre>claude mcp add --transport http signed-md ${ctx.config.publicUrl}/mcp --header "Authorization: Bearer YOUR_API_KEY"</pre>
       </div>
 
-      <div class="card"><h2>API keys</h2>
-        ${keys.length ? html`<div class="table-wrap"><table class="list"><thead><tr><th>Label</th><th>Key</th><th>Last used</th><th></th></tr></thead><tbody>
-          ${keys.map((k) => html`<tr><td>${k.label}</td><td class="mono">${k.prefix}…</td><td>${when(k.last_used_at)}</td>
+      <div class="card"><h2>${admin ? "API keys" : "Your API keys"}</h2>
+        ${keys.length ? html`<div class="table-wrap"><table class="list"><thead><tr><th>Label</th>${admin ? html`<th>Owner</th>` : ""}<th>Key</th><th>Last used</th><th></th></tr></thead><tbody>
+          ${keys.map((k) => html`<tr><td>${k.label}</td>${admin ? html`<td>${k.owner ? k.owner.name : html`<span class="muted">–</span>`}</td>` : ""}<td class="mono">${k.prefix}…</td><td>${when(k.last_used_at)}</td>
             <td style="text-align:right">${k.revoked_at ? badge("revoked") : html`<form method="post" action="/settings/keys/${k.id}/revoke" data-confirm="Revoke this key? Agents using it will stop working.">${csrfInput(csrf)}<button class="btn small danger">Revoke</button></form>`}</td></tr>`)}
         </tbody></table></div>` : html`<p class="muted">No API keys yet.</p>`}
         <form method="post" action="/settings/keys" class="row" style="margin-top:12px">${csrfInput(csrf)}<input type="text" name="label" placeholder="Label, e.g. Sales agent" style="max-width:280px"><button class="btn">Create API key</button></form>
       </div>
 
-      <form method="post" action="/settings/account" class="card">${csrfInput(csrf)}<h2>Account</h2>
+      ${admin ? html`<form method="post" action="/settings/account" class="card">${csrfInput(csrf)}<h2>Account</h2>
         <div class="field"><label>Company name</label><input type="text" name="name" value="${account.name}"></div>
         <div class="field"><label>Inline documents <span class="muted">· documents written without an approved template</span></label>
           <select name="inline_documents">${(["allowed", "needs_approval", "disabled"] as const).map((o) => html`<option value="${o}" ${account.config.inline_documents === o ? "selected" : ""}>${{ allowed: "Allowed", needs_approval: "Need approval in the UI", disabled: "Disabled" }[o]}</option>`)}</select></div>
@@ -571,12 +636,12 @@ export function createAdmin(ctx: Ctx) {
         <div class="row" style="margin-top:12px"><button class="btn primary" name="do" value="save">Save</button><button class="btn" name="do" value="test">Save and send test email</button></div>
       </form>
 
+      <div class="card"><h2>Signing key</h2><p class="small muted">Completed packages are signed with this key. Back up <code>${ctx.config.dataDir}/keys</code> together with the database.</p>
+        <dl class="kv small"><dt>Key ID</dt><dd class="mono">${ctx.keys.info.kid}</dd><dt>Public keys</dt><dd><a href="/.well-known/signed-md-keys.json">/.well-known/signed-md-keys.json</a></dd></dl></div>` : ""}
+
       <form method="post" action="/settings/password" class="card">${csrfInput(csrf)}<h2>Password</h2>
         <div class="field"><label>New password <span class="muted">· at least 10 characters</span></label><input type="password" name="password" autocomplete="new-password"></div>
-        <button class="btn">Change password</button></form>
-
-      <div class="card"><h2>Signing key</h2><p class="small muted">Completed packages are signed with this key. Back up <code>${ctx.config.dataDir}/keys</code> together with the database.</p>
-        <dl class="kv small"><dt>Key ID</dt><dd class="mono">${ctx.keys.info.kid}</dd><dt>Public keys</dt><dd><a href="/.well-known/signed-md-keys.json">/.well-known/signed-md-keys.json</a></dd></dl></div>`);
+        <button class="btn">Change password</button></form>`);
   });
 
   app.post("/settings/keys", async (c) => {
@@ -585,13 +650,13 @@ export function createAdmin(ctx: Ctx) {
     return c.redirect(`/settings?key=${encodeURIComponent(key)}`);
   });
   app.post("/settings/keys/:id/revoke", async (c) => {
-    await revokeApiKey(ctx, c.req.param("id"));
+    await revokeApiKey(ctx, c.get("user"), c.req.param("id"));
     return c.redirect("/settings?msg=saved");
   });
   app.post("/settings/account", async (c) => {
     const b = (await c.req.parseBody()) as FormBody;
     try {
-      await updateAccount(ctx, {
+      await updateAccount(ctx, c.get("user"), {
         name: str(b, "name"),
         config: {
           inline_documents: str(b, "inline_documents") as InlineDocumentsSetting,
@@ -609,13 +674,14 @@ export function createAdmin(ctx: Ctx) {
   app.post("/settings/webhook", async (c) => {
     const b = (await c.req.parseBody()) as FormBody;
     try {
-      await updateAccount(ctx, { config: { webhook_url: str(b, "url").trim() || null, ...(str(b, "rotate") === "on" ? { webhook_secret: newWebhookSecret() } : {}) } });
+      await updateAccount(ctx, c.get("user"), { config: { webhook_url: str(b, "url").trim() || null, ...(str(b, "rotate") === "on" ? { webhook_secret: newWebhookSecret() } : {}) } });
       return c.redirect("/settings?msg=saved");
     } catch (e) {
       return page(c, "Settings", "settings", html`<div class="notice bad">${(e as Error).message}</div><a class="btn" href="/settings">Back</a>`);
     }
   });
   app.post("/settings/smtp", async (c) => {
+    requirePermission(c.get("user"), "settings.manage");
     const b = (await c.req.parseBody()) as FormBody;
     const account = await getAccount(ctx);
     const host = str(b, "host").trim();
@@ -629,7 +695,7 @@ export function createAdmin(ctx: Ctx) {
           ...(str(b, "pass") ? { pass: str(b, "pass") } : account.config.smtp?.pass ? { pass: account.config.smtp.pass } : {}),
         }
       : null;
-    await updateAccount(ctx, { config: { smtp } });
+    await updateAccount(ctx, c.get("user"), { config: { smtp } });
     if (str(b, "do") === "test") {
       try {
         const acct = await getAccount(ctx);
@@ -642,6 +708,16 @@ export function createAdmin(ctx: Ctx) {
     }
     return c.redirect("/settings?msg=saved");
   });
+  app.post("/settings/profile", async (c) => {
+    const b = (await c.req.parseBody()) as FormBody;
+    try {
+      await team.updateProfile(ctx, c.get("user"), { name: str(b, "name") });
+      return c.redirect("/settings?msg=profile");
+    } catch (e) {
+      if (!(e instanceof SignedError)) throw e;
+      return page(c, "Settings", "settings", html`<div class="notice bad">${e.message}</div><a class="btn" href="/settings">Back</a>`);
+    }
+  });
   app.post("/settings/password", async (c) => {
     const b = (await c.req.parseBody()) as FormBody;
     try {
@@ -652,9 +728,109 @@ export function createAdmin(ctx: Ctx) {
     }
   });
 
+  // ---- Team ----
+
+  app.get("/team", async (c) => {
+    const user = c.get("user");
+    requirePermission(user, "team.manage");
+    const [members, invitations, account] = await Promise.all([team.listMembers(ctx), team.listInvitations(ctx), getAccount(ctx)]);
+    const csrf = c.get("csrf");
+    const isOwner = user.role === "owner";
+    const assignable = ROLES.filter((r) => r !== "owner" || isOwner);
+    return page(c, "Team", "team", html`
+      <div class="page-head"><h1>Team</h1></div>
+      <form method="post" action="/team/invite" class="card">${csrfInput(csrf)}<h2>Invite someone</h2>
+        <div class="row" style="align-items:flex-end">
+          <div class="field" style="flex:1;min-width:220px;margin:0"><label>Email</label><input type="email" name="email" required placeholder="name@company.com"></div>
+          <div class="field" style="margin:0"><label>Role</label><select name="role">${assignable.map((r) => html`<option value="${r}" ${r === "member" ? "selected" : ""}>${ROLE_LABELS[r]}</option>`)}</select></div>
+          <button class="btn primary">Send invitation</button>
+        </div>
+        <details class="small" style="margin-top:12px"><summary>What each role can do</summary>
+          <table class="list small" style="margin-top:8px"><tbody>
+            <tr><td><strong>Owner</strong></td><td>Everything, including approving templates and inline documents.</td></tr>
+            <tr><td><strong>Administrator</strong></td><td>Manages the team and settings. Sees and acts on every document. Can't approve templates.</td></tr>
+            <tr><td><strong>Member</strong></td><td>Creates and sends documents, and sees only their own. Can draft templates for approval.</td></tr>
+            <tr><td><strong>Viewer</strong></td><td>Read-only access to all documents, templates, and activity.</td></tr>
+          </tbody></table></details>
+      </form>
+
+      ${invitations.length ? html`<div class="card"><h2>Pending invitations</h2><div class="table-wrap"><table class="list"><tbody>
+        ${invitations.map((i) => html`<tr><td>${i.email}<div class="small muted">Invited by ${i.invited_by} · expires ${when(i.expires_at)}</div></td><td>${ROLE_LABELS[i.role]}</td>
+          <td style="text-align:right" class="nowrap">
+            <form method="post" action="/team/invitations/${i.id}/resend" class="inline">${csrfInput(csrf)}<button class="btn small">Resend</button></form>
+            <form method="post" action="/team/invitations/${i.id}/revoke" class="inline">${csrfInput(csrf)}<button class="btn small danger">Revoke</button></form></td></tr>`)}
+      </tbody></table></div></div>` : ""}
+
+      <div class="card table-wrap" style="padding:0"><table class="list"><thead><tr><th>Person</th><th>Role</th><th>Last login</th><th></th></tr></thead><tbody>
+        ${members.map((m) => {
+          const self = m.id === user.id;
+          const locked = m.role === "owner" && !isOwner;
+          return html`<tr>
+            <td><div class="row" style="gap:10px;flex-wrap:nowrap">${avatar(ctx, account.config.branding.avatars, m.name, m.email)}<div><strong>${m.name}</strong>${self ? html` <span class="muted small">(you)</span>` : ""}<div class="small muted">${m.email}</div></div></div></td>
+            <td>${self || locked || m.status !== "active"
+              ? html`${ROLE_LABELS[m.role]}`
+              : html`<form method="post" action="/team/${m.id}/role" class="inline">${csrfInput(csrf)}<select name="role" class="role-select" data-autosubmit>${assignable.map((r) => html`<option value="${r}" ${r === m.role ? "selected" : ""}>${ROLE_LABELS[r]}</option>`)}</select><noscript><button class="btn small">Save</button></noscript></form>`}</td>
+            <td class="nowrap">${m.status === "active" ? when(m.last_login_at) : badge("deactivated")}</td>
+            <td style="text-align:right">${self || locked ? ""
+              : m.status === "active"
+                ? html`<form method="post" action="/team/${m.id}/deactivate" class="inline" data-confirm="Deactivate ${m.name}? They lose access at once. Their documents stay.">${csrfInput(csrf)}<button class="btn small danger">Deactivate</button></form>`
+                : html`<form method="post" action="/team/${m.id}/reactivate" class="inline">${csrfInput(csrf)}<button class="btn small">Reactivate</button></form>`}</td>
+          </tr>`;
+        })}
+      </tbody></table></div>
+      <p class="small muted">People are never deleted. Deactivating someone ends their sessions and API keys at once. Their documents stay, and administrators can still manage them.</p>`);
+  });
+
+  const teamAction = (path: string, fn: (c: Context<Env>, b: FormBody) => Promise<string>) =>
+    app.post(path, async (c) => {
+      const b = (await c.req.parseBody()) as FormBody;
+      try {
+        return c.redirect(await fn(c, b));
+      } catch (e) {
+        if (!(e instanceof SignedError) || e.code === "PERMISSION_DENIED") throw e;
+        return page(c, "Team", "team", html`<div class="notice bad">${e.message}</div><a class="btn" href="/team">Back</a>`);
+      }
+    });
+  teamAction("/team/invite", async (c, b) => {
+    await team.inviteMember(ctx, c.get("user"), { email: str(b, "email"), role: str(b, "role") });
+    return "/team?msg=invited";
+  });
+  teamAction("/team/invitations/:id/resend", async (c) => {
+    await team.resendInvitation(ctx, c.get("user"), c.req.param("id")!);
+    return "/team?msg=invited";
+  });
+  teamAction("/team/invitations/:id/revoke", async (c) => {
+    await team.revokeInvitation(ctx, c.get("user"), c.req.param("id")!);
+    return "/team?msg=team";
+  });
+  teamAction("/team/:id/role", async (c, b) => {
+    await team.changeRole(ctx, c.get("user"), c.req.param("id")!, str(b, "role"));
+    return "/team?msg=team";
+  });
+  teamAction("/team/:id/deactivate", async (c) => {
+    await team.deactivateMember(ctx, c.get("user"), c.req.param("id")!);
+    return "/team?msg=team";
+  });
+  teamAction("/team/:id/reactivate", async (c) => {
+    await team.reactivateMember(ctx, c.get("user"), c.req.param("id")!);
+    return "/team?msg=team";
+  });
+
+  // ---- Activity ----
+
+  app.get("/activity", async (c) => {
+    requirePermission(c.get("user"), "activity.read");
+    const items = await listActivity(ctx.db, 150);
+    return page(c, "Activity", "activity", html`<div class="page-head"><h1>Activity</h1></div>
+      <div class="card">${items.length === 0 ? html`<div class="empty">Nothing yet.</div>` : html`<ul class="timeline activity">
+        ${items.map((i) => html`<li><strong>${i.actor || "Signed.md"}</strong> ${i.summary}${i.document ? html` · <a href="/documents/${i.document.id}">${i.document.title}</a>` : ""}<div class="muted small">${when(i.at)}</div></li>`)}
+      </ul>`}</div>`);
+  });
+
   // ---- Branding ----
 
   app.get("/settings/branding", async (c) => {
+    requirePermission(c.get("user"), "settings.manage");
     const account = await getAccount(ctx);
     const logo = account.config.branding.logo;
     const csrf = c.get("csrf");
@@ -693,6 +869,7 @@ export function createAdmin(ctx: Ctx) {
   });
 
   app.get("/settings/branding/preview", async (c) => {
+    requirePermission(c.get("user"), "settings.manage");
     const account = await getAccount(ctx);
     const logo = await readLogo(ctx);
     const { html: body } = renderEmail({
@@ -723,7 +900,7 @@ export function createAdmin(ctx: Ctx) {
     const file = b.logo;
     try {
       if (!(file instanceof File)) throw new SignedError("INVALID_REQUEST", "Choose a logo file to upload");
-      await setLogo(ctx, new Uint8Array(await file.arrayBuffer()));
+      await setLogo(ctx, c.get("user"), new Uint8Array(await file.arrayBuffer()));
       return c.redirect("/settings/branding?msg=logo");
     } catch (e) {
       if (!(e instanceof SignedError)) throw e;
@@ -733,7 +910,7 @@ export function createAdmin(ctx: Ctx) {
   app.post("/settings/branding/look", async (c) => {
     const b = (await c.req.parseBody()) as FormBody;
     try {
-      await setBannerAndAvatars(ctx, { banner_color: str(b, "banner_color"), avatars: str(b, "avatars") === "on" });
+      await setBannerAndAvatars(ctx, c.get("user"), { banner_color: str(b, "banner_color"), avatars: str(b, "avatars") === "on" });
       return c.redirect("/settings/branding?msg=saved");
     } catch (e) {
       if (!(e instanceof SignedError)) throw e;
@@ -741,13 +918,13 @@ export function createAdmin(ctx: Ctx) {
     }
   });
   app.post("/settings/branding/logo/remove", async (c) => {
-    await removeLogo(ctx);
+    await removeLogo(ctx, c.get("user"));
     return c.redirect("/settings/branding?msg=nologo");
   });
   app.post("/settings/branding/message", async (c) => {
     const b = (await c.req.parseBody()) as FormBody;
     try {
-      await setDefaultMessage(ctx, str(b, "message"));
+      await setDefaultMessage(ctx, c.get("user"), str(b, "message"));
       return c.redirect("/settings/branding?msg=saved");
     } catch (e) {
       if (!(e instanceof SignedError)) throw e;
@@ -756,6 +933,7 @@ export function createAdmin(ctx: Ctx) {
   });
 
   app.get("/outbox/:id/html", async (c) => {
+    requirePermission(c.get("user"), "settings.manage");
     const m = await ctx.mailer.outboxEntry(c.req.param("id"));
     if (!m) return c.notFound();
     return emailPage(c, m.html, avatarOrigin(ctx.config));
@@ -764,6 +942,7 @@ export function createAdmin(ctx: Ctx) {
   // ---- Outbox ----
 
   app.get("/outbox", async (c) => {
+    requirePermission(c.get("user"), "settings.manage");
     const account = await getAccount(ctx);
     const smtp = ctx.mailer.effectiveSmtp(account.config.smtp);
     const mails = await ctx.mailer.outbox(50);
@@ -831,9 +1010,23 @@ function setupPage(error?: string, b?: FormBody): H {
     ${error ? html`<div class="notice bad">${error}</div>` : ""}
     <form method="post" class="card">
       <div class="field"><label>Company name</label><input type="text" name="account" value="${b ? str(b, "account") : ""}" required></div>
+      <div class="field"><label>Your name</label><input type="text" name="name" value="${b ? str(b, "name") : ""}" required autocomplete="name"></div>
       <div class="field"><label>Your email</label><input type="email" name="email" value="${b ? str(b, "email") : ""}" required autocomplete="username"></div>
       <div class="field"><label>Password <span class="muted">· at least 10 characters</span></label><input type="password" name="password" required minlength="10" autocomplete="new-password"></div>
       <button class="btn primary block">Create account</button>
+    </form></div>`);
+}
+
+function invitePage(inv: { email: string; role: string; account_name: string; inviter: string | null }, error: string | null, name = ""): H {
+  return shell({ title: "Join" }, html`<div class="narrow" style="margin:50px auto">
+    <h1>Join ${inv.account_name}</h1>
+    <p class="muted">${inv.inviter ?? "Someone"} invited you to Signed.md as ${ROLE_LABELS[inv.role as keyof typeof ROLE_LABELS].toLowerCase()}.</p>
+    ${error ? html`<div class="notice bad">${error}</div>` : ""}
+    <form method="post" class="card">
+      <div class="field"><label>Email</label><input type="email" value="${inv.email}" disabled></div>
+      <div class="field"><label>Your name</label><input type="text" name="name" value="${name}" required autocomplete="name"></div>
+      <div class="field"><label>Choose a password <span class="muted">· at least 10 characters</span></label><input type="password" name="password" required minlength="10" autocomplete="new-password"></div>
+      <button class="btn primary block">Join ${inv.account_name}</button>
     </form></div>`);
 }
 
@@ -886,7 +1079,7 @@ function documentForm(csrf: string, s: DocFormState): H {
     </form>`;
 }
 
-function templateForm(csrf: string, s: { id?: string; name: string; description: string; source: string }): H {
+function templateForm(csrf: string, s: { id?: string; name: string; description: string; source: string }, canApprove: boolean): H {
   return html`<div class="page-head"><h1>${s.id ? "New template version" : "New template"}</h1></div>
     <form method="post" action="${s.id ? `/templates/${s.id}/edit` : "/templates"}">${csrfInput(csrf)}
       <div class="card">
@@ -899,6 +1092,8 @@ function templateForm(csrf: string, s: { id?: string; name: string; description:
           <p>Types: <code>text</code>, <code>longtext</code>, <code>number</code>, <code>currency(USD)</code>, <code>date</code>, <code>signature</code>, <code>initials</code>, <code>checkbox</code>, <code>choice(a|b)</code>.</p>
           <p>Optional front matter adds rules: <code>label</code>, <code>required</code>, <code>default</code>, <code>minimum</code>, <code>maximum</code>, <code>max_length</code>, <code>allowed_values</code>, <code>options</code>. Write <code>\\{{</code> for literal braces.</p></div></details>
       </div>
-      <div class="row"><button class="btn primary" name="approve" value="1">Save and approve</button><button class="btn" name="approve" value="0">Save as pending</button></div>
+      ${canApprove
+        ? html`<div class="row"><button class="btn primary" name="approve" value="1">Save and approve</button><button class="btn" name="approve" value="0">Save as pending</button></div>`
+        : html`<div class="row"><button class="btn primary" name="approve" value="0">Save for approval</button><span class="small muted">An owner approves templates before anyone can use them.</span></div>`}
     </form>`;
 }

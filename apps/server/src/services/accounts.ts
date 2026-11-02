@@ -2,7 +2,9 @@ import { SignedError } from "@signed-md/core";
 import { type Database, newId, now } from "@signed-md/db";
 import type { Kysely } from "kysely";
 import type { SmtpConfig } from "../config.ts";
-import type { Ctx } from "../context.ts";
+import type { Actor, Ctx } from "../context.ts";
+import { recordAudit } from "./audit.ts";
+import { requirePermission } from "./permissions.ts";
 import { randomToken } from "../crypto.ts";
 import { hashPassword } from "./auth.ts";
 
@@ -64,7 +66,7 @@ export async function isSetUp(ctx: Ctx): Promise<boolean> {
 /** First-run setup: one account and one administrator. */
 export async function setup(
   ctx: Ctx,
-  input: { accountName: string; email: string; password: string },
+  input: { accountName: string; email: string; password: string; name?: string },
 ): Promise<{ accountId: string; userId: string }> {
   if (input.password.length < 10) throw new SignedError("INVALID_REQUEST", "Password must be at least 10 characters");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) throw new SignedError("INVALID_REQUEST", "A valid email is required");
@@ -85,8 +87,13 @@ export async function setup(
         id: userId,
         account_id: accountId,
         email: input.email.trim().toLowerCase(),
+        name: input.name?.trim().slice(0, 100) || input.email.split("@")[0]!,
+        role: "owner",
         password_hash: passwordHash,
         status: "active",
+        invited_by: null,
+        last_login_at: null,
+        deactivated_at: null,
         created_at: now(),
       })
       .execute();
@@ -109,8 +116,10 @@ export async function getAccount(ctx: Ctx, db: Kysely<Database> = ctx.db): Promi
 
 export async function updateAccount(
   ctx: Ctx,
+  actor: Actor,
   patch: { name?: string; config?: Partial<AccountConfig> },
 ): Promise<Account> {
+  requirePermission(actor, "settings.manage");
   const acct = await getAccount(ctx);
   const config = { ...acct.config, ...patch.config };
   if (config.webhook_url) {
@@ -130,6 +139,7 @@ export async function updateAccount(
     .set({ name: patch.name?.trim() || acct.name, config: JSON.stringify(config) })
     .where("id", "=", acct.id)
     .execute();
+  await recordAudit(ctx.db, actor, "settings.updated", { sections: [...(patch.name ? ["name"] : []), ...Object.keys(patch.config ?? {})] });
   return getAccount(ctx);
 }
 

@@ -74,6 +74,7 @@ export const DocumentSchema = z
     id: z.string(),
     title: z.string(),
     status: z.enum(["draft", "sent", "partially_signed", "signed", "finalized", "declined", "expired", "revoked"]),
+    owner: z.object({ id: z.string(), name: z.string(), email: z.string() }).nullable().openapi({ description: "The team member who owns and sent the document." }),
     revision: z.string(),
     source: z.enum(["template", "inline"]),
     template: z.object({ id: z.string(), version: z.number() }).nullable(),

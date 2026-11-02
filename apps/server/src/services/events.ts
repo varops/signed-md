@@ -40,7 +40,7 @@ export async function appendEvent(
     seq: (last ? Number(last.seq) : 0) + 1,
     type,
     actor: actorRef(actor),
-    actor_label: actor.label,
+    actor_label: actor.kind === "user" ? actor.name || actor.label : actor.kind === "apikey" ? `${actor.userName} (API key “${actor.label}”)` : actor.label,
     created_at: now(),
     data: JSON.parse(JSON.stringify(data)) as Record<string, unknown>,
     prev_hash: last?.hash ?? null,

@@ -9,7 +9,7 @@ Signed.md sends Markdown agreements for electronic signature and returns a verif
 
 ## Setup
 
-You need the Signed.md URL and an API key (Settings → API keys in the Signed.md web UI). Never print the API key in your output.
+You need the Signed.md URL and an API key (Settings → API keys in the Signed.md web UI). The key acts as the person who created it, with their role: a member's key sees and sends only that member's documents, and a viewer's key can only read. Documents you send come from that person. Never print the API key in your output.
 
 **MCP (preferred):**
 

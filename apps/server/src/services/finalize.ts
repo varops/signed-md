@@ -10,7 +10,8 @@ import {
 } from "@signed-md/core";
 import { enqueueJob, newId, now } from "@signed-md/db";
 import { zipSync } from "fflate";
-import type { Ctx } from "../context.ts";
+import type { Actor, Ctx } from "../context.ts";
+import { requireReadDocument } from "./permissions.ts";
 import { hmacHex, safeEqual, sha256 } from "../crypto.ts";
 import { getAccount } from "./accounts.ts";
 import { appendEvent, listEvents } from "./events.ts";
@@ -186,8 +187,9 @@ export function checkDownloadSignature(ctx: Ctx, artifactId: string, exp: string
   return safeEqual(sig, hmacHex(ctx.keys.serverSecret, `download:${artifactId}:${e}`));
 }
 
-export async function listArtifacts(ctx: Ctx, documentId: string, ttlSeconds = 3600) {
+export async function listArtifacts(ctx: Ctx, actor: Actor, documentId: string, ttlSeconds = 3600) {
   const doc = await loadDocument(ctx.db, documentId);
+  requireReadDocument(actor, doc);
   if (doc.status !== "finalized") {
     throw new SignedError("DOCUMENT_NOT_FINALIZED", `Artifacts are ready once the document is finalized. Current status: ${doc.status}.`);
   }

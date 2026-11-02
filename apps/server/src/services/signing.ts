@@ -72,6 +72,8 @@ export interface SignerView {
   document_id: string;
   title: string;
   account_name: string;
+  /** The team member who sent the document. */
+  sender_name: string | null;
   signer: { key: string; name: string; email: string };
   /** True once the signer agreed to sign electronically (the "Let's start" step). */
   consented: boolean;
@@ -127,6 +129,9 @@ async function buildSignerView(ctx: Ctx, doc: DocRow, signer: SignerRow): Promis
     document_id: doc.id,
     title: doc.title,
     account_name: account.name,
+    sender_name: doc.owner_user_id
+      ? await ctx.db.selectFrom("users").select(["name", "email"]).where("id", "=", doc.owner_user_id).executeTakeFirst().then((u) => (u ? u.name || u.email : null))
+      : null,
     signer: { key: signer.key, name: signer.name, email: signer.email },
     consented: signer.consented_at !== null,
     content: doc.content,

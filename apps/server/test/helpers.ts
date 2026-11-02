@@ -43,8 +43,8 @@ export async function testContext(env: Record<string, string> = {}) {
     ...env,
   });
   const ctx = await createContext(config);
-  const { accountId, userId } = await setup(ctx, { accountName: "Automaze", email: "admin@automaze.example", password: "correct horse battery" });
-  const user: Actor & { kind: "user" } = { kind: "user", id: userId, accountId, label: "admin@automaze.example" };
-  const api: Actor = { kind: "apikey", id: "key_test", accountId, label: "test key", via: "api" };
+  const { accountId, userId } = await setup(ctx, { accountName: "Automaze", name: "Ada Owner", email: "admin@automaze.example", password: "correct horse battery" });
+  const user: Actor & { kind: "user" } = { kind: "user", id: userId, accountId, label: "admin@automaze.example", name: "Ada Owner", role: "owner" };
+  const api: Actor = { kind: "apikey", id: "key_test", accountId, label: "test key", via: "api", userId, userName: "Ada Owner", role: "owner" };
   return { ctx, user, api, dataDir };
 }

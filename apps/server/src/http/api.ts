@@ -8,6 +8,7 @@ import { accountView, getAccount, newWebhookSecret, updateAccount } from "../ser
 import { apiKeyActor } from "../services/auth.ts";
 import * as docs from "../services/documents.ts";
 import { listArtifacts } from "../services/finalize.ts";
+import { requirePermission } from "../services/permissions.ts";
 import * as tpl from "../services/templates.ts";
 import { errorResponse, statusFor } from "./errors.ts";
 import { rateLimit } from "./ratelimit.ts";
@@ -134,7 +135,7 @@ export function createApi(ctx: Ctx) {
       createRoute({ method: "post", path: `/v1/templates/{id}/${archived ? "archive" : "unarchive"}`, tags: ["Templates"],
         summary: archived ? "Archive a template" : "Unarchive a template", security, request: { params: idParam },
         responses: { 200: ok(S.TemplateSchema), 404: err("Not found"), ...common } }),
-      async (c) => c.json(await tpl.setTemplateArchived(ctx, c.req.valid("param").id, archived), 200),
+      async (c) => c.json(await tpl.setTemplateArchived(ctx, c.get("actor"), c.req.valid("param").id, archived), 200),
     );
   }
 
@@ -145,6 +146,7 @@ export function createApi(ctx: Ctx) {
       request: { query: z.object({
         status: z.string().optional(),
         archived: z.enum(["true", "false"]).optional(),
+        mine: z.enum(["true", "false"]).optional().openapi({ description: "Only documents owned by the API key's user. Members always see only their own." }),
         q: z.string().max(200).optional().openapi({ description: "Search title, signer name, or email" }),
         limit: z.coerce.number().int().min(1).max(100).optional(),
         before: z.string().optional().openapi({ description: "Cursor: next_before from the previous page" }),
@@ -152,7 +154,7 @@ export function createApi(ctx: Ctx) {
       responses: { 200: ok(z.object({ data: z.array(S.DocumentSchema), next_before: z.string().nullable() })), ...common } }),
     async (c) => {
       const q = c.req.valid("query");
-      return c.json(await docs.listDocuments(ctx, { ...q, archived: q.archived === "true" }), 200);
+      return c.json(await docs.listDocuments(ctx, c.get("actor"), { ...q, archived: q.archived === "true", mine: q.mine === "true" }), 200);
     },
   );
 
@@ -167,7 +169,7 @@ export function createApi(ctx: Ctx) {
   app.openapi(
     createRoute({ method: "get", path: "/v1/documents/{id}", tags: ["Documents"], summary: "Get a document and its status", security,
       request: { params: idParam }, responses: { 200: ok(S.DocumentSchema), 404: err("Not found"), ...common } }),
-    async (c) => c.json(await docs.getDocument(ctx, c.req.valid("param").id), 200),
+    async (c) => c.json(await docs.getDocument(ctx, c.get("actor"), c.req.valid("param").id), 200),
   );
 
   app.openapi(
@@ -181,14 +183,14 @@ export function createApi(ctx: Ctx) {
   app.openapi(
     createRoute({ method: "post", path: "/v1/documents/{id}/validate", tags: ["Documents"], summary: "Validate a draft", security,
       request: { params: idParam }, responses: { 200: ok(S.ValidationSchema), 404: err("Not found"), ...common } }),
-    async (c) => c.json(await docs.validateDocument(ctx, c.req.valid("param").id), 200),
+    async (c) => c.json(await docs.validateDocument(ctx, c.get("actor"), c.req.valid("param").id), 200),
   );
 
   app.openapi(
     createRoute({ method: "get", path: "/v1/documents/{id}/preview", tags: ["Documents"], summary: "Preview a draft",
       description: "Returns the resolved agreement, the values, signer fields, signing order, and the revision. Show this to a person and send only the revision they approved.",
       security, request: { params: idParam }, responses: { 200: ok(S.PreviewSchema), 404: err("Not found"), ...common } }),
-    async (c) => c.json(await docs.previewDocument(ctx, c.req.valid("param").id), 200),
+    async (c) => c.json(await docs.previewDocument(ctx, c.get("actor"), c.req.valid("param").id), 200),
   );
 
   app.openapi(
@@ -231,7 +233,7 @@ export function createApi(ctx: Ctx) {
     createRoute({ method: "get", path: "/v1/documents/{id}/artifacts", tags: ["Documents"], summary: "Get completed artifacts",
       description: "Available once the document is finalized. Download links are short-lived.", security,
       request: { params: idParam }, responses: { 200: ok(z.object({ data: z.array(S.ArtifactSchema) })), 404: err("Not found"), 409: err("Not finalized"), ...common } }),
-    async (c) => c.json({ data: await listArtifacts(ctx, c.req.valid("param").id) }, 200),
+    async (c) => c.json({ data: await listArtifacts(ctx, c.get("actor"), c.req.valid("param").id) }, 200),
   );
 
   // ---- Configuration ----
@@ -246,6 +248,7 @@ export function createApi(ctx: Ctx) {
     createRoute({ method: "get", path: "/v1/webhooks", tags: ["Configuration"], summary: "Get webhook configuration", security,
       responses: { 200: ok(S.WebhookConfigSchema), ...common } }),
     async (c) => {
+      requirePermission(c.get("actor"), "settings.manage");
       const a = await getAccount(ctx);
       return c.json({ url: a.config.webhook_url, secret: a.config.webhook_secret, events: WEBHOOK_EVENTS }, 200);
     },
@@ -256,7 +259,7 @@ export function createApi(ctx: Ctx) {
       request: body(S.WebhookUpdateSchema), responses: { 200: ok(S.WebhookConfigSchema), 400: err("Invalid URL"), ...common } }),
     async (c) => {
       const { url, rotate_secret } = c.req.valid("json");
-      const a = await updateAccount(ctx, { config: { webhook_url: url, ...(rotate_secret ? { webhook_secret: newWebhookSecret() } : {}) } });
+      const a = await updateAccount(ctx, c.get("actor"), { config: { webhook_url: url, ...(rotate_secret ? { webhook_secret: newWebhookSecret() } : {}) } });
       return c.json({ url: a.config.webhook_url, secret: a.config.webhook_secret, events: WEBHOOK_EVENTS }, 200);
     },
   );

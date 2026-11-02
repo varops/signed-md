@@ -30,8 +30,8 @@ const ctx = await createContext(config);
 
 let apiKey: string | null = null;
 if (!(await isSetUp(ctx))) {
-  const { accountId, userId } = await setup(ctx, { accountName: "Automaze", email: EMAIL, password: PASSWORD });
-  const user = { kind: "user" as const, id: userId, accountId, label: EMAIL };
+  const { accountId, userId } = await setup(ctx, { accountName: "Automaze", name: "Demo Owner", email: EMAIL, password: PASSWORD });
+  const user = { kind: "user" as const, id: userId, accountId, label: EMAIL, name: "Demo Owner", role: "owner" as const };
   await createTemplate(ctx, user, {
     name: "Standard services agreement",
     description: "Monthly retainer, notice period, client signs first then we countersign",
@@ -47,7 +47,7 @@ if (!(await isSetUp(ctx))) {
   apiKey = (await createApiKey(ctx, user, "Demo agent")).key;
   // The demo shows avatars. New installs keep them off until an operator turns them on.
   const { setBannerAndAvatars } = await import("./services/branding.ts");
-  await setBannerAndAvatars(ctx, { banner_color: "#1c1917", avatars: true });
+  await setBannerAndAvatars(ctx, user, { banner_color: "#1c1917", avatars: true });
 }
 
 serve({ fetch: createApp(ctx).fetch, port });

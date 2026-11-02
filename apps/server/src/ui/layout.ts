@@ -17,18 +17,21 @@ export function footer(): H {
 
 export interface ShellOptions {
   title: string;
-  user?: { email: string } | null;
+  user?: { email: string; name: string; role: "owner" | "admin" | "member" | "viewer" } | null;
   csrf?: string;
   active?: string;
   flash?: { kind: "ok" | "bad" | "warn" | "info"; text: string } | null;
 }
 
-const NAV = [
-  ["documents", "/documents", "Documents"],
-  ["templates", "/templates", "Templates"],
-  ["settings", "/settings", "Settings"],
-  ["outbox", "/outbox", "Outbox"],
-] as const;
+type NavRole = "owner" | "admin" | "member" | "viewer";
+const NAV: [string, string, string, NavRole[]][] = [
+  ["documents", "/documents", "Documents", ["owner", "admin", "member", "viewer"]],
+  ["templates", "/templates", "Templates", ["owner", "admin", "member", "viewer"]],
+  ["team", "/team", "Team", ["owner", "admin"]],
+  ["activity", "/activity", "Activity", ["owner", "admin", "viewer"]],
+  ["settings", "/settings", "Settings", ["owner", "admin", "member", "viewer"]],
+  ["outbox", "/outbox", "Outbox", ["owner", "admin"]],
+];
 
 export function shell(opts: ShellOptions, body: H): H {
   return html`<!doctype html>
@@ -44,8 +47,9 @@ export function shell(opts: ShellOptions, body: H): H {
 ${opts.user
   ? html`<header class="topbar">
   <a class="brand" href="/documents">Signed<span>.md</span></a>
-  <nav class="nav">${NAV.map(([k, href, label]) => html`<a href="${href}" class="${opts.active === k ? "active" : ""}">${label}</a>`)}</nav>
-  <form method="post" action="/logout" class="inline"><input type="hidden" name="_csrf" value="${opts.csrf ?? ""}"><button class="btn small" title="${opts.user.email}">Log out</button></form>
+  <nav class="nav">${NAV.filter(([, , , roles]) => roles.includes(opts.user!.role)).map(([k, href, label]) => html`<a href="${href}" class="${opts.active === k ? "active" : ""}">${label}</a>`)}</nav>
+  <a class="whoami small" href="/settings" title="${opts.user.email}">${opts.user.name} <span class="muted">· ${opts.user.role === "admin" ? "administrator" : opts.user.role}</span></a>
+  <form method="post" action="/logout" class="inline"><input type="hidden" name="_csrf" value="${opts.csrf ?? ""}"><button class="btn small">Log out</button></form>
 </header>`
   : ""}
 <main class="wrap">

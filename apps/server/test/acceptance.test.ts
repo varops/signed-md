@@ -163,6 +163,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     expect(page.url()).toContain("/setup");
     await shot("01-setup");
     await page.fill("input[name=account]", "Automaze");
+    await page.fill("input[name=name]", "Ran Aroussi");
     await page.fill("input[name=email]", "ran@automaze.example");
     await page.fill("input[name=password]", "a very good password");
     await page.click("button:has-text('Create account')");
@@ -269,7 +270,9 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     const linkFor = async (email: string) => {
       for (let i = 0; i < 50; i++) {
         await page.goto(`${base}/outbox`);
-        const text = await page.locator("details.card", { hasText: email }).first().locator("pre").textContent().catch(() => null);
+        // Match the recipient line only: the sender's address also appears in other people's emails.
+        const mail = page.locator("details.card").filter({ has: page.locator("summary", { hasText: `→ ${email}` }) }).first();
+        const text = await mail.locator("pre").textContent({ timeout: 500 }).catch(() => null);
         const m = text ? /\/s\/([A-Za-z0-9_-]{30,})/.exec(text) : null;
         if (m) return `${base}/s/${m[1]}`;
         await new Promise((r) => setTimeout(r, 200));
@@ -359,6 +362,43 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
 
     await page.goto(`${base}/documents/${docId}`);
     await shot("09-finalized");
+
+    // Teams: invite a member, who accepts and sees only their own work.
+    await page.goto(`${base}/team`);
+    await page.fill("input[name=email]", "mia@automaze.example");
+    await page.selectOption("select[name=role]", "member");
+    await page.click("button:has-text('Send invitation')");
+    await page.waitForURL(/msg=invited/);
+    await shot("13-team");
+    let inviteUrl = "";
+    for (let i = 0; i < 50 && !inviteUrl; i++) {
+      await page.goto(`${base}/outbox`);
+      const text = await page.locator("details.card").filter({ has: page.locator("summary", { hasText: "→ mia@automaze.example" }) }).first().locator("pre").textContent({ timeout: 500 }).catch(() => null);
+      inviteUrl = (text && /\/invite\/([A-Za-z0-9_-]{30,})/.exec(text)?.[0]) ?? "";
+      if (!inviteUrl) await new Promise((r) => setTimeout(r, 200));
+    }
+    expect(inviteUrl).toBeTruthy();
+    const memberCtx = await browser.newContext();
+    const member = await memberCtx.newPage();
+    await member.goto(`${base}${inviteUrl}`);
+    await member.fill("input[name=name]", "Mia Member");
+    await member.fill("input[name=password]", "another good password");
+    await member.click("button:has-text('Join Automaze')");
+    await member.waitForURL(/\/documents/);
+    expect(await member.locator(`a[href='/documents/${docId}']`).count()).toBe(0); // members see only their own documents
+    expect(await member.locator("nav.nav a[href='/team']").count()).toBe(0);
+    expect((await member.goto(`${base}/documents/${docId}`))!.status()).toBe(404);
+    expect((await member.goto(`${base}/team`))!.status()).toBe(403);
+    // A member's template waits for an owner.
+    await member.goto(`${base}/templates/new`);
+    await member.fill("input[name=name]", "Mia's NDA");
+    await member.fill("textarea[name=source]", "# NDA\n\nSigned: {{a.signature:signature}}");
+    await member.click("button:has-text('Save for approval')");
+    await member.waitForSelector("text=Only an owner can approve it.");
+    await memberCtx.close();
+    await page.goto(`${base}/activity`);
+    expect(await page.locator("text=joined as member").count()).toBe(1);
+    await shot("14-activity");
     await page.goto(`${base}/documents`);
     await shot("10-documents");
     await mcp.close();

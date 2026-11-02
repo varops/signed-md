@@ -23,8 +23,8 @@ async function main(argv: string[]): Promise<number> {
   const [cmd, ...args] = argv;
   if (!cmd || cmd === "help" || cmd === "--help") {
     console.log(`Commands:
-  setup --account <name> --email <email> --password <password>   Create the administrator (fresh install only)
-  api-key [--label <label>]                                       Create an API key and print it once
+  setup --account <name> --email <email> --password <password> [--name <name>]   Create the owner (fresh install only)
+  api-key [--label <label>] [--user <email>]                                       Create an API key for a user (default: the first owner)
   backup <directory>                                              Copy the database, signing keys, and files`);
     return 0;
   }
@@ -34,17 +34,21 @@ async function main(argv: string[]): Promise<number> {
       case "setup": {
         const account = arg(args, "account");
         const email = arg(args, "email");
+        const name = arg(args, "name");
         const password = arg(args, "password") ?? process.env.ADMIN_PASSWORD;
         if (!account || !email || !password) throw new Error("setup needs --account, --email and --password (or ADMIN_PASSWORD)");
         if (await isSetUp(ctx)) throw new Error("Already set up");
-        await setup(ctx, { accountName: account, email, password });
+        await setup(ctx, { accountName: account, email, password, ...(name ? { name } : {}) });
         console.log(`Created account "${account}" with administrator ${email}.`);
         return 0;
       }
       case "api-key": {
-        const user = await ctx.db.selectFrom("users").select(["id", "account_id", "email"]).where("status", "=", "active").executeTakeFirst();
-        if (!user) throw new Error("Run setup first");
-        const { key } = await createApiKey(ctx, { kind: "user", id: user.id, accountId: user.account_id, label: user.email }, arg(args, "label") ?? "CLI");
+        const email = arg(args, "user");
+        let q = ctx.db.selectFrom("users").select(["id", "account_id", "email", "name", "role"]).where("status", "=", "active");
+        q = email ? q.where("email", "=", email.toLowerCase()) : q.where("role", "=", "owner").orderBy("created_at");
+        const user = await q.executeTakeFirst();
+        if (!user) throw new Error(email ? `No active user ${email}` : "Run setup first");
+        const { key } = await createApiKey(ctx, { kind: "user", id: user.id, accountId: user.account_id, label: user.email, name: user.name, role: user.role }, arg(args, "label") ?? "CLI");
         console.log(key);
         return 0;
       }

@@ -123,7 +123,7 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
   server.registerTool(
     "signed_validate_document",
     { description: "Validate a draft without sending.", inputSchema: { document_id: z.string() } },
-    ({ document_id }) => run(() => docs.validateDocument(ctx, document_id)),
+    ({ document_id }) => run(() => docs.validateDocument(ctx, actor, document_id)),
   );
 
   server.registerTool(
@@ -134,7 +134,7 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
     },
     ({ document_id }) =>
       run(async () => {
-        const { html: _html, ...p } = await docs.previewDocument(ctx, document_id);
+        const { html: _html, ...p } = await docs.previewDocument(ctx, actor, document_id);
         return p;
       }),
   );
@@ -157,7 +157,7 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
   server.registerTool(
     "signed_get_document",
     { description: "Get a document with its status, signers, and outstanding actions.", inputSchema: { document_id: z.string() } },
-    ({ document_id }) => run(() => docs.getDocument(ctx, document_id)),
+    ({ document_id }) => run(() => docs.getDocument(ctx, actor, document_id)),
   );
 
   server.registerTool(
@@ -167,7 +167,7 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
       inputSchema: { status: z.string().optional(), q: z.string().optional().describe("Search title, signer name or email"), archived: z.boolean().optional(), limit: z.number().int().min(1).max(100).optional() },
     },
     ({ status, q, archived, limit }) =>
-      run(() => docs.listDocuments(ctx, { ...(status ? { status } : {}), ...(q ? { q } : {}), archived: archived === true, ...(limit ? { limit } : {}) })),
+      run(() => docs.listDocuments(ctx, actor, { ...(status ? { status } : {}), ...(q ? { q } : {}), archived: archived === true, ...(limit ? { limit } : {}) })),
   );
 
   server.registerTool(
@@ -185,7 +185,7 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
   server.registerTool(
     "signed_get_artifacts",
     { description: "Get download links for the signed PDF and the verifiable ZIP package. Available once status is finalized.", inputSchema: { document_id: z.string() } },
-    ({ document_id }) => run(async () => ({ data: await listArtifacts(ctx, document_id) })),
+    ({ document_id }) => run(async () => ({ data: await listArtifacts(ctx, actor, document_id) })),
   );
 
   return server;

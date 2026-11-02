@@ -16,6 +16,8 @@ import type { Kysely, Selectable, Transaction } from "kysely";
 import { type Actor, actorRef, type Ctx } from "../context.ts";
 import { randomToken, seal, sha256 } from "../crypto.ts";
 import { getAccount } from "./accounts.ts";
+import { can, requireManageDocument, requirePermission, requireReadDocument, userIdOf } from "./permissions.ts";
+import { userById } from "./team.ts";
 import { checkMessageVariables } from "./messagevars.ts";
 import { appendEvent } from "./events.ts";
 import { resolveVersionForDocument } from "./templates.ts";
@@ -169,7 +171,13 @@ async function writeSigners(trx: Transaction<Database>, documentId: string, sign
 // Create / update
 
 export async function createDocument(ctx: Ctx, actor: Actor, input: CreateDocumentInput): Promise<DocumentView> {
+  requirePermission(actor, "documents.create");
   const account = await getAccount(ctx);
+  // The person who creates a document owns it and is its sender.
+  const ownerId =
+    userIdOf(actor) ??
+    (await ctx.db.selectFrom("users").select("id").where("role", "=", "owner").where("status", "=", "active").orderBy("created_at").limit(1).executeTakeFirst())?.id ??
+    null;
   const hasTemplate = input.template_id !== undefined;
   const hasContent = input.content !== undefined;
   if (hasTemplate === hasContent) {
@@ -213,6 +221,7 @@ export async function createDocument(ctx: Ctx, actor: Actor, input: CreateDocume
     expires_in_days: input.expires_in_days ?? account.config.default_expiry_days,
     metadata: JSON.stringify(input.metadata ?? {}),
     webhook_url: input.webhook_url ?? null,
+    owner_user_id: ownerId,
     signer_message: null,
     created_by: actorRef(actor),
     approved_revision: null,
@@ -253,13 +262,14 @@ export async function createDocument(ctx: Ctx, actor: Actor, input: CreateDocume
       approved_by: input.approved_by ?? `auto_send by ${actor.label}`,
     });
   }
-  return getDocument(ctx, id);
+  return getDocument(ctx, actor, id);
 }
 
 export async function updateDocument(ctx: Ctx, actor: Actor, id: string, input: UpdateDocumentInput): Promise<DocumentView> {
   checkSettings(input, ctx);
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, id);
+    requireManageDocument(actor, doc);
     if (doc.status !== "draft") throw new SignedError("DOCUMENT_NOT_DRAFT", "Only drafts can be edited. Revoke and create a new document instead.");
     if (input.content !== undefined && doc.source_kind !== "inline") {
       throw new SignedError("INVALID_REQUEST", "content can only be changed on inline documents. Template documents follow their template.");
@@ -304,7 +314,7 @@ export async function updateDocument(ctx: Ctx, actor: Actor, id: string, input: 
       await appendEvent(trx, id, "document.updated", actor, { revision: prepared.revision, previous_revision: doc.revision });
     }
   });
-  return getDocument(ctx, id);
+  return getDocument(ctx, actor, id);
 }
 
 // ---------------------------------------------------------------------------
@@ -328,8 +338,9 @@ function warningsFor(ctx: { inlineSetting: string }, doc: DocRow): Issue[] {
   return w;
 }
 
-export async function validateDocument(ctx: Ctx, id: string): Promise<ValidationResult> {
+export async function validateDocument(ctx: Ctx, actor: Actor, id: string): Promise<ValidationResult> {
   const doc = await loadDocument(ctx.db, id);
+  requireReadDocument(actor, doc);
   const account = await getAccount(ctx);
   const prepared = prepareFrom(doc, signerInputs(await loadSigners(ctx.db, id)));
   return { valid: prepared.valid, revision: prepared.revision, errors: prepared.issues, warnings: warningsFor({ inlineSetting: account.config.inline_documents }, doc) };
@@ -348,8 +359,9 @@ export interface PreviewResult extends ValidationResult {
   source: "template" | "inline";
 }
 
-export async function previewDocument(ctx: Ctx, id: string): Promise<PreviewResult> {
+export async function previewDocument(ctx: Ctx, actor: Actor, id: string): Promise<PreviewResult> {
   const doc = await loadDocument(ctx.db, id);
+  requireReadDocument(actor, doc);
   const account = await getAccount(ctx);
   const signerRows = await loadSigners(ctx.db, id);
   const prepared = prepareFrom(doc, signerInputs(signerRows));
@@ -430,6 +442,7 @@ export async function sendDocument(
   const message = (input.message ?? account.config.branding.email_message).trim() || null;
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, id);
+    requireManageDocument(actor, doc);
     if (doc.status !== "draft") throw new SignedError("DOCUMENT_ALREADY_SENT", "This document has already been sent");
     const signerRows = await loadSigners(trx, id);
     const prepared = prepareFrom(doc, signerInputs(signerRows));
@@ -494,7 +507,7 @@ export async function sendDocument(
     });
     await activateNextGroup(ctx, trx, id);
   });
-  return getDocument(ctx, id);
+  return getDocument(ctx, actor, id);
 }
 
 /**
@@ -550,6 +563,7 @@ export async function issueToken(
 export async function revokeDocument(ctx: Ctx, actor: Actor, id: string, reason?: string): Promise<DocumentView> {
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, id);
+    requireManageDocument(actor, doc);
     const status = transition(doc.status as never, "revoke");
     const t = now();
     await trx
@@ -566,12 +580,13 @@ export async function revokeDocument(ctx: Ctx, actor: Actor, id: string, reason?
       }
     }
   });
-  return getDocument(ctx, id);
+  return getDocument(ctx, actor, id);
 }
 
 export async function resendToSigner(ctx: Ctx, actor: Actor, id: string, key: string): Promise<DocumentView> {
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, id);
+    requireManageDocument(actor, doc);
     if (doc.status !== "sent" && doc.status !== "partially_signed") {
       throw new SignedError("INVALID_TRANSITION", `Cannot resend a link for a ${doc.status} document`);
     }
@@ -593,22 +608,24 @@ export async function resendToSigner(ctx: Ctx, actor: Actor, id: string, key: st
     await appendEvent(trx, id, "signer.link_resent", actor, { signer: key });
     await issueToken(ctx, trx, id, signer, "reminder");
   });
-  return getDocument(ctx, id);
+  return getDocument(ctx, actor, id);
 }
 
 export async function setDocumentArchived(ctx: Ctx, actor: Actor, id: string, archived: boolean): Promise<DocumentView> {
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, id);
+    requireManageDocument(actor, doc);
     if ((doc.archived_at !== null) === archived) return;
     await trx.updateTable("documents").set({ archived_at: archived ? now() : null }).where("id", "=", id).execute();
     await appendEvent(trx, id, archived ? "document.archived" : "document.unarchived", actor);
   });
-  return getDocument(ctx, id);
+  return getDocument(ctx, actor, id);
 }
 
 /** UI only: a person approves an inline document revision when the account requires it. */
 export async function approveInlineDocument(ctx: Ctx, actor: Actor, id: string, revision: string): Promise<DocumentView> {
   if (actor.kind !== "user") throw new SignedError("PERMISSION_DENIED", "Inline documents can only be approved by a person in the web UI");
+  requirePermission(actor, "inline.approve");
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, id);
     if (doc.status !== "draft") throw new SignedError("DOCUMENT_NOT_DRAFT", "Only drafts can be approved");
@@ -620,7 +637,7 @@ export async function approveInlineDocument(ctx: Ctx, actor: Actor, id: string, 
       .execute();
     await appendEvent(trx, id, "document.inline_approved", actor, { revision });
   });
-  return getDocument(ctx, id);
+  return getDocument(ctx, actor, id);
 }
 
 // ---------------------------------------------------------------------------
@@ -630,6 +647,8 @@ export interface DocumentView {
   id: string;
   title: string;
   status: DocumentStatus;
+  /** The person who owns and sent the document. */
+  owner: { id: string; name: string; email: string } | null;
   revision: string;
   source: "template" | "inline";
   template: { id: string; version: number } | null;
@@ -670,8 +689,9 @@ export interface DocumentView {
   links: { self: string; preview: string; artifacts: string; ui: string };
 }
 
-export async function getDocument(ctx: Ctx, id: string): Promise<DocumentView> {
+export async function getDocument(ctx: Ctx, actor: Actor, id: string): Promise<DocumentView> {
   const doc = await loadDocument(ctx.db, id);
+  requireReadDocument(actor, doc);
   const signers = await loadSigners(ctx.db, id);
   return documentView(ctx, doc, signers, (await getAccount(ctx)).config.inline_documents);
 }
@@ -695,6 +715,7 @@ export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], 
     id: doc.id,
     title: doc.title,
     status: doc.status as DocumentStatus,
+    owner: await userById(ctx, doc.owner_user_id).then((u) => (u ? { id: u.id, name: u.name, email: u.email } : null)),
     revision: doc.revision,
     source: doc.source_kind,
     template,
@@ -744,6 +765,8 @@ export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], 
 }
 
 export interface ListDocumentsOptions {
+  /** Only documents you own. Members always see only their own. */
+  mine?: boolean;
   status?: string;
   archived?: boolean;
   q?: string;
@@ -751,11 +774,12 @@ export interface ListDocumentsOptions {
   before?: string;
 }
 
-export async function listDocuments(ctx: Ctx, opts: ListDocumentsOptions = {}): Promise<{ data: DocumentView[]; next_before: string | null }> {
+export async function listDocuments(ctx: Ctx, actor: Actor, opts: ListDocumentsOptions = {}): Promise<{ data: DocumentView[]; next_before: string | null }> {
   const limit = Math.min(Math.max(opts.limit ?? 25, 1), 100);
   let q = ctx.db.selectFrom("documents").selectAll().orderBy("created_at", "desc").orderBy("id", "desc").limit(limit + 1);
   q = opts.archived ? q.where("archived_at", "is not", null) : q.where("archived_at", "is", null);
   if (opts.status) q = q.where("status", "=", opts.status);
+  if (opts.mine || !(can(actor, "documents.read_all") || can(actor, "documents.manage_all"))) q = q.where("owner_user_id", "=", userIdOf(actor) ?? "");
   if (opts.before) q = q.where("created_at", "<", opts.before);
   if (opts.q) {
     const term = `%${opts.q.toLowerCase().replace(/[%_]/g, "")}%`;

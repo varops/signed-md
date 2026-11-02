@@ -18,7 +18,11 @@ export interface Database {
   jobs: JobTable;
   idempotency_keys: IdempotencyTable;
   webhook_deliveries: WebhookDeliveryTable;
+  invitations: InvitationTable;
+  audit_events: AuditEventTable;
 }
+
+export type Role = "owner" | "admin" | "member" | "viewer";
 
 export interface AccountTable {
   id: string;
@@ -32,8 +36,38 @@ export interface UserTable {
   id: string;
   account_id: string;
   email: string;
+  name: string;
+  role: Role;
   password_hash: string | null;
   status: "active" | "disabled";
+  invited_by: string | null;
+  last_login_at: string | null;
+  deactivated_at: string | null;
+  created_at: string;
+}
+
+export interface InvitationTable {
+  id: string;
+  account_id: string;
+  email: string;
+  role: Role;
+  token_hash: string;
+  invited_by: string;
+  created_at: string;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+}
+
+/** Account-level audit log: team, settings, and template events. Document events live in `events`. */
+export interface AuditEventTable {
+  id: string;
+  account_id: string;
+  actor: string;
+  actor_label: string;
+  type: string;
+  /** JSON details. */
+  data: string;
   created_at: string;
 }
 
@@ -105,6 +139,8 @@ export interface DocumentTable {
   /** JSON object. */
   metadata: string;
   webhook_url: string | null;
+  /** The user who owns (sent) the document. */
+  owner_user_id: string | null;
   /** Message shown to signers in the signing email. Set when the document is sent. */
   signer_message: string | null;
   created_by: string;

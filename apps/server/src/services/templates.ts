@@ -1,6 +1,8 @@
 import { parseTemplate, SignedError, type FieldDef } from "@signed-md/core";
 import { newId, now } from "@signed-md/db";
 import { type Actor, actorRef, actorVia, type Ctx } from "../context.ts";
+import { recordAudit } from "./audit.ts";
+import { can, requirePermission } from "./permissions.ts";
 import { sha256 } from "../crypto.ts";
 
 export interface TemplateInput {
@@ -51,10 +53,11 @@ function checkSource(source: string): FieldDef[] {
  * A human in the UI may create and approve in one step (`approve: true`).
  */
 export async function createTemplate(ctx: Ctx, actor: Actor, input: TemplateInput & { approve?: boolean }): Promise<TemplateView> {
+  requirePermission(actor, "templates.create");
   const fields = checkSource(input.source);
   const name = input.name.trim();
   if (!name) throw new SignedError("INVALID_REQUEST", "Template name is required", [{ code: "INVALID_REQUEST", field: "name", message: "Required" }]);
-  const approve = input.approve === true && actor.kind === "user";
+  const approve = input.approve === true && actor.kind !== "apikey" && can(actor, "templates.approve");
   const id = newId("tpl");
   const t = now();
   await ctx.db.transaction().execute(async (trx) => {
@@ -88,6 +91,8 @@ export async function createTemplate(ctx: Ctx, actor: Actor, input: TemplateInpu
       })
       .execute();
   });
+  await recordAudit(ctx.db, actor, "template.created", { name, approved: approve });
+  if (approve) await recordAudit(ctx.db, actor, "template.approved", { name, version: 1 });
   return getTemplate(ctx, id);
 }
 
@@ -97,13 +102,16 @@ export async function addTemplateVersion(
   templateId: string,
   input: { source: string; name?: string; description?: string; approve?: boolean },
 ): Promise<TemplateView> {
+  requirePermission(actor, "templates.create");
   const fields = checkSource(input.source);
-  const approve = input.approve === true && actor.kind === "user";
+  const approve = input.approve === true && actor.kind !== "apikey" && can(actor, "templates.approve");
   const t = now();
+  let created = 0;
   await ctx.db.transaction().execute(async (trx) => {
     const tpl = await trx.selectFrom("templates").selectAll().where("id", "=", templateId).executeTakeFirst();
     if (!tpl) throw new SignedError("TEMPLATE_NOT_FOUND", `Template ${templateId} does not exist`);
     const version = Number(tpl.current_version) + 1;
+    created = version;
     await trx
       .insertInto("template_versions")
       .values({
@@ -130,7 +138,10 @@ export async function addTemplateVersion(
       .where("id", "=", templateId)
       .execute();
   });
-  return getTemplate(ctx, templateId);
+  const t2 = await getTemplate(ctx, templateId);
+  await recordAudit(ctx.db, actor, "template.version_created", { name: t2.name, version: created });
+  if (approve) await recordAudit(ctx.db, actor, "template.approved", { name: t2.name, version: created });
+  return t2;
 }
 
 /**
@@ -139,6 +150,7 @@ export async function addTemplateVersion(
  */
 export async function approveTemplateVersion(ctx: Ctx, actor: Actor, templateId: string, version: number): Promise<TemplateView> {
   if (actor.kind !== "user") throw new SignedError("PERMISSION_DENIED", "Templates can only be approved by a person in the web UI");
+  requirePermission(actor, "templates.approve");
   const res = await ctx.db
     .updateTable("template_versions")
     .set({ approval_status: "approved", approved_by: actorRef(actor), approved_at: now() })
@@ -146,21 +158,26 @@ export async function approveTemplateVersion(ctx: Ctx, actor: Actor, templateId:
     .where("version", "=", version)
     .where("approval_status", "=", "pending_approval")
     .executeTakeFirst();
-  if (Number(res.numUpdatedRows) === 0) {
+  if (Number(res.numUpdatedRows) > 0) {
+    await recordAudit(ctx.db, actor, "template.approved", { name: (await getTemplate(ctx, templateId)).name, version });
+  } else {
     const exists = await ctx.db.selectFrom("template_versions").select("id").where("template_id", "=", templateId).where("version", "=", version).executeTakeFirst();
     if (!exists) throw new SignedError("TEMPLATE_NOT_FOUND", `Template ${templateId} has no version ${version}`);
   }
   return getTemplate(ctx, templateId);
 }
 
-export async function setTemplateArchived(ctx: Ctx, templateId: string, archived: boolean): Promise<TemplateView> {
+export async function setTemplateArchived(ctx: Ctx, actor: Actor, templateId: string, archived: boolean): Promise<TemplateView> {
+  requirePermission(actor, "templates.manage");
   const res = await ctx.db
     .updateTable("templates")
     .set({ archived_at: archived ? now() : null })
     .where("id", "=", templateId)
     .executeTakeFirst();
   if (Number(res.numUpdatedRows) === 0) throw new SignedError("TEMPLATE_NOT_FOUND", `Template ${templateId} does not exist`);
-  return getTemplate(ctx, templateId);
+  const t = await getTemplate(ctx, templateId);
+  await recordAudit(ctx.db, actor, archived ? "template.archived" : "template.unarchived", { name: t.name });
+  return t;
 }
 
 export async function getTemplate(ctx: Ctx, templateId: string): Promise<TemplateView> {

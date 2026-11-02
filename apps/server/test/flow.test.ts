@@ -11,6 +11,7 @@ import { declineDocument, openSigningPage, submitSignature } from "../src/servic
 import { approveTemplateVersion, createTemplate } from "../src/services/templates.ts";
 import { drainJobs } from "../src/worker.ts";
 import { TEMPLATE, testContext } from "./helpers.ts";
+import { SYSTEM as SYS } from "../src/context.ts";
 
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 const meta = { ip: "203.0.113.7", user_agent: "vitest" };
@@ -49,11 +50,11 @@ describe("end-to-end signing flow (services)", async () => {
     expect(doc.validation?.valid).toBe(true);
 
     // Edit invalidates the old revision.
-    const p1 = await previewDocument(ctx, doc.id);
+    const p1 = await previewDocument(ctx, user, doc.id);
     expect(p1.html).toContain("$1,000.00");
     await updateDocument(ctx, api, doc.id, { values: { fee: "1200.00" } });
     await expect(sendDocument(ctx, api, doc.id, { approved_revision: p1.revision })).rejects.toMatchObject({ code: "REVISION_MISMATCH" });
-    const p2 = await previewDocument(ctx, doc.id);
+    const p2 = await previewDocument(ctx, user, doc.id);
     const sent = await sendDocument(ctx, api, doc.id, { approved_revision: p2.revision, approved_by: "Ran, via chat" });
     expect(sent.status).toBe("sent");
     expect(sent.current_signing_group).toBe(1);
@@ -77,7 +78,7 @@ describe("end-to-end signing flow (services)", async () => {
     expect(r2.document_status).toBe("signed");
     await drainJobs(ctx);
 
-    const arts = await listArtifacts(ctx, doc.id);
+    const arts = await listArtifacts(ctx, user, doc.id);
     expect(arts.map((a) => a.type)).toEqual(["pdf", "zip"]);
     const zip = await readArtifact(ctx, arts.find((a) => a.type === "zip")!.id);
     const files = unzipSync(new Uint8Array(zip!.data));
@@ -105,7 +106,7 @@ describe("end-to-end signing flow (services)", async () => {
       content: "# NDA\n\nSigned: {{a.signature:signature}}",
       signers: [{ key: "a", name: "A", email: "a@x.example" }],
     });
-    const p = await previewDocument(ctx, d1.id);
+    const p = await previewDocument(ctx, user, d1.id);
     await sendDocument(ctx, user, d1.id, { approved_revision: p.revision });
     await drainJobs(ctx);
     const tok = linkFor(dataDir, "a@x.example");
@@ -118,7 +119,7 @@ describe("end-to-end signing flow (services)", async () => {
       content: "# NDA 2\n\nSigned: {{b.signature:signature}}",
       signers: [{ key: "b", name: "B", email: "b@x.example" }],
     });
-    await sendDocument(ctx, user, d2.id, { approved_revision: (await previewDocument(ctx, d2.id)).revision });
+    await sendDocument(ctx, user, d2.id, { approved_revision: (await previewDocument(ctx, user, d2.id)).revision });
     await drainJobs(ctx);
     await declineDocument(ctx, linkFor(dataDir, "b@x.example"), "Price too high", meta);
     await drainJobs(ctx);
@@ -126,13 +127,13 @@ describe("end-to-end signing flow (services)", async () => {
   });
 
   it("enforces the inline document setting", async () => {
-    await updateAccount(ctx, { config: { inline_documents: "needs_approval" } });
+    await updateAccount(ctx, user, { config: { inline_documents: "needs_approval" } });
     const d = await createDocument(ctx, api, { content: "# X\n\n{{a.signature:signature}}", signers: [{ key: "a", name: "A", email: "a@y.example" }] });
-    const rev = (await previewDocument(ctx, d.id)).revision;
+    const rev = (await previewDocument(ctx, user, d.id)).revision;
     await expect(sendDocument(ctx, api, d.id, { approved_revision: rev })).rejects.toMatchObject({ code: "DOCUMENT_NOT_APPROVED" });
-    await updateAccount(ctx, { config: { inline_documents: "disabled" } });
+    await updateAccount(ctx, user, { config: { inline_documents: "disabled" } });
     await expect(createDocument(ctx, api, { content: "# Y", signers: [] })).rejects.toMatchObject({ code: "INLINE_DISABLED" });
-    await updateAccount(ctx, { config: { inline_documents: "allowed" } });
+    await updateAccount(ctx, user, { config: { inline_documents: "allowed" } });
     expect((await getAccount(ctx)).config.inline_documents).toBe("allowed");
   });
 });
@@ -143,18 +144,18 @@ describe("branding", async () => {
   const { setDefaultMessage, setLogo, readLogo } = await import("../src/services/branding.ts");
 
   it("accepts only small PNG or JPEG logos", async () => {
-    await expect(setLogo(ctx, new TextEncoder().encode("<svg onload=alert(1)>"))).rejects.toMatchObject({ code: "INVALID_REQUEST" });
-    await expect(setLogo(ctx, new Uint8Array(400_000).fill(0x89))).rejects.toMatchObject({ code: "INVALID_REQUEST" });
-    await setLogo(ctx, Buffer.from(PNG.split(",")[1]!, "base64"));
+    await expect(setLogo(ctx, user, new TextEncoder().encode("<svg onload=alert(1)>"))).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await expect(setLogo(ctx, user, new Uint8Array(400_000).fill(0x89))).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await setLogo(ctx, user, Buffer.from(PNG.split(",")[1]!, "base64"));
     expect((await readLogo(ctx))?.contentType).toBe("image/png");
   });
 
   it("uses the default message, or the one given when sending, in an HTML email with the logo inline", async () => {
-    await setDefaultMessage(ctx, "Default hello & welcome");
+    await setDefaultMessage(ctx, user, "Default hello & welcome");
     const d = await createDocument(ctx, user, { content: "# NDA\n\n{{a.signature:signature}}", signers: [{ key: "a", name: "A", email: "a@brand.example" }] });
-    await sendDocument(ctx, user, d.id, { approved_revision: (await previewDocument(ctx, d.id)).revision });
+    await sendDocument(ctx, user, d.id, { approved_revision: (await previewDocument(ctx, user, d.id)).revision });
     const d2 = await createDocument(ctx, user, { content: "# NDA 2\n\n{{b.signature:signature}}", signers: [{ key: "b", name: "B", email: "b@brand.example" }] });
-    await sendDocument(ctx, user, d2.id, { approved_revision: (await previewDocument(ctx, d2.id)).revision, message: "Custom <b>note</b> for {{recipient.first_name}} ({{ recipient.email }}) re {{document.title}}" });
+    await sendDocument(ctx, user, d2.id, { approved_revision: (await previewDocument(ctx, user, d2.id)).revision, message: "Custom <b>note</b> for {{recipient.first_name}} ({{ recipient.email }}) re {{document.title}}" });
     await drainJobs(ctx);
     const dir = join(dataDir, "outbox");
     const mails = readdirSync(dir).map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as { to: string; html: string });
@@ -167,9 +168,9 @@ describe("branding", async () => {
   });
 
   it("rejects unknown placeholders in the message", async () => {
-    await expect(setDefaultMessage(ctx, "Hi {{recipient.nmae}}")).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await expect(setDefaultMessage(ctx, user, "Hi {{recipient.nmae}}")).rejects.toMatchObject({ code: "INVALID_REQUEST" });
     const d = await createDocument(ctx, user, { content: "# X\n\n{{c.signature:signature}}", signers: [{ key: "c", name: "C", email: "c@brand.example" }] });
-    await expect(sendDocument(ctx, user, d.id, { approved_revision: (await previewDocument(ctx, d.id)).revision, message: "{{sender.name}}" })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await expect(sendDocument(ctx, user, d.id, { approved_revision: (await previewDocument(ctx, user, d.id)).revision, message: "{{sender.name}}" })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
   });
 });
 
@@ -192,7 +193,7 @@ describe("email banner and avatars", async () => {
     const off = renderEmail({ account: "Acme", hasLogo: false, icon: "document", headline: "x", person: { name: "Acme", avatar: null, initials: "AC" } }).html;
     expect(off).toContain(">AC</div>");
     expect(off).not.toContain("<img");
-    await expect(setBannerAndAvatars(ctx, { banner_color: "blue", avatars: true })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await expect(setBannerAndAvatars(ctx, SYS, { banner_color: "blue", avatars: true })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
     await ctx.close();
   });
 });

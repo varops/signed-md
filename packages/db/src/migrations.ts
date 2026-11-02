@@ -223,9 +223,56 @@ const m002: Migration = {
   },
 };
 
+/** Teams: user roles and names, invitations, an audit log, document owners, and per-user API keys. */
+const m003: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema.alterTable("users").addColumn("name", "text", (c) => c.notNull().defaultTo("")).execute();
+    await db.schema.alterTable("users").addColumn("role", "text", (c) => c.notNull().defaultTo("member")).execute();
+    await db.schema.alterTable("users").addColumn("invited_by", "text").execute();
+    await db.schema.alterTable("users").addColumn("last_login_at", "text").execute();
+    await db.schema.alterTable("users").addColumn("deactivated_at", "text").execute();
+    // The single v1.0 administrator becomes the owner.
+    await db.updateTable("users").set({ role: "owner" }).execute();
+
+    await db.schema
+      .createTable("invitations")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("account_id", "text", (c) => c.notNull().references("accounts.id"))
+      .addColumn("email", "text", (c) => c.notNull())
+      .addColumn("role", "text", (c) => c.notNull())
+      .addColumn("token_hash", "text", (c) => c.notNull().unique())
+      .addColumn("invited_by", "text", (c) => c.notNull())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("expires_at", "text", (c) => c.notNull())
+      .addColumn("accepted_at", "text")
+      .addColumn("revoked_at", "text")
+      .execute();
+
+    await db.schema
+      .createTable("audit_events")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("account_id", "text", (c) => c.notNull())
+      .addColumn("actor", "text", (c) => c.notNull())
+      .addColumn("actor_label", "text", (c) => c.notNull())
+      .addColumn("type", "text", (c) => c.notNull())
+      .addColumn("data", "text", (c) => c.notNull())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .execute();
+    await db.schema.createIndex("audit_events_created").on("audit_events").columns(["account_id", "created_at"]).execute();
+
+    await db.schema.alterTable("documents").addColumn("owner_user_id", "text").execute();
+    const owner = await db.selectFrom("users").select("id").orderBy("created_at").limit(1).executeTakeFirst();
+    if (owner) {
+      await db.updateTable("documents").set({ owner_user_id: owner.id }).execute();
+      await db.updateTable("api_keys").set({ user_id: owner.id }).where("user_id", "is", null).execute();
+    }
+  },
+};
+
 export const migrations: Record<string, Migration> = {
   "001_initial": m001,
   "002_signer_message": m002,
+  "003_teams": m003,
 };
 
 export const migrationProvider: MigrationProvider = {

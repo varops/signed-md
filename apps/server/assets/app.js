@@ -37,3 +37,9 @@
     text.addEventListener("input", function () { if (/^#[0-9a-fA-F]{6}$/.test(text.value)) picker.value = text.value; });
   });
 })();
+// Role selects on the Team page save on change.
+(function () {
+  document.querySelectorAll("select[data-autosubmit]").forEach(function (sel) {
+    sel.addEventListener("change", function () { sel.form.submit(); });
+  });
+})();

@@ -11,14 +11,15 @@ import type { MailAttachment, MailMessage } from "./mail.ts";
 import { personalizeMessage } from "./messagevars.ts";
 
 export interface EmailJob {
-  kind: "signing_request" | "reminder" | "last_signer" | "revoked" | "declined" | "expired" | "completed" | "completed_sender";
-  document_id: string;
+  kind: "signing_request" | "reminder" | "last_signer" | "revoked" | "declined" | "expired" | "completed" | "completed_sender" | "invitation";
+  document_id?: string;
+  invitation_id?: string;
   signer_id?: string;
   link?: string;
 }
 
 async function adminEmails(ctx: Ctx): Promise<string[]> {
-  const rows = await ctx.db.selectFrom("users").select("email").where("status", "=", "active").execute();
+  const rows = await ctx.db.selectFrom("users").select("email").where("status", "=", "active").where("role", "in", ["owner", "admin"]).execute();
   return rows.map((r) => r.email);
 }
 
@@ -27,16 +28,51 @@ function longDate(iso: string | null, tz: string): string {
   return new Intl.DateTimeFormat("en-GB", { dateStyle: "long", timeZone: tz }).format(new Date(iso));
 }
 
+async function emailAssets(ctx: Ctx) {
+  const account = await getAccount(ctx);
+  const logo = await readLogo(ctx);
+  const inline: MailAttachment[] = logo ? [{ filename: `logo.${logo.contentType === "image/png" ? "png" : "jpg"}`, content: logo.data, contentType: logo.contentType, cid: LOGO_CID }] : [];
+  return { account, logo, inline };
+}
+
+async function sendInvitation(ctx: Ctx, job: EmailJob): Promise<void> {
+  const inv = await ctx.db.selectFrom("invitations").selectAll().where("id", "=", job.invitation_id!).executeTakeFirst();
+  if (!inv || inv.accepted_at || inv.revoked_at || !job.link) return;
+  const inviter = await ctx.db.selectFrom("users").select(["name", "email"]).where("id", "=", inv.invited_by).executeTakeFirst();
+  const { account, logo, inline } = await emailAssets(ctx);
+  const inviterName = inviter ? inviter.name || inviter.email : account.name;
+  const role = { owner: "an owner", admin: "an administrator", member: "a member", viewer: "a viewer" }[inv.role];
+  const { html, text } = renderEmail({
+    account: account.name,
+    hasLogo: logo !== null,
+    bannerColor: account.config.branding.banner_color,
+    icon: "bell",
+    person: { name: inviterName, avatar: avatarUrl(ctx.config, account.config.branding.avatars, inviter?.email), initials: initialsOf(inviterName) },
+    headline: `${inviterName} invited you to join ${account.name} on Signed.md.`,
+    button: { label: "Accept invitation", url: unseal(ctx.keys.serverSecret, job.link) },
+    paragraphs: [`You'll join as ${role}. Signed.md is where ${account.name} prepares and sends agreements for signature.`, "The invitation expires in 7 days."],
+    security: true,
+  });
+  await ctx.mailer.send({ to: inv.email, subject: `Join ${account.name} on Signed.md`, html, text, ...(inviter ? { replyTo: inviter.email } : {}), attachments: inline }, account.config.smtp);
+}
+
 /** Build and send the messages for one email job. */
 export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
+  if (job.kind === "invitation") return sendInvitation(ctx, job);
   const account = await getAccount(ctx);
-  const doc = await loadDocument(ctx.db, job.document_id);
+  const doc = await loadDocument(ctx.db, job.document_id!);
   const signers = await loadSigners(ctx.db, doc.id);
   const signer = job.signer_id ? signers.find((s) => s.id === job.signer_id) : undefined;
   if (job.signer_id && !signer) throw new SignedError("SIGNER_INVALID", `Signer ${job.signer_id} not found`);
 
-  const admins = await adminEmails(ctx);
-  const senderEmail = admins[0];
+  // The document's owner is the sender: signers see their name, avatar, and email, and replies go to them.
+  // Notices (declined, expired, completed) go to the owner, or to the owners of the account if theirs is inactive.
+  const owner = doc.owner_user_id
+    ? await ctx.db.selectFrom("users").select(["name", "email", "status"]).where("id", "=", doc.owner_user_id).executeTakeFirst()
+    : undefined;
+  const admins = owner?.status === "active" ? [owner.email] : await adminEmails(ctx);
+  const senderEmail = owner?.email ?? admins[0];
+  const senderName = owner ? owner.name || owner.email.split("@")[0]! : account.name;
   const logo = await readLogo(ctx);
   const inline: MailAttachment[] = logo ? [{ filename: `logo.${logo.contentType === "image/png" ? "png" : "jpg"}`, content: logo.data, contentType: logo.contentType, cid: LOGO_CID }] : [];
   const docUrl = `${ctx.config.publicUrl}/documents/${doc.id}`;
@@ -44,8 +80,7 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
 
   const branding = account.config.branding;
   const person = (name: string, email: string | null | undefined): Person => ({ name, avatar: avatarUrl(ctx.config, branding.avatars, email), initials: initialsOf(name) });
-  // The sender is the account; its avatar is the administrator's.
-  const sender = person(account.name, senderEmail);
+  const sender = person(senderName, senderEmail);
   const signerPeople = signers.map((s) => person(s.name, s.email));
 
   const msg = (to: string, subject: string, parts: Omit<EmailParts, "account" | "hasLogo">, attachments: MailAttachment[] = []) => {
@@ -80,9 +115,9 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
       msg(signer.email, `${reminder ? "Reminder: " : ""}Please sign: ${doc.title}`, {
         icon: "document",
         person: sender,
-        headline: `${account.name} sent you a document to review and sign.`,
+        headline: `${senderName} sent you a document to review and sign.`,
         button: { label: "Review document", url: link },
-        from: { name: account.name, ...(senderEmail ? { email: senderEmail } : {}) },
+        from: { name: owner ? `${senderName} · ${account.name}` : account.name, ...(senderEmail ? { email: senderEmail } : {}) },
         message: doc.signer_message ? personalizeMessage(doc.signer_message, { name: signer.name, email: signer.email, title: doc.title }) : null,
         // The sender's message replaces the standard line, as in familiar e-signature emails.
         paragraphs: [
@@ -117,7 +152,7 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
       msg(signer.email, `Cancelled: ${doc.title}`, {
         icon: "cross",
         person: sender,
-        headline: `${account.name} cancelled this document.`,
+        headline: `${senderName} cancelled this document.`,
         paragraphs: [`Hi ${signer.name},`, `"${doc.title}" was cancelled. You don't need to do anything, and the signing link no longer works.`],
         details: [["Document", doc.title]],
       });
