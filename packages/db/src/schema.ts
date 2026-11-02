@@ -105,6 +105,8 @@ export interface DocumentTable {
   /** JSON object. */
   metadata: string;
   webhook_url: string | null;
+  /** Message shown to signers in the signing email. Set when the document is sent. */
+  signer_message: string | null;
   created_by: string;
   approved_revision: string | null;
   approved_by: string | null;

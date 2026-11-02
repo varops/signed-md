@@ -249,9 +249,12 @@ POST /v1/documents/doc_123/send
 ```json
 {
   "approved_revision": "rev_456",
-  "approved_by": "Sam Lee, via chat"
+  "approved_by": "Sam Lee, via chat",
+  "message": "Hi Jane, here's the agreement we discussed."
 }
 ```
+
+`message` is optional. It appears in the signing email. Without it, the account's default message (Settings → Branding) is used.
 
 The server rejects sending if the draft changed after the approved preview (`REVISION_MISMATCH`).
 

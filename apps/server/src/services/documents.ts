@@ -212,6 +212,7 @@ export async function createDocument(ctx: Ctx, actor: Actor, input: CreateDocume
     expires_in_days: input.expires_in_days ?? account.config.default_expiry_days,
     metadata: JSON.stringify(input.metadata ?? {}),
     webhook_url: input.webhook_url ?? null,
+    signer_message: null,
     created_by: actorRef(actor),
     approved_revision: null,
     approved_by: null,
@@ -418,9 +419,13 @@ export async function sendDocument(
   ctx: Ctx,
   actor: Actor,
   id: string,
-  input: { approved_revision: string; approved_by?: string },
+  input: { approved_revision: string; approved_by?: string; message?: string },
 ): Promise<DocumentView> {
   const account = await getAccount(ctx);
+  if (input.message !== undefined && input.message.length > 2000) {
+    throw new SignedError("INVALID_REQUEST", "The message to signers must be at most 2000 characters", [{ code: "INVALID_REQUEST", field: "message", message: "Too long" }]);
+  }
+  const message = (input.message ?? account.config.branding.email_message).trim() || null;
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, id);
     if (doc.status !== "draft") throw new SignedError("DOCUMENT_ALREADY_SENT", "This document has already been sent");
@@ -450,6 +455,7 @@ export async function sendDocument(
         expires_at: new Date(Date.now() + Number(doc.expires_in_days) * 86400_000).toISOString(),
         approved_revision: input.approved_revision,
         approved_by: input.approved_by?.slice(0, 500) ?? actor.label,
+        signer_message: message,
       })
       .where("id", "=", id)
       .execute();
@@ -480,6 +486,7 @@ export async function sendDocument(
     });
     await appendEvent(trx, id, "document.sent", actor, {
       revision: prepared.revision,
+      message_sha256: message ? sha256(message) : null,
       content_sha256: sha256(prepared.content),
       signers: prepared.signers.map((s) => ({ key: s.key, name: s.name, email: s.email, order: s.order })),
     });
@@ -648,6 +655,7 @@ export interface DocumentView {
   timezone: string;
   locale: string;
   webhook_url: string | null;
+  message: string | null;
   metadata: Record<string, unknown>;
   archived: boolean;
   created_at: string;
@@ -719,6 +727,7 @@ export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], 
     timezone: doc.timezone,
     locale: doc.locale,
     webhook_url: doc.webhook_url,
+    message: doc.signer_message,
     metadata: JSON.parse(doc.metadata) as Record<string, unknown>,
     archived: doc.archived_at !== null,
     created_at: doc.created_at,

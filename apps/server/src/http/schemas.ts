@@ -61,6 +61,7 @@ export const SendSchema = z
   .object({
     approved_revision: z.string().openapi({ example: "rev_0f3a…", description: "The revision returned by preview that the human approved." }),
     approved_by: z.string().max(500).optional().openapi({ example: "Ran, via chat", description: "Who approved. Recorded as a statement, not a verified identity." }),
+    message: z.string().max(2000).optional().openapi({ example: "Hi Jane, here's the agreement we discussed.", description: "Message to signers in the signing email. Defaults to the account's message from Settings → Branding." }),
   })
   .openapi("SendDocument");
 
@@ -102,6 +103,7 @@ export const DocumentSchema = z
     timezone: z.string(),
     locale: z.string(),
     webhook_url: z.string().nullable(),
+    message: z.string().nullable(),
     metadata: z.record(z.string(), z.unknown()),
     archived: z.boolean(),
     created_at: z.string(),

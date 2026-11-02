@@ -167,6 +167,17 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     await page.waitForURL(/\/templates\/tpl_/);
     await shot("03-template");
 
+    // Branding: a logo and a default message to signers.
+    await page.goto(`${base}/settings/branding`);
+    await page.setInputFiles("input[name=logo]", join(import.meta.dirname, "fixtures", "logo.png"));
+    await page.click("button:has-text('Upload')");
+    await page.waitForURL(/msg=logo/);
+    await page.fill("textarea[name=message]", "Hi, please review and sign at your convenience. Reply to this email with any questions.");
+    await page.click("form[action='/settings/branding/message'] button");
+    await page.waitForURL(/msg=saved/);
+    await page.waitForTimeout(300);
+    await shot("11-branding");
+
     // Create an API key for the agent.
     await page.goto(`${base}/settings`);
     await page.fill("input[name=label]", "Sales agent");
@@ -230,7 +241,12 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     expect(stale.data.error.code).toBe("REVISION_MISMATCH");
 
     // 8. Approve and send.
-    const sent = await call("signed_send_document", { document_id: docId, approved_revision: preview.data.revision, approved_by: "Ran, in chat" });
+    const sent = await call("signed_send_document", {
+      document_id: docId,
+      approved_revision: preview.data.revision,
+      approved_by: "Ran, in chat",
+      message: "Hi Jane, here is the agreement we discussed on Friday.",
+    });
     expect(sent.ok).toBe(true);
     expect(sent.data.status).toBe("sent");
 
@@ -238,7 +254,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     const linkFor = async (email: string) => {
       for (let i = 0; i < 50; i++) {
         await page.goto(`${base}/outbox`);
-        const text = await page.locator("details", { hasText: email }).first().textContent().catch(() => null);
+        const text = await page.locator("details.card", { hasText: email }).first().locator("pre").textContent().catch(() => null);
         const m = text ? /\/s\/([A-Za-z0-9_-]{30,})/.exec(text) : null;
         if (m) return `${base}/s/${m[1]}`;
         await new Promise((r) => setTimeout(r, 200));
@@ -246,8 +262,17 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
       throw new Error(`No signing email for ${email}`);
     };
 
+    // The signing email is HTML, branded with the logo, and carries the agent's message.
+    const janeLink = await linkFor("jane@acme.example");
+    await page.goto(`${base}/outbox`);
+    const emailFrame = page.frameLocator("iframe.email-frame").first();
+    await emailFrame.locator("text=Hi Jane, here is the agreement we discussed on Friday.").waitFor();
+    expect(await emailFrame.locator("img[alt=Automaze]").count()).toBe(1);
+    expect(await emailFrame.locator("a:has-text('REVIEW DOCUMENT')").count()).toBe(1);
+    await shot("12-signing-email");
+
     const signer = await browser.newPage({ viewport: { width: 420, height: 900 }, isMobile: true, hasTouch: true });
-    await signer.goto(await linkFor("jane@acme.example"));
+    await signer.goto(janeLink);
     // "Let's start": agree to sign electronically before the document opens.
     await shot("05-signing-intro", signer);
     await signer.check("input[name=consent]");

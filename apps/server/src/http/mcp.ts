@@ -143,10 +143,15 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
     "signed_send_document",
     {
       description: "Send the approved revision for signature. Only call after the user explicitly approved this exact revision.",
-      inputSchema: { document_id: z.string(), approved_revision: z.string(), approved_by: z.string().optional().describe("Who approved, e.g. 'Ran, in chat'") },
+      inputSchema: {
+        document_id: z.string(),
+        approved_revision: z.string(),
+        approved_by: z.string().optional().describe("Who approved, e.g. 'Ran, in chat'"),
+        message: z.string().max(2000).optional().describe("Optional message to signers in the signing email. Defaults to the account's message. Show it to the user with the preview."),
+      },
     },
-    ({ document_id, approved_revision, approved_by }) =>
-      run(() => docs.sendDocument(ctx, actor, document_id, { approved_revision, ...(approved_by ? { approved_by } : {}) })),
+    ({ document_id, approved_revision, approved_by, message }) =>
+      run(() => docs.sendDocument(ctx, actor, document_id, { approved_revision, ...(approved_by ? { approved_by } : {}), ...(message !== undefined ? { message } : {}) })),
   );
 
   server.registerTool(

@@ -19,6 +19,15 @@ export interface AccountConfig {
   smtp: SmtpConfig | null;
   /** Attach the completed ZIP to completion emails (the PDF is always attached). */
   attach_zip: boolean;
+  /** Minimal branding: a logo and a default message to signers. */
+  branding: Branding;
+}
+
+export interface Branding {
+  /** Stored logo, or null to show the company name. */
+  logo: { path: string; content_type: "image/png" | "image/jpeg"; sha256: string } | null;
+  /** Default message to signers. Prefilled when sending; can be changed per document. */
+  email_message: string;
 }
 
 export interface Account {
@@ -36,6 +45,7 @@ const DEFAULTS: Omit<AccountConfig, "webhook_secret"> = {
   locale: "en-US",
   smtp: null,
   attach_zip: false,
+  branding: { logo: null, email_message: "" },
 };
 
 export function newWebhookSecret(): string {
@@ -88,7 +98,7 @@ export async function getAccount(ctx: Ctx, db: Kysely<Database> = ctx.db): Promi
   return {
     id: row.id,
     name: row.name,
-    config: { ...DEFAULTS, webhook_secret: "", ...stored } as AccountConfig,
+    config: { ...DEFAULTS, webhook_secret: "", ...stored, branding: { ...DEFAULTS.branding, ...stored.branding } } as AccountConfig,
     created_at: row.created_at,
   };
 }

@@ -9,6 +9,8 @@ export interface MailAttachment {
   filename: string;
   content: Buffer;
   contentType: string;
+  /** Content-ID for inline images referenced as cid:<id> in the HTML. */
+  cid?: string;
 }
 
 export interface MailMessage {
@@ -16,6 +18,7 @@ export interface MailMessage {
   subject: string;
   text: string;
   html: string;
+  replyTo?: string;
   attachments?: MailAttachment[];
 }
 
@@ -72,7 +75,8 @@ export class Mailer {
       subject: msg.subject,
       text: msg.text,
       html: msg.html,
-      attachments: msg.attachments?.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType })) ?? [],
+      ...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
+      attachments: msg.attachments?.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType, ...(a.cid ? { cid: a.cid } : {}) })) ?? [],
     });
     return "smtp";
   }
@@ -80,14 +84,19 @@ export class Mailer {
   private async toOutbox(msg: MailMessage): Promise<void> {
     const created_at = new Date().toISOString();
     const id = `${created_at.replace(/[:.]/g, "-")}-${Math.random().toString(36).slice(2, 8)}`;
+    // Inline images become data URLs so the outbox can show the email as it would look.
+    let html = msg.html;
+    for (const a of msg.attachments ?? []) {
+      if (a.cid) html = html.split(`cid:${a.cid}`).join(`data:${a.contentType};base64,${a.content.toString("base64")}`);
+    }
     const entry: OutboxEntry = {
       id,
       created_at,
       to: msg.to,
       subject: msg.subject,
       text: msg.text,
-      html: msg.html,
-      attachments: (msg.attachments ?? []).map((a) => ({ filename: a.filename, size: a.content.length })),
+      html,
+      attachments: (msg.attachments ?? []).filter((a) => !a.cid).map((a) => ({ filename: a.filename, size: a.content.length })),
     };
     await writeFile(join(this.outboxDir, `${id}.json`), JSON.stringify(entry, null, 2));
     log.info("email written to outbox (no SMTP configured)", { to: msg.to, subject: msg.subject });
@@ -96,6 +105,15 @@ export class Mailer {
   async outbox(limit = 100): Promise<OutboxEntry[]> {
     const files = (await readdir(this.outboxDir)).filter((f) => f.endsWith(".json")).sort().reverse().slice(0, limit);
     return Promise.all(files.map(async (f) => JSON.parse(await readFile(join(this.outboxDir, f), "utf8")) as OutboxEntry));
+  }
+
+  async outboxEntry(id: string): Promise<OutboxEntry | null> {
+    if (!/^[A-Za-z0-9-]+$/.test(id)) return null;
+    try {
+      return JSON.parse(await readFile(join(this.outboxDir, `${id}.json`), "utf8")) as OutboxEntry;
+    } catch {
+      return null;
+    }
   }
 
   async verify(accountSmtp: SmtpConfig | null): Promise<void> {

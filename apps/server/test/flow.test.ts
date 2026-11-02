@@ -122,7 +122,7 @@ describe("end-to-end signing flow (services)", async () => {
     await drainJobs(ctx);
     await declineDocument(ctx, linkFor(dataDir, "b@x.example"), "Price too high", meta);
     await drainJobs(ctx);
-    expect(outbox(dataDir).some((m) => m.subject.includes("declined") && m.text.includes("Price too high"))).toBe(true);
+    expect(outbox(dataDir).some((m) => /declined/i.test(m.subject) && m.text.includes("Price too high"))).toBe(true);
   });
 
   it("enforces the inline document setting", async () => {
@@ -134,5 +134,35 @@ describe("end-to-end signing flow (services)", async () => {
     await expect(createDocument(ctx, api, { content: "# Y", signers: [] })).rejects.toMatchObject({ code: "INLINE_DISABLED" });
     await updateAccount(ctx, { config: { inline_documents: "allowed" } });
     expect((await getAccount(ctx)).config.inline_documents).toBe("allowed");
+  });
+});
+
+describe("branding", async () => {
+  const { ctx, user, dataDir } = await testContext();
+  afterAll(() => ctx.close());
+  const { setDefaultMessage, setLogo, readLogo } = await import("../src/services/branding.ts");
+
+  it("accepts only small PNG or JPEG logos", async () => {
+    await expect(setLogo(ctx, new TextEncoder().encode("<svg onload=alert(1)>"))).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await expect(setLogo(ctx, new Uint8Array(400_000).fill(0x89))).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await setLogo(ctx, Buffer.from(PNG.split(",")[1]!, "base64"));
+    expect((await readLogo(ctx))?.contentType).toBe("image/png");
+  });
+
+  it("uses the default message, or the one given when sending, in an HTML email with the logo inline", async () => {
+    await setDefaultMessage(ctx, "Default hello & welcome");
+    const d = await createDocument(ctx, user, { content: "# NDA\n\n{{a.signature:signature}}", signers: [{ key: "a", name: "A", email: "a@brand.example" }] });
+    await sendDocument(ctx, user, d.id, { approved_revision: (await previewDocument(ctx, d.id)).revision });
+    const d2 = await createDocument(ctx, user, { content: "# NDA 2\n\n{{b.signature:signature}}", signers: [{ key: "b", name: "B", email: "b@brand.example" }] });
+    await sendDocument(ctx, user, d2.id, { approved_revision: (await previewDocument(ctx, d2.id)).revision, message: "Custom <b>note</b>" });
+    await drainJobs(ctx);
+    const dir = join(dataDir, "outbox");
+    const mails = readdirSync(dir).map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as { to: string; html: string });
+    const a = mails.find((m) => m.to === "a@brand.example")!;
+    const b = mails.find((m) => m.to === "b@brand.example")!;
+    expect(a.html).toContain("Default hello &amp; welcome");
+    expect(a.html).toContain("data:image/png;base64,"); // logo inlined
+    expect(b.html).toContain("Custom &lt;b&gt;note&lt;/b&gt;"); // escaped
+    expect(b.html).not.toContain("Default hello");
   });
 });

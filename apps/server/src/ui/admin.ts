@@ -13,6 +13,8 @@ import { listEvents } from "../services/events.ts";
 import { listArtifacts } from "../services/finalize.ts";
 import * as tpl from "../services/templates.ts";
 import { listDeliveries } from "../services/webhooks.ts";
+import { readLogo, removeLogo, setDefaultMessage, setLogo } from "../services/branding.ts";
+import { renderEmail } from "../services/emailtemplate.ts";
 import { type FormBody, parseSigners, parseValues, signerRows, str, valueInput } from "./forms.ts";
 import { badge, csrfInput, type H, issuesList, shell, when } from "./layout.ts";
 
@@ -31,6 +33,8 @@ const MESSAGES: Record<string, ["ok" | "bad" | "warn" | "info", string]> = {
   created: ["ok", "Created."],
   password: ["ok", "Password changed."],
   testmail: ["ok", "Test email sent."],
+  logo: ["ok", "Logo updated."],
+  nologo: ["ok", "Logo removed."],
 };
 
 const EXAMPLE_TEMPLATE = `---
@@ -271,6 +275,7 @@ export function createAdmin(ctx: Ctx) {
                 : html`<p class="small muted">You are approving revision <code>${preview!.revision.slice(0, 16)}…</code>. Any edit needs a new approval.</p>
                   <form method="post" action="/documents/${d.id}/send" data-confirm="Send this document for signature now?">${csrfInput(csrf)}
                     <input type="hidden" name="approved_revision" value="${preview!.revision}">
+                    <div class="field"><label>Message to signers <span class="muted">· optional</span></label><textarea name="message" style="min-height:90px" maxlength="2000" placeholder="Shown in the signing email">${account.config.branding.email_message}</textarea></div>
                     <div class="field"><label>Approved by</label><input type="text" name="approved_by" value="${c.get("user").label}"></div>
                     <button class="btn primary block">Send for signature</button></form>`
               : html`<p class="muted">Fix the errors, then send.</p>`}
@@ -289,6 +294,7 @@ export function createAdmin(ctx: Ctx) {
             <dt>Source</dt><dd>${d.template ? html`<a href="/templates/${d.template.id}">template v${d.template.version}</a>` : "inline"}</dd>
             <dt>Revision</dt><dd class="mono">${d.revision.slice(0, 20)}…</dd>
             ${d.approved_by ? html`<dt>Approved by</dt><dd>${d.approved_by}</dd>` : ""}
+            ${d.message ? html`<dt>Message</dt><dd>${d.message}</dd>` : ""}
             <dt>Created</dt><dd>${when(d.created_at)}</dd>
             ${d.sent_at ? html`<dt>Sent</dt><dd>${when(d.sent_at)}</dd>` : ""}
             ${d.expires_at ? html`<dt>Expires</dt><dd>${when(d.expires_at)}</dd>` : html`<dt>Expires</dt><dd>${d.expires_in_days} days after sending</dd>`}
@@ -359,7 +365,7 @@ export function createAdmin(ctx: Ctx) {
 
   action("/documents/:id/send", async (c, b) => {
     const id = c.req.param("id")!;
-    await docs.sendDocument(ctx, c.get("user"), id, { approved_revision: str(b, "approved_revision"), approved_by: str(b, "approved_by") || c.get("user").label });
+    await docs.sendDocument(ctx, c.get("user"), id, { approved_revision: str(b, "approved_revision"), approved_by: str(b, "approved_by") || c.get("user").label, message: str(b, "message") });
     return `/documents/${id}?msg=sent`;
   });
   action("/documents/:id/approve-inline", async (c, b) => {
@@ -510,6 +516,7 @@ export function createAdmin(ctx: Ctx) {
     const newKey = c.req.query("key");
     return page(c, "Settings", "settings", html`
       <div class="page-head"><h1>Settings</h1></div>
+      ${settingsTabs("general")}
       ${newKey ? html`<div class="notice ok"><strong>New API key.</strong> Copy it now. It will not be shown again.<pre>${newKey}</pre><button class="btn small" data-copy="${newKey}">Copy</button></div>` : ""}
 
       <div class="card"><h2>Connect an agent</h2>
@@ -622,7 +629,9 @@ export function createAdmin(ctx: Ctx) {
     await updateAccount(ctx, { config: { smtp } });
     if (str(b, "do") === "test") {
       try {
-        await ctx.mailer.send({ to: c.get("user").label, subject: "Signed.md test email", text: "SMTP works.", html: "<p>SMTP works.</p>" }, smtp);
+        const acct = await getAccount(ctx);
+        const t = renderEmail({ account: acct.name, hasLogo: false, icon: "check", headline: "SMTP works. Signed.md can send email.", paragraphs: ["This is a test email from your Signed.md settings."] });
+        await ctx.mailer.send({ to: c.get("user").label, subject: "Signed.md test email", text: t.text, html: t.html }, smtp);
         return c.redirect("/settings?msg=testmail");
       } catch (e) {
         return page(c, "Settings", "settings", html`<div class="notice bad">Saved, but the test email failed: ${(e as Error).message}</div><a class="btn" href="/settings">Back</a>`);
@@ -640,6 +649,87 @@ export function createAdmin(ctx: Ctx) {
     }
   });
 
+  // ---- Branding ----
+
+  app.get("/settings/branding", async (c) => {
+    const account = await getAccount(ctx);
+    const logo = account.config.branding.logo;
+    const csrf = c.get("csrf");
+    return page(c, "Branding", "settings", html`
+      <div class="page-head"><h1>Settings</h1></div>
+      ${settingsTabs("branding")}
+      <div style="max-width:720px">
+        <div>
+          <form method="post" action="/settings/branding/logo" enctype="multipart/form-data" class="card">${csrfInput(csrf)}
+            <h2>Logo</h2>
+            <p class="small muted">Shown at the top of every email and on the signing pages. PNG or JPEG, up to 300 KB. A wide logo about 400 × 80 pixels works best.</p>
+            ${logo ? html`<div class="logo-preview"><img src="/branding/logo?v=${logo.sha256.slice(0, 8)}" alt="Current logo"></div>` : html`<p class="muted">No logo. Emails show “${account.name}” instead.</p>`}
+            <div class="row" style="margin-top:12px"><input type="file" name="logo" accept="image/png,image/jpeg" style="max-width:280px"><button class="btn primary">Upload</button></div>
+          </form>
+          ${logo ? html`<form method="post" action="/settings/branding/logo/remove" class="inline" style="display:block;margin:-6px 0 18px">${csrfInput(csrf)}<button class="btn small">Remove logo</button></form>` : ""}
+          <form method="post" action="/settings/branding/message" class="card">${csrfInput(csrf)}
+            <h2>Message to signers</h2>
+            <p class="small muted">The default message in every signing email. You can change it each time you send. Agents can pass their own message too.</p>
+            <div class="field"><textarea name="message" maxlength="2000" placeholder="e.g. Hi, please review and sign at your convenience. Reply to this email with any questions.">${account.config.branding.email_message}</textarea></div>
+            <button class="btn primary">Save</button>
+          </form>
+        </div>
+        <div class="card"><h2>Preview</h2><p class="small muted">The email a signer receives.</p>
+          <iframe class="email-frame" src="/settings/branding/preview" title="Email preview"></iframe></div>
+      </div>`);
+  });
+
+  app.get("/settings/branding/preview", async (c) => {
+    const account = await getAccount(ctx);
+    const logo = await readLogo(ctx);
+    const { html: body } = renderEmail({
+      account: account.name,
+      hasLogo: logo !== null,
+      icon: "document",
+      headline: `${account.name} sent you a document to review and sign.`,
+      button: { label: "Review document", url: "#" },
+      from: { name: account.name, email: c.get("user").label },
+      message: account.config.branding.email_message || null,
+      paragraphs: account.config.branding.email_message ? [] : ['Hi Jane Doe, please review and sign "Standard services agreement". It takes a few minutes and works on your phone.'],
+      details: [["Document", "Standard services agreement"], ["Signers", "Jane Doe, Sam Lee"]],
+      security: true,
+    });
+    return emailPage(c, logo ? body.split("cid:logo@signed.md").join(`data:${logo.contentType};base64,${logo.data.toString("base64")}`) : body);
+  });
+
+  app.post("/settings/branding/logo", async (c) => {
+    const b = (await c.req.parseBody()) as FormBody;
+    const file = b.logo;
+    try {
+      if (!(file instanceof File)) throw new SignedError("INVALID_REQUEST", "Choose a logo file to upload");
+      await setLogo(ctx, new Uint8Array(await file.arrayBuffer()));
+      return c.redirect("/settings/branding?msg=logo");
+    } catch (e) {
+      if (!(e instanceof SignedError)) throw e;
+      return page(c, "Branding", "settings", html`<div class="notice bad">${e.message}</div><a class="btn" href="/settings/branding">Back</a>`);
+    }
+  });
+  app.post("/settings/branding/logo/remove", async (c) => {
+    await removeLogo(ctx);
+    return c.redirect("/settings/branding?msg=nologo");
+  });
+  app.post("/settings/branding/message", async (c) => {
+    const b = (await c.req.parseBody()) as FormBody;
+    try {
+      await setDefaultMessage(ctx, str(b, "message"));
+      return c.redirect("/settings/branding?msg=saved");
+    } catch (e) {
+      if (!(e instanceof SignedError)) throw e;
+      return page(c, "Branding", "settings", html`<div class="notice bad">${e.message}</div><a class="btn" href="/settings/branding">Back</a>`);
+    }
+  });
+
+  app.get("/outbox/:id/html", async (c) => {
+    const m = await ctx.mailer.outboxEntry(c.req.param("id"));
+    if (!m) return c.notFound();
+    return emailPage(c, m.html);
+  });
+
   // ---- Outbox ----
 
   app.get("/outbox", async (c) => {
@@ -648,14 +738,27 @@ export function createAdmin(ctx: Ctx) {
     const mails = await ctx.mailer.outbox(50);
     return page(c, "Outbox", "outbox", html`<div class="page-head"><h1>Outbox</h1></div>
       <div class="notice ${smtp ? "info" : "warn"}">${smtp ? `SMTP is configured (${smtp.host}). New emails are sent there. This list shows emails written before SMTP was set.` : "No SMTP server is set. Emails are kept here instead of being sent, so you can test the full flow. Configure SMTP in Settings."}</div>
-      ${mails.length === 0 ? html`<div class="card empty">No emails yet.</div>` : mails.map((m) => html`<details class="card"><summary><strong>${m.subject}</strong> <span class="muted">→ ${m.to} · ${when(m.created_at)}</span></summary>
-        <pre>${m.text}</pre>${m.attachments.length ? html`<p class="small muted">Attachments: ${m.attachments.map((a) => `${a.filename} (${Math.round(a.size / 1024)} KB)`).join(", ")}</p>` : ""}</details>`)}`);
+      ${mails.length === 0 ? html`<div class="card empty">No emails yet.</div>` : mails.map((m, i) => html`<details class="card" ${i === 0 ? "open" : ""}><summary><strong>${m.subject}</strong> <span class="muted">→ ${m.to} · ${when(m.created_at)}</span></summary>
+        ${m.html ? html`<iframe class="email-frame" src="/outbox/${m.id}/html" title="${m.subject}" loading="lazy"></iframe>` : ""}
+        ${m.attachments.length ? html`<p class="small muted">Attachments: ${m.attachments.map((a) => `${a.filename} (${Math.round(a.size / 1024)} KB)`).join(", ")}</p>` : ""}
+        <details class="small"><summary>Plain text version</summary><pre>${m.text}</pre></details></details>`)}`);
   });
 
   return app;
 }
 
 // ---------------------------------------------------------------------------
+
+function settingsTabs(active: "general" | "branding"): H {
+  return html`<nav class="tabs-nav"><a href="/settings" class="${active === "general" ? "active" : ""}">General</a><a href="/settings/branding" class="${active === "branding" ? "active" : ""}">Branding</a></nav>`;
+}
+
+/** Serve email HTML for same-origin preview frames. Scripts stay blocked; only framing by this app is allowed. */
+function emailPage(c: Context, body: string) {
+  c.header("content-security-policy", "default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'");
+  c.header("x-frame-options", "SAMEORIGIN");
+  return c.html(body);
+}
 
 /** Turn actor references ("user:usr_x", "apikey:key_x") into readable names. */
 async function actorNames(ctx: Ctx, refs: string[]): Promise<Map<string, string>> {

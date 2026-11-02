@@ -11,6 +11,7 @@ import { createApi } from "./http/api.ts";
 import { errorResponse } from "./http/errors.ts";
 import { createMcpRoutes } from "./http/mcp.ts";
 import { log } from "./log.ts";
+import { readLogo } from "./services/branding.ts";
 import { checkDownloadSignature, readArtifact } from "./services/finalize.ts";
 import { createAdmin } from "./ui/admin.ts";
 import { setSourceUrl } from "./ui/layout.ts";
@@ -37,9 +38,9 @@ export function createApp(ctx: Ctx) {
   const assets = loadAssets();
   setSourceUrl(ctx.config.sourceUrl);
 
-  app.use(
-    "*",
-    secureHeaders({
+  // Email previews set their own, stricter policy that allows same-origin framing.
+  const EMAIL_PREVIEW = /^\/(outbox\/[A-Za-z0-9-]+\/html|settings\/branding\/preview)$/;
+  const headers = secureHeaders({
       contentSecurityPolicy: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
@@ -53,8 +54,8 @@ export function createApp(ctx: Ctx) {
       },
       referrerPolicy: "same-origin",
       strictTransportSecurity: ctx.config.publicUrl.startsWith("https://") ? "max-age=31536000" : false,
-    }),
-  );
+  });
+  app.use("*", (c, next) => (EMAIL_PREVIEW.test(c.req.path) ? next() : headers(c, next)));
 
   app.use("*", async (c, next) => {
     const start = Date.now();
@@ -91,6 +92,15 @@ export function createApp(ctx: Ctx) {
     c.header("content-type", a.type);
     c.header("cache-control", "public, max-age=3600");
     return c.body(a.body);
+  });
+
+  app.get("/branding/logo", async (c) => {
+    const logo = await readLogo(ctx);
+    if (!logo) return c.notFound();
+    c.header("content-type", logo.contentType);
+    c.header("cache-control", "public, max-age=86400");
+    c.header("x-content-type-options", "nosniff");
+    return c.body(new Uint8Array(logo.data));
   });
 
   app.get("/download/:id", async (c) => {

@@ -6,6 +6,7 @@ import type { Ctx } from "../context.ts";
 import { sha256 } from "../crypto.ts";
 import { clientIp, rateLimit } from "../http/ratelimit.ts";
 import { downloadLink } from "../services/finalize.ts";
+import { getAccount } from "../services/accounts.ts";
 import {
   declineDocument,
   fieldLabel,
@@ -29,8 +30,11 @@ ${opts.scripts ? html`<script src="/assets/signature_pad.js"></script><script sr
 </body></html>`;
 }
 
+let logoVersion: string | null = null;
+
 function brandBar(account: string | null): H {
-  return html`<header class="sign-head"><div class="inner"><strong>${account ?? "Signed.md"}</strong><span class="small muted">Secured by Signed.md</span></div></header>`;
+  const name = account ?? "Signed.md";
+  return html`<header class="sign-head"><div class="inner">${logoVersion ? html`<img class="brand-logo" src="/branding/logo?v=${logoVersion}" alt="${name}">` : html`<strong>${name}</strong>`}<span class="small muted">Secured by Signed.md</span></div></header>`;
 }
 
 function message(title: string, text: string, extra?: H): H {
@@ -156,6 +160,7 @@ function signingPage(token: string, view: SignerView, error: SignedError | null,
         </div>
       </div></div>
       <main class="sign-wrap">
+        ${logoVersion ? html`<div class="sign-logo"><img class="brand-logo" src="/branding/logo?v=${logoVersion}" alt="${view.account_name}"></div>` : ""}
         ${error ? html`<div class="notice bad" id="sign-error">${error.message}${error.issues.length ? html`<ul>${error.issues.map((i) => html`<li>${i.message}</li>`)}</ul>` : ""}</div>` : ""}
         <p class="small muted guide-hint">Fill in the highlighted fields in the document. Use <strong>Next</strong> to jump between them, then <strong>Finish</strong>.</p>
         <article class="doc signing">${raw(docHtml)}</article>
@@ -213,6 +218,7 @@ export function createSigningRoutes(ctx: Ctx) {
   });
 
   const render = async (c: Context, token: string, error: SignedError | null = null, prior: FormBody | null = null) => {
+    logoVersion = (await getAccount(ctx)).config.branding.logo?.sha256.slice(0, 8) ?? null;
     const state = await openSigningPage(ctx, token, meta(c));
     switch (state.state) {
       case "invalid":

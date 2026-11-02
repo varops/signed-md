@@ -217,8 +217,15 @@ const m001: Migration = {
   },
 };
 
+const m002: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema.alterTable("documents").addColumn("signer_message", "text").execute();
+  },
+};
+
 export const migrations: Record<string, Migration> = {
   "001_initial": m001,
+  "002_signer_message": m002,
 };
 
 export const migrationProvider: MigrationProvider = {

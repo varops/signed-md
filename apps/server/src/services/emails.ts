@@ -2,8 +2,10 @@ import { SignedError } from "@signed-md/core";
 import type { Ctx } from "../context.ts";
 import { unseal } from "../crypto.ts";
 import { getAccount } from "./accounts.ts";
+import { readLogo } from "./branding.ts";
 import { loadDocument, loadSigners } from "./documents.ts";
-import { slug } from "./finalize.ts";
+import { type EmailParts, LOGO_CID, renderEmail } from "./emailtemplate.ts";
+import { downloadLink, slug } from "./finalize.ts";
 import type { MailAttachment, MailMessage } from "./mail.ts";
 
 export interface EmailJob {
@@ -13,26 +15,14 @@ export interface EmailJob {
   link?: string;
 }
 
-function esc(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-}
-
-function layout(account: string, paragraphs: string[], button?: { label: string; url: string }): string {
-  const body = paragraphs.map((p) => `<p style="margin:0 0 14px">${p}</p>`).join("");
-  const btn = button
-    ? `<p style="margin:22px 0"><a href="${esc(button.url)}" style="background:#111;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;display:inline-block;font-weight:600">${esc(button.label)}</a></p>
-       <p style="margin:0 0 14px;font-size:12px;color:#666">Or open this link: <br><span style="word-break:break-all">${esc(button.url)}</span></p>`
-    : "";
-  return `<!doctype html><html><body style="margin:0;padding:24px;background:#f5f5f4;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#1c1917;font-size:15px;line-height:1.5">
-<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:10px;padding:28px">
-${body}${btn}
-<p style="margin:24px 0 0;font-size:12px;color:#888">Sent by ${esc(account)} with Signed.md.</p>
-</div></body></html>`;
-}
-
 async function adminEmails(ctx: Ctx): Promise<string[]> {
   const rows = await ctx.db.selectFrom("users").select("email").where("status", "=", "active").execute();
   return rows.map((r) => r.email);
+}
+
+function longDate(iso: string | null, tz: string): string {
+  if (!iso) return "–";
+  return new Intl.DateTimeFormat("en-GB", { dateStyle: "long", timeZone: tz }).format(new Date(iso));
 }
 
 /** Build and send the messages for one email job. */
@@ -42,28 +32,36 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
   const signers = await loadSigners(ctx.db, doc.id);
   const signer = job.signer_id ? signers.find((s) => s.id === job.signer_id) : undefined;
   if (job.signer_id && !signer) throw new SignedError("SIGNER_INVALID", `Signer ${job.signer_id} not found`);
-  const title = esc(doc.title);
-  const from = esc(account.name);
+
+  const admins = await adminEmails(ctx);
+  const senderEmail = admins[0];
+  const logo = await readLogo(ctx);
+  const inline: MailAttachment[] = logo ? [{ filename: `logo.${logo.contentType === "image/png" ? "png" : "jpg"}`, content: logo.data, contentType: logo.contentType, cid: LOGO_CID }] : [];
+  const docUrl = `${ctx.config.publicUrl}/documents/${doc.id}`;
   const messages: MailMessage[] = [];
 
-  const plain = (html: string) => html.replace(/<br>/g, "\n").replace(/<\/p>/g, "\n\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\n{3,}/g, "\n\n").trim();
-  const msg = (to: string, subject: string, paragraphs: string[], button?: { label: string; url: string }, attachments?: MailAttachment[]) => {
-    const html = layout(account.name, paragraphs, button);
-    const text = plain(paragraphs.join("</p>")) + (button ? `\n\n${button.label}: ${button.url}` : "");
-    messages.push({ to, subject, html, text, ...(attachments ? { attachments } : {}) });
+  const msg = (to: string, subject: string, parts: Omit<EmailParts, "account" | "hasLogo">, attachments: MailAttachment[] = []) => {
+    const { html, text } = renderEmail({ account: account.name, hasLogo: logo !== null, ...parts });
+    messages.push({ to, subject, html, text, ...(senderEmail ? { replyTo: senderEmail } : {}), attachments: [...inline, ...attachments] });
   };
 
-  const attachments = async (withZip: boolean): Promise<MailAttachment[]> => {
+  const artifacts = async (withZip: boolean) => {
     const rows = await ctx.db.selectFrom("artifacts").selectAll().where("document_id", "=", doc.id).execute();
-    const out: MailAttachment[] = [];
+    const files: MailAttachment[] = [];
+    let pdfId: string | null = null;
     for (const a of rows) {
-      if (a.type === "pdf") out.push({ filename: `${slug(doc.title)}.pdf`, content: await ctx.storage.read(a.storage_path), contentType: "application/pdf" });
+      if (a.type === "pdf") {
+        pdfId = a.id;
+        files.push({ filename: `${slug(doc.title)}.pdf`, content: await ctx.storage.read(a.storage_path), contentType: "application/pdf" });
+      }
       if (a.type === "zip" && withZip && Number(a.size) < 10_000_000) {
-        out.push({ filename: `${slug(doc.title)}.zip`, content: await ctx.storage.read(a.storage_path), contentType: "application/zip" });
+        files.push({ filename: `${slug(doc.title)}.zip`, content: await ctx.storage.read(a.storage_path), contentType: "application/zip" });
       }
     }
-    return out;
+    return { files, pdfId };
   };
+
+  const signerNames = signers.map((s) => s.name).join(", ");
 
   switch (job.kind) {
     case "signing_request":
@@ -73,73 +71,104 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
       if (!["sent", "partially_signed"].includes(doc.status) || signer.status === "signed" || signer.status === "declined") return;
       const link = unseal(ctx.keys.serverSecret, job.link);
       const reminder = job.kind === "reminder";
-      msg(
-        signer.email,
-        `${reminder ? "Reminder: " : ""}${account.name} sent you "${doc.title}" to sign`,
-        [
-          `Hi ${esc(signer.name)},`,
-          `${from} asks you to review and sign <strong>${title}</strong>.`,
-          reminder ? "This is a new link. Any earlier link for this document no longer works." : "This link is personal. Please do not forward it.",
-          doc.expires_at ? `The link expires on ${esc(new Date(doc.expires_at).toUTCString())}.` : "",
-        ].filter(Boolean),
-        { label: "Review and sign", url: link },
-      );
+      msg(signer.email, `${reminder ? "Reminder: " : ""}Please sign: ${doc.title}`, {
+        icon: "document",
+        headline: `${account.name} sent you a document to review and sign.`,
+        button: { label: "Review document", url: link },
+        from: { name: account.name, ...(senderEmail ? { email: senderEmail } : {}) },
+        message: doc.signer_message,
+        // The sender's message replaces the standard line, as in familiar e-signature emails.
+        paragraphs: [
+          ...(doc.signer_message ? [] : [`Hi ${signer.name}, please review and sign "${doc.title}". It takes a few minutes and works on your phone.`]),
+          ...(reminder ? ["This is a new link. Any earlier link for this document no longer works."] : []),
+        ],
+        details: [
+          ["Document", doc.title],
+          ["Signers", signerNames],
+          ...(doc.expires_at ? ([["Please sign by", longDate(doc.expires_at, doc.timezone)]] as [string, string][]) : []),
+        ],
+        security: true,
+      });
       break;
     }
     case "last_signer": {
       if (!signer || signer.status === "signed" || !["sent", "partially_signed"].includes(doc.status)) return;
-      msg(signer.email, `Everyone else has signed "${doc.title}"`, [
-        `Hi ${esc(signer.name)},`,
-        `Everyone else has signed <strong>${title}</strong>. Only your signature is missing.`,
-        "Please use the signing link from the earlier email. If you can't find it, reply to the sender and ask them to resend it.",
-      ]);
+      msg(signer.email, `Waiting for you: ${doc.title}`, {
+        icon: "bell",
+        headline: `Everyone else has signed. Only your signature is missing.`,
+        paragraphs: [
+          `Hi ${signer.name},`,
+          `Everyone else has signed "${doc.title}". Please use the "Review document" link in the earlier email from ${account.name}. If you can't find it, reply to this email and ask for a new link.`,
+        ],
+        details: [["Document", doc.title], ...(doc.expires_at ? ([["Please sign by", longDate(doc.expires_at, doc.timezone)]] as [string, string][]) : [])],
+      });
       break;
     }
     case "revoked": {
       if (!signer) return;
-      msg(signer.email, `"${doc.title}" was cancelled`, [
-        `Hi ${esc(signer.name)},`,
-        `${from} cancelled <strong>${title}</strong>. You don't need to do anything, and the signing link no longer works.`,
-      ]);
+      msg(signer.email, `Cancelled: ${doc.title}`, {
+        icon: "cross",
+        headline: `${account.name} cancelled this document.`,
+        paragraphs: [`Hi ${signer.name},`, `"${doc.title}" was cancelled. You don't need to do anything, and the signing link no longer works.`],
+        details: [["Document", doc.title]],
+      });
       break;
     }
     case "declined": {
-      const who = signer ? `${esc(signer.name)} (${esc(signer.email)})` : "A signer";
-      for (const to of await adminEmails(ctx)) {
-        msg(to, `"${doc.title}" was declined`, [
-          `${who} declined <strong>${title}</strong>.`,
-          signer?.decline_reason ? `Reason: “${esc(signer.decline_reason)}”` : "No reason was given.",
-        ], { label: "Open document", url: `${ctx.config.publicUrl}/documents/${doc.id}` });
+      for (const to of admins) {
+        msg(to, `Declined: ${doc.title}`, {
+          icon: "cross",
+          headline: `${signer?.name ?? "A signer"} declined to sign.`,
+          button: { label: "View document", url: docUrl },
+          paragraphs: [signer?.decline_reason ? `Their reason: "${signer.decline_reason}"` : "They didn't give a reason."],
+          details: [["Document", doc.title], ["Declined by", signer ? `${signer.name} (${signer.email})` : "–"]],
+        });
       }
       break;
     }
     case "expired": {
-      for (const to of await adminEmails(ctx)) {
-        msg(to, `"${doc.title}" expired`, [`<strong>${title}</strong> expired before everyone signed.`], {
-          label: "Open document",
-          url: `${ctx.config.publicUrl}/documents/${doc.id}`,
+      for (const to of admins) {
+        msg(to, `Expired: ${doc.title}`, {
+          icon: "clock",
+          headline: "This document expired before everyone signed.",
+          button: { label: "View document", url: docUrl },
+          details: [["Document", doc.title], ["Signers", signerNames]],
         });
       }
       break;
     }
     case "completed": {
       if (!signer) return;
+      const { files, pdfId } = await artifacts(account.config.attach_zip);
       msg(
         signer.email,
-        `Completed: "${doc.title}"`,
-        [`Hi ${esc(signer.name)},`, `Everyone has signed <strong>${title}</strong>. A copy of the completed document is attached for your records.`],
-        undefined,
-        await attachments(account.config.attach_zip),
+        `Completed: ${doc.title}`,
+        {
+          icon: "check",
+          headline: "Your document has been completed.",
+          ...(pdfId ? { button: { label: "View completed document", url: downloadLink(ctx, pdfId, 30 * 86400).url } } : {}),
+          paragraphs: [`Hi ${signer.name},`, `Everyone has signed "${doc.title}". A copy is attached to this email for your records.`],
+          details: [["Document", doc.title], ["Signers", signerNames], ["Completed", longDate(doc.completed_at, doc.timezone)]],
+        },
+        files,
       );
       break;
     }
     case "completed_sender": {
-      const atts = await attachments(account.config.attach_zip);
-      for (const to of await adminEmails(ctx)) {
-        msg(to, `Completed: "${doc.title}"`, [`Everyone has signed <strong>${title}</strong>. The signed PDF is attached. The full evidence package is available in Signed.md.`], {
-          label: "Open document",
-          url: `${ctx.config.publicUrl}/documents/${doc.id}`,
-        }, atts);
+      const { files } = await artifacts(account.config.attach_zip);
+      for (const to of admins) {
+        msg(
+          to,
+          `Completed: ${doc.title}`,
+          {
+            icon: "check",
+            headline: "All parties have completed the document.",
+            button: { label: "View document", url: docUrl },
+            paragraphs: ["The signed PDF is attached. The full evidence package is in Signed.md."],
+            details: [["Document", doc.title], ["Signers", signerNames], ["Completed", longDate(doc.completed_at, doc.timezone)]],
+          },
+          files,
+        );
       }
       break;
     }
