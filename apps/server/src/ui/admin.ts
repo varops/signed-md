@@ -13,7 +13,8 @@ import { listEvents } from "../services/events.ts";
 import { listArtifacts } from "../services/finalize.ts";
 import * as tpl from "../services/templates.ts";
 import { listDeliveries } from "../services/webhooks.ts";
-import { readLogo, removeLogo, setDefaultMessage, setLogo } from "../services/branding.ts";
+import { readLogo, removeLogo, setBannerAndAvatars, setDefaultMessage, setLogo } from "../services/branding.ts";
+import { avatarOrigin, avatarUrl, initialsOf } from "../services/avatars.ts";
 import { renderEmail } from "../services/emailtemplate.ts";
 import { MESSAGE_VARIABLES, personalizeMessage } from "../services/messagevars.ts";
 import { type FormBody, parseSigners, parseValues, signerRows, str, valueInput } from "./forms.ts";
@@ -148,6 +149,7 @@ export function createAdmin(ctx: Ctx) {
     const status = c.req.query("status") || undefined;
     const q = c.req.query("q") || undefined;
     const list = await docs.listDocuments(ctx, { archived, ...(status ? { status } : {}), ...(q ? { q } : {}), limit: 100 });
+    const avatarsOn = (await getAccount(ctx)).config.branding.avatars;
     const welcome = c.req.query("welcome") === "1";
     return page(
       c,
@@ -174,7 +176,7 @@ export function createAdmin(ctx: Ctx) {
             return html`<tr>
               <td><a href="/documents/${d.id}"><strong>${d.title}</strong></a><div class="small muted mono">${d.id}</div></td>
               <td>${badge(d.status)}</td>
-              <td>${signed}/${d.signers.length}<div class="small muted">${d.signers.map((s) => s.name).join(", ")}</div></td>
+              <td><div class="avatar-stack">${d.signers.map((s) => avatar(ctx, avatarsOn, s.name, s.email, "sm"))}</div><div class="small muted">${signed} of ${d.signers.length} signed</div></td>
               <td class="nowrap">${when(d.created_at)}</td></tr>`;
           })}
         </tbody></table>`}
@@ -285,8 +287,8 @@ export function createAdmin(ctx: Ctx) {
             ${artifacts.map((a) => html`<a class="btn block" href="${a.download.url}">${a.type === "zip" ? "Download package (.zip)" : "Download signed PDF"}</a>`)}
             <p class="small muted">Verify the package offline with <code>npx signed-md verify file.zip</code>.</p></div></div>` : ""}
           <div class="card"><h2>Signers</h2>
-            ${d.signers.map((s) => html`<div style="margin-bottom:12px"><div class="spread"><strong>${s.name}</strong>${badge(s.status)}</div>
-              <div class="small muted">${s.email} · <code>${s.key}</code> · order ${s.order}</div>
+            ${d.signers.map((s) => html`<div class="signer-item"><div class="spread"><div class="row" style="gap:10px;flex-wrap:nowrap">${avatar(ctx, account.config.branding.avatars, s.name, s.email)}<strong>${s.name}</strong></div>${badge(s.status)}</div>
+              <div class="small muted" style="margin-left:46px">${s.email} · <code>${s.key}</code> · order ${s.order}</div>
               ${s.decline_reason ? html`<div class="small">Reason: “${s.decline_reason}”</div>` : ""}
               ${active && (s.status === "notified" || s.status === "viewed") ? html`<form method="post" action="/documents/${d.id}/signers/${s.key}/resend" class="inline">${csrfInput(csrf)}<button class="btn small" style="margin-top:6px">Resend link</button></form>` : ""}
             </div>`)}
@@ -668,6 +670,15 @@ export function createAdmin(ctx: Ctx) {
             <div class="row" style="margin-top:12px"><input type="file" name="logo" accept="image/png,image/jpeg" style="max-width:280px"><button class="btn primary">Upload</button></div>
           </form>
           ${logo ? html`<form method="post" action="/settings/branding/logo/remove" class="inline" style="display:block;margin:-6px 0 18px">${csrfInput(csrf)}<button class="btn small">Remove logo</button></form>` : ""}
+          <form method="post" action="/settings/branding/look" class="card">${csrfInput(csrf)}
+            <h2>Email banner and avatars</h2>
+            <div class="field"><label for="banner_color">Banner colour</label>
+              <div class="row"><input type="color" id="banner_color_picker" value="${account.config.branding.banner_color}" data-sync="banner_color" style="width:52px;height:38px;padding:2px">
+              <input type="text" id="banner_color" name="banner_color" value="${account.config.branding.banner_color}" pattern="#[0-9a-fA-F]{6}" style="max-width:130px" class="mono"></div>
+              <p class="small muted" style="margin:6px 0 0">Text and button colours adjust automatically for contrast.</p></div>
+            <label class="check"><input type="checkbox" name="avatars" ${account.config.branding.avatars ? "checked" : ""}> <span>Show avatars in emails and in this app<br><span class="small muted">Pictures come from unavatar.io${ctx.config.avatarBaseUrl !== "https://unavatar.io" ? html` through <code>${ctx.config.avatarBaseUrl}</code>` : ""}. This shares email addresses with that service, and email clients load the pictures from it. Without a picture, initials are shown.</span></span></label>
+            <button class="btn primary" style="margin-top:12px">Save</button>
+          </form>
           <form method="post" action="/settings/branding/message" class="card">${csrfInput(csrf)}
             <h2>Message to signers</h2>
             <p class="small muted">The default message in every signing email. You can change it each time you send. Agents can pass their own message too.</p>
@@ -687,7 +698,13 @@ export function createAdmin(ctx: Ctx) {
     const { html: body } = renderEmail({
       account: account.name,
       hasLogo: logo !== null,
+      bannerColor: account.config.branding.banner_color,
       icon: "document",
+      person: { name: account.name, avatar: avatarUrl(ctx.config, account.config.branding.avatars, c.get("user").label), initials: initialsOf(account.name) },
+      signers: [
+        { name: "Jane Doe", avatar: avatarUrl(ctx.config, account.config.branding.avatars, "jane@acme.example"), initials: "JD" },
+        { name: "Sam Lee", avatar: avatarUrl(ctx.config, account.config.branding.avatars, "sam@automaze.example"), initials: "SL" },
+      ],
       headline: `${account.name} sent you a document to review and sign.`,
       button: { label: "Review document", url: "#" },
       from: { name: account.name, email: c.get("user").label },
@@ -695,10 +712,10 @@ export function createAdmin(ctx: Ctx) {
         ? personalizeMessage(account.config.branding.email_message, { name: "Jane Doe", email: "jane@acme.example", title: "Standard services agreement" })
         : null,
       paragraphs: account.config.branding.email_message ? [] : ['Hi Jane Doe, please review and sign "Standard services agreement". It takes a few minutes and works on your phone.'],
-      details: [["Document", "Standard services agreement"], ["Signers", "Jane Doe, Sam Lee"]],
+      details: [["Document", "Standard services agreement"]],
       security: true,
     });
-    return emailPage(c, logo ? body.split("cid:logo@signed.md").join(`data:${logo.contentType};base64,${logo.data.toString("base64")}`) : body);
+    return emailPage(c, logo ? body.split("cid:logo@signed.md").join(`data:${logo.contentType};base64,${logo.data.toString("base64")}`) : body, avatarOrigin(ctx.config));
   });
 
   app.post("/settings/branding/logo", async (c) => {
@@ -708,6 +725,16 @@ export function createAdmin(ctx: Ctx) {
       if (!(file instanceof File)) throw new SignedError("INVALID_REQUEST", "Choose a logo file to upload");
       await setLogo(ctx, new Uint8Array(await file.arrayBuffer()));
       return c.redirect("/settings/branding?msg=logo");
+    } catch (e) {
+      if (!(e instanceof SignedError)) throw e;
+      return page(c, "Branding", "settings", html`<div class="notice bad">${e.message}</div><a class="btn" href="/settings/branding">Back</a>`);
+    }
+  });
+  app.post("/settings/branding/look", async (c) => {
+    const b = (await c.req.parseBody()) as FormBody;
+    try {
+      await setBannerAndAvatars(ctx, { banner_color: str(b, "banner_color"), avatars: str(b, "avatars") === "on" });
+      return c.redirect("/settings/branding?msg=saved");
     } catch (e) {
       if (!(e instanceof SignedError)) throw e;
       return page(c, "Branding", "settings", html`<div class="notice bad">${e.message}</div><a class="btn" href="/settings/branding">Back</a>`);
@@ -731,7 +758,7 @@ export function createAdmin(ctx: Ctx) {
   app.get("/outbox/:id/html", async (c) => {
     const m = await ctx.mailer.outboxEntry(c.req.param("id"));
     if (!m) return c.notFound();
-    return emailPage(c, m.html);
+    return emailPage(c, m.html, avatarOrigin(ctx.config));
   });
 
   // ---- Outbox ----
@@ -753,6 +780,12 @@ export function createAdmin(ctx: Ctx) {
 
 // ---------------------------------------------------------------------------
 
+/** Avatar with initials underneath; app.js removes the image if it fails to load. */
+function avatar(ctx: Ctx, enabled: boolean, name: string, email: string, size: "sm" | "md" = "md"): H {
+  const url = avatarUrl(ctx.config, enabled, email);
+  return html`<span class="avatar avatar-${size}" title="${name} <${email}>"><span>${initialsOf(name)}</span>${url ? html`<img src="${url}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</span>`;
+}
+
 function variablesHint(): H {
   return html`<p class="small muted" style="margin:6px 0 0">Placeholders, filled in for each signer: ${MESSAGE_VARIABLES.map((v, i) => html`${i ? ", " : ""}<code>{{${v}}}</code>`)}.</p>`;
 }
@@ -762,8 +795,8 @@ function settingsTabs(active: "general" | "branding"): H {
 }
 
 /** Serve email HTML for same-origin preview frames. Scripts stay blocked; only framing by this app is allowed. */
-function emailPage(c: Context, body: string) {
-  c.header("content-security-policy", "default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'");
+function emailPage(c: Context, body: string, imgOrigin = "") {
+  c.header("content-security-policy", `default-src 'none'; img-src data: 'self' ${imgOrigin}; style-src 'unsafe-inline'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'`);
   c.header("x-frame-options", "SAMEORIGIN");
   return c.html(body);
 }

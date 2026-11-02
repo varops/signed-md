@@ -4,7 +4,8 @@ import { unseal } from "../crypto.ts";
 import { getAccount } from "./accounts.ts";
 import { readLogo } from "./branding.ts";
 import { loadDocument, loadSigners } from "./documents.ts";
-import { type EmailParts, LOGO_CID, renderEmail } from "./emailtemplate.ts";
+import { type EmailParts, LOGO_CID, type Person, renderEmail } from "./emailtemplate.ts";
+import { avatarUrl, initialsOf } from "./avatars.ts";
 import { downloadLink, slug } from "./finalize.ts";
 import type { MailAttachment, MailMessage } from "./mail.ts";
 import { personalizeMessage } from "./messagevars.ts";
@@ -41,8 +42,14 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
   const docUrl = `${ctx.config.publicUrl}/documents/${doc.id}`;
   const messages: MailMessage[] = [];
 
+  const branding = account.config.branding;
+  const person = (name: string, email: string | null | undefined): Person => ({ name, avatar: avatarUrl(ctx.config, branding.avatars, email), initials: initialsOf(name) });
+  // The sender is the account; its avatar is the administrator's.
+  const sender = person(account.name, senderEmail);
+  const signerPeople = signers.map((s) => person(s.name, s.email));
+
   const msg = (to: string, subject: string, parts: Omit<EmailParts, "account" | "hasLogo">, attachments: MailAttachment[] = []) => {
-    const { html, text } = renderEmail({ account: account.name, hasLogo: logo !== null, ...parts });
+    const { html, text } = renderEmail({ account: account.name, hasLogo: logo !== null, bannerColor: branding.banner_color, ...parts });
     messages.push({ to, subject, html, text, ...(senderEmail ? { replyTo: senderEmail } : {}), attachments: [...inline, ...attachments] });
   };
 
@@ -62,8 +69,6 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
     return { files, pdfId };
   };
 
-  const signerNames = signers.map((s) => s.name).join(", ");
-
   switch (job.kind) {
     case "signing_request":
     case "reminder": {
@@ -74,6 +79,7 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
       const reminder = job.kind === "reminder";
       msg(signer.email, `${reminder ? "Reminder: " : ""}Please sign: ${doc.title}`, {
         icon: "document",
+        person: sender,
         headline: `${account.name} sent you a document to review and sign.`,
         button: { label: "Review document", url: link },
         from: { name: account.name, ...(senderEmail ? { email: senderEmail } : {}) },
@@ -83,9 +89,9 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
           ...(doc.signer_message ? [] : [`Hi ${signer.name}, please review and sign "${doc.title}". It takes a few minutes and works on your phone.`]),
           ...(reminder ? ["This is a new link. Any earlier link for this document no longer works."] : []),
         ],
+        signers: signerPeople,
         details: [
           ["Document", doc.title],
-          ["Signers", signerNames],
           ...(doc.expires_at ? ([["Please sign by", longDate(doc.expires_at, doc.timezone)]] as [string, string][]) : []),
         ],
         security: true,
@@ -96,6 +102,7 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
       if (!signer || signer.status === "signed" || !["sent", "partially_signed"].includes(doc.status)) return;
       msg(signer.email, `Waiting for you: ${doc.title}`, {
         icon: "bell",
+        person: sender,
         headline: `Everyone else has signed. Only your signature is missing.`,
         paragraphs: [
           `Hi ${signer.name},`,
@@ -109,6 +116,7 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
       if (!signer) return;
       msg(signer.email, `Cancelled: ${doc.title}`, {
         icon: "cross",
+        person: sender,
         headline: `${account.name} cancelled this document.`,
         paragraphs: [`Hi ${signer.name},`, `"${doc.title}" was cancelled. You don't need to do anything, and the signing link no longer works.`],
         details: [["Document", doc.title]],
@@ -119,6 +127,7 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
       for (const to of admins) {
         msg(to, `Declined: ${doc.title}`, {
           icon: "cross",
+          ...(signer ? { person: person(signer.name, signer.email) } : {}),
           headline: `${signer?.name ?? "A signer"} declined to sign.`,
           button: { label: "View document", url: docUrl },
           paragraphs: [signer?.decline_reason ? `Their reason: "${signer.decline_reason}"` : "They didn't give a reason."],
@@ -133,7 +142,8 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
           icon: "clock",
           headline: "This document expired before everyone signed.",
           button: { label: "View document", url: docUrl },
-          details: [["Document", doc.title], ["Signers", signerNames]],
+          signers: signerPeople,
+          details: [["Document", doc.title]],
         });
       }
       break;
@@ -149,7 +159,8 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
           headline: "Your document has been completed.",
           ...(pdfId ? { button: { label: "View completed document", url: downloadLink(ctx, pdfId, 30 * 86400).url } } : {}),
           paragraphs: [`Hi ${signer.name},`, `Everyone has signed "${doc.title}". A copy is attached to this email for your records.`],
-          details: [["Document", doc.title], ["Signers", signerNames], ["Completed", longDate(doc.completed_at, doc.timezone)]],
+          signers: signerPeople,
+            details: [["Document", doc.title], ["Completed", longDate(doc.completed_at, doc.timezone)]],
         },
         files,
       );
@@ -166,7 +177,8 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
             headline: "All parties have completed the document.",
             button: { label: "View document", url: docUrl },
             paragraphs: ["The signed PDF is attached. The full evidence package is in Signed.md."],
-            details: [["Document", doc.title], ["Signers", signerNames], ["Completed", longDate(doc.completed_at, doc.timezone)]],
+            signers: signerPeople,
+            details: [["Document", doc.title], ["Completed", longDate(doc.completed_at, doc.timezone)]],
           },
           files,
         );

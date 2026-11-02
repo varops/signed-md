@@ -28,6 +28,10 @@ export interface Branding {
   logo: { path: string; content_type: "image/png" | "image/jpeg"; sha256: string } | null;
   /** Default message to signers. Prefilled when sending; can be changed per document. */
   email_message: string;
+  /** Background colour of the email banner, as #rrggbb. */
+  banner_color: string;
+  /** Show people's avatars from unavatar.io (or AVATAR_BASE_URL). Off by default: it shares email addresses with that service. */
+  avatars: boolean;
 }
 
 export interface Account {
@@ -45,7 +49,7 @@ const DEFAULTS: Omit<AccountConfig, "webhook_secret"> = {
   locale: "en-US",
   smtp: null,
   attach_zip: false,
-  branding: { logo: null, email_message: "" },
+  branding: { logo: null, email_message: "", banner_color: "#1c1917", avatars: false },
 };
 
 export function newWebhookSecret(): string {

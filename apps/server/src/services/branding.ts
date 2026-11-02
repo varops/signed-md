@@ -38,6 +38,13 @@ export async function setDefaultMessage(ctx: Ctx, message: string): Promise<void
   await updateAccount(ctx, { config: { branding: { ...account.config.branding, email_message: message.trim() } } });
 }
 
+export async function setBannerAndAvatars(ctx: Ctx, input: { banner_color: string; avatars: boolean }): Promise<void> {
+  const color = input.banner_color.trim().toLowerCase();
+  if (!/^#[0-9a-f]{6}$/.test(color)) throw new SignedError("INVALID_REQUEST", "The banner colour must be a hex colour like #1c1917");
+  const account = await getAccount(ctx);
+  await updateAccount(ctx, { config: { branding: { ...account.config.branding, banner_color: color, avatars: input.avatars } } });
+}
+
 export async function readLogo(ctx: Ctx): Promise<{ data: Buffer; contentType: string; sha256: string } | null> {
   const logo = (await getAccount(ctx)).config.branding.logo;
   if (!logo) return null;

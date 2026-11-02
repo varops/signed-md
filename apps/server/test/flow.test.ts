@@ -172,3 +172,27 @@ describe("branding", async () => {
     await expect(sendDocument(ctx, user, d.id, { approved_revision: (await previewDocument(ctx, d.id)).revision, message: "{{sender.name}}" })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
   });
 });
+
+describe("email banner and avatars", async () => {
+  const { bannerTheme, renderEmail } = await import("../src/services/emailtemplate.ts");
+  const { setBannerAndAvatars } = await import("../src/services/branding.ts");
+  const { avatarUrl } = await import("../src/services/avatars.ts");
+
+  it("picks readable text and button colours for the banner", () => {
+    expect(bannerTheme("#1c1917")).toMatchObject({ text: "#ffffff", buttonBg: "#f5b301" });
+    expect(bannerTheme("#ffffff")).toMatchObject({ text: "#1c1917", buttonBg: "#1c1917" });
+    expect(bannerTheme("#f5b301")).toMatchObject({ text: "#1c1917", buttonBg: "#1c1917" }); // yellow banner: no yellow button
+    expect(bannerTheme("not-a-colour").bg).toBe("#1c1917");
+  });
+
+  it("shows avatars only when turned on, with initials otherwise", async () => {
+    const { ctx } = await testContext({ AVATAR_BASE_URL: "https://avatars.example-cdn.net" });
+    expect(avatarUrl(ctx.config, false, "jane@acme.example")).toBeNull();
+    expect(avatarUrl(ctx.config, true, "Jane@Acme.example")).toBe("https://avatars.example-cdn.net/jane%40acme.example");
+    const off = renderEmail({ account: "Acme", hasLogo: false, icon: "document", headline: "x", person: { name: "Acme", avatar: null, initials: "AC" } }).html;
+    expect(off).toContain(">AC</div>");
+    expect(off).not.toContain("<img");
+    await expect(setBannerAndAvatars(ctx, { banner_color: "blue", avatars: true })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await ctx.close();
+  });
+});

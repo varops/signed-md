@@ -26,6 +26,8 @@ export interface Config {
   logLevel: "debug" | "info" | "warn" | "error";
   /** Where users can get this installation's source code (AGPL-3.0 section 13). */
   sourceUrl: string;
+  /** Avatar service base URL: unavatar.io, or a CDN pull zone in front of it. Used only when avatars are on. */
+  avatarBaseUrl: string;
 }
 
 function bool(v: string | undefined, def = false): boolean {
@@ -46,6 +48,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (!["http:", "https:"].includes(u.protocol)) throw new Error();
   } catch {
     throw new ConfigError(`PUBLIC_URL must be an http(s) URL, got '${publicUrl}'`);
+  }
+
+  const avatarBase = env.AVATAR_BASE_URL ?? "https://unavatar.io";
+  if (!/^https:\/\/[^/\s]+/.test(avatarBase) && !/^http:\/\/localhost/.test(avatarBase)) {
+    throw new ConfigError(`AVATAR_BASE_URL must be an https URL, got '${avatarBase}'`);
   }
 
   let smtp: SmtpConfig | null = null;
@@ -75,5 +82,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     workerIntervalMs: Number(env.WORKER_INTERVAL_MS ?? 1000),
     logLevel: ["debug", "info", "warn", "error"].includes(level) ? level : "info",
     sourceUrl: env.SOURCE_URL ?? "https://github.com/varops/signed-md",
+    avatarBaseUrl: (env.AVATAR_BASE_URL ?? "https://unavatar.io").replace(/\/+$/, ""),
   };
 }

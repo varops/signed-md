@@ -45,6 +45,9 @@ if (!(await isSetUp(ctx))) {
     approve: true,
   });
   apiKey = (await createApiKey(ctx, user, "Demo agent")).key;
+  // The demo shows avatars. New installs keep them off until an operator turns them on.
+  const { setBannerAndAvatars } = await import("./services/branding.ts");
+  await setBannerAndAvatars(ctx, { banner_color: "#1c1917", avatars: true });
 }
 
 serve({ fetch: createApp(ctx).fetch, port });

@@ -34,6 +34,7 @@ All settings are environment variables. Invalid values stop the server at start 
 | `WORKER` | `1` | Set to `0` to run without the background worker (not recommended with one container). |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. Logs are JSON, one line per event. |
 | `SOURCE_URL` | `https://github.com/varops/signed-md` | The "Source" link in the app. If you run a modified version, point it at your source code (AGPL-3.0 section 13). |
+| `AVATAR_BASE_URL` | `https://unavatar.io` | Where avatars come from, when avatars are on (Settings → Branding). Point it at a CDN pull zone in front of unavatar.io. |
 | `ALLOW_INSECURE_WEBHOOKS` | – | Development only. Allows `http://` and private-network webhook targets. |
 
 ## Reverse proxy and HTTPS
@@ -78,6 +79,18 @@ For automated installs:
 node apps/server/src/cli.ts setup --account "Acme" --email admin@acme.com --password '...'
 node apps/server/src/cli.ts api-key --label "Sales agent"
 ```
+
+## Avatars
+
+Avatars are off by default. When you turn them on (Settings → Branding), emails and the admin UI show people's pictures from [unavatar.io](https://unavatar.io), with initials as a fallback. The lookup uses email addresses, so it shares them with unavatar.io, and email clients load the pictures from there.
+
+unavatar.io rate-limits anonymous use. To cache avatars and keep requests off your server, put a CDN pull zone in front of it (for example Bunny, Cloudflare, or CloudFront):
+
+1. Create a pull zone with origin `https://unavatar.io`.
+2. Cache responses for a day or more.
+3. Set `AVATAR_BASE_URL=https://your-zone.example-cdn.net`.
+
+Signed.md builds URLs as `AVATAR_BASE_URL/<email>` and allows that host in its Content-Security-Policy.
 
 ## Health
 

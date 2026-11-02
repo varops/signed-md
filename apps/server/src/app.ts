@@ -11,6 +11,7 @@ import { createApi } from "./http/api.ts";
 import { errorResponse } from "./http/errors.ts";
 import { createMcpRoutes } from "./http/mcp.ts";
 import { log } from "./log.ts";
+import { avatarOrigin } from "./services/avatars.ts";
 import { readLogo } from "./services/branding.ts";
 import { checkDownloadSignature, readArtifact } from "./services/finalize.ts";
 import { createAdmin } from "./ui/admin.ts";
@@ -45,7 +46,7 @@ export function createApp(ctx: Ctx) {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:"],
+        imgSrc: ["'self'", "data:", avatarOrigin(ctx.config)],
         connectSrc: ["'self'"],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],

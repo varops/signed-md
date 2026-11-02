@@ -8,7 +8,7 @@
  * Docker image started with ALLOW_INSECURE_WEBHOOKS=1 on the host network).
  */
 import { createHmac } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { createRequire } from "node:module";
 import type { AddressInfo } from "node:net";
@@ -96,6 +96,8 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
   let server: ReturnType<typeof serve>;
   let worker: WorkerHandle;
   let hookServer: Server;
+  let avatarServer: Server;
+  const avatarRequests: string[] = [];
   let base = "";
   const hooks: Hook[] = [];
   let close: () => Promise<void>;
@@ -110,6 +112,14 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
       });
     });
     await new Promise<void>((r) => hookServer.listen(0, "127.0.0.1", r));
+
+    // Stands in for a CDN pull zone in front of unavatar.io (AVATAR_BASE_URL).
+    const avatarPng = readFileSync(join(import.meta.dirname, "fixtures", "avatar.png"));
+    avatarServer = createServer((req, res) => {
+      avatarRequests.push(decodeURIComponent(req.url ?? ""));
+      res.writeHead(200, { "content-type": "image/png" }).end(avatarPng);
+    });
+    await new Promise<void>((r) => avatarServer.listen(0, "127.0.0.1", r));
 
     if (process.env.E2E_BASE_URL) {
       base = process.env.E2E_BASE_URL.replace(/\/$/, "");
@@ -126,7 +136,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     base = `http://localhost:${port}`;
     const dataDir = mkdtempSync(join(tmpdir(), "signedmd-e2e-"));
     const ctx = await createContext(
-      loadConfig({ DATA_DIR: dataDir, PORT: String(port), PUBLIC_URL: base, LOG_LEVEL: "warn", ALLOW_INSECURE_WEBHOOKS: "1", WORKER_INTERVAL_MS: "100", ...(process.env.E2E_DATABASE_URL ? { DATABASE_URL: process.env.E2E_DATABASE_URL } : {}) }),
+      loadConfig({ DATA_DIR: dataDir, PORT: String(port), PUBLIC_URL: base, AVATAR_BASE_URL: `http://localhost:${(avatarServer.address() as AddressInfo).port}`, LOG_LEVEL: "warn", ALLOW_INSECURE_WEBHOOKS: "1", WORKER_INTERVAL_MS: "100", ...(process.env.E2E_DATABASE_URL ? { DATABASE_URL: process.env.E2E_DATABASE_URL } : {}) }),
     );
     server = serve({ fetch: createApp(ctx).fetch, port });
     worker = startWorker(ctx);
@@ -137,6 +147,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     await worker?.stop();
     server?.close();
     hookServer?.close();
+    avatarServer?.close();
     await close?.();
   });
 
@@ -172,6 +183,10 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     await page.setInputFiles("input[name=logo]", join(import.meta.dirname, "fixtures", "logo.png"));
     await page.click("button:has-text('Upload')");
     await page.waitForURL(/msg=logo/);
+    await page.fill("#banner_color", "#1e3a8a");
+    await page.check("input[name=avatars]");
+    await page.click("form[action='/settings/branding/look'] button");
+    await page.waitForURL(/msg=saved/);
     await page.fill("textarea[name=message]", "Hi, please review and sign at your convenience. Reply to this email with any questions.");
     await page.click("form[action='/settings/branding/message'] button");
     await page.waitForURL(/msg=saved/);
@@ -267,8 +282,11 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     await page.goto(`${base}/outbox`);
     const emailFrame = page.frameLocator("iframe.email-frame").first();
     await emailFrame.locator("text=Hi Jane, here is the agreement we discussed on Friday.").waitFor();
-    expect(await emailFrame.locator("img[alt=Automaze]").count()).toBe(1);
+    expect(await emailFrame.locator("img[src^='data:image/png']").count()).toBe(1); // logo, inline
     expect(await emailFrame.locator("a:has-text('REVIEW DOCUMENT')").count()).toBe(1);
+    // Avatars: the sender in the banner, and each signer, via the avatar base URL.
+    expect(await emailFrame.locator("img[alt='Jane Doe']").count()).toBeGreaterThan(0);
+    expect(avatarRequests.some((u) => u.includes("jane@acme.example"))).toBe(true);
     await shot("12-signing-email");
 
     const signer = await browser.newPage({ viewport: { width: 420, height: 900 }, isMobile: true, hasTouch: true });
