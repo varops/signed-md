@@ -132,4 +132,6 @@ examples           sample templates
 
 ## Licence
 
-To be decided. AGPL-3.0 is the leading option.
+Copyright © 2026 VarOps.
+
+Signed.md is free software under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). You can use, change, and self-host it freely. If you run a modified version as a network service, you must offer its source code to its users. Set `SOURCE_URL` to point the "Source" link in the app at your code.

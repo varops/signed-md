@@ -13,6 +13,7 @@ import { createMcpRoutes } from "./http/mcp.ts";
 import { log } from "./log.ts";
 import { checkDownloadSignature, readArtifact } from "./services/finalize.ts";
 import { createAdmin } from "./ui/admin.ts";
+import { setSourceUrl } from "./ui/layout.ts";
 import { createSigningRoutes } from "./ui/signing.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -34,6 +35,7 @@ function loadAssets(): Record<string, { body: string; type: string }> {
 export function createApp(ctx: Ctx) {
   const app = new Hono();
   const assets = loadAssets();
+  setSourceUrl(ctx.config.sourceUrl);
 
   app.use(
     "*",

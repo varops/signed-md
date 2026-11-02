@@ -33,6 +33,7 @@ All settings are environment variables. Invalid values stop the server at start 
 | `TRUST_PROXY` | – | Set to `1` behind a reverse proxy so client IPs come from `X-Forwarded-For`. |
 | `WORKER` | `1` | Set to `0` to run without the background worker (not recommended with one container). |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. Logs are JSON, one line per event. |
+| `SOURCE_URL` | `https://github.com/varops/signed-md` | The "Source" link in the app. If you run a modified version, point it at your source code (AGPL-3.0 section 13). |
 | `ALLOW_INSECURE_WEBHOOKS` | – | Development only. Allows `http://` and private-network webhook targets. |
 
 ## Reverse proxy and HTTPS

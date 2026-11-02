@@ -24,6 +24,8 @@ export interface Config {
   worker: boolean;
   workerIntervalMs: number;
   logLevel: "debug" | "info" | "warn" | "error";
+  /** Where users can get this installation's source code (AGPL-3.0 section 13). */
+  sourceUrl: string;
 }
 
 function bool(v: string | undefined, def = false): boolean {
@@ -72,5 +74,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     worker: bool(env.WORKER, true),
     workerIntervalMs: Number(env.WORKER_INTERVAL_MS ?? 1000),
     logLevel: ["debug", "info", "warn", "error"].includes(level) ? level : "info",
+    sourceUrl: env.SOURCE_URL ?? "https://github.com/varops/signed-md",
   };
 }

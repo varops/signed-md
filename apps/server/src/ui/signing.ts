@@ -17,13 +17,14 @@ import {
   submitSignature,
 } from "../services/signing.ts";
 import { type FormBody, str } from "./forms.ts";
-import type { H } from "./layout.ts";
+import { footer, type H } from "./layout.ts";
 
 function publicShell(title: string, account: string | null, body: H, opts: { scripts?: boolean; bodyClass?: string } = {}): H {
   return html`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex"><meta name="referrer" content="no-referrer">
 <title>${title}</title><link rel="stylesheet" href="/assets/app.css"></head><body class="${opts.bodyClass ?? ""}">
 ${body}
+${footer()}
 ${opts.scripts ? html`<script src="/assets/signature_pad.js"></script><script src="/assets/sign.js"></script>` : ""}
 </body></html>`;
 }

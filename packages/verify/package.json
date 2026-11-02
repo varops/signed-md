@@ -26,5 +26,9 @@
   "files": [
     "bin",
     "dist"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/varops/signed-md.git"
+  }
 }

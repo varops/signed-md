@@ -3,6 +3,18 @@ import type { HtmlEscapedString } from "hono/utils/html";
 
 export type H = HtmlEscapedString | Promise<HtmlEscapedString>;
 
+let sourceUrl = "https://github.com/varops/signed-md";
+
+/** Set once at startup from SOURCE_URL. */
+export function setSourceUrl(url: string): void {
+  sourceUrl = url;
+}
+
+/** Footer with the source link that AGPL-3.0 section 13 asks network services to offer. */
+export function footer(): H {
+  return html`<footer class="site-foot">Signed.md · open source under AGPL-3.0 · <a href="${sourceUrl}" rel="noopener">Source</a></footer>`;
+}
+
 export interface ShellOptions {
   title: string;
   user?: { email: string } | null;
@@ -40,6 +52,7 @@ ${opts.user
 ${opts.flash ? html`<div class="notice ${opts.flash.kind}">${opts.flash.text}</div>` : ""}
 ${body}
 </main>
+${footer()}
 <script src="/assets/app.js" defer></script>
 </body>
 </html>`;
