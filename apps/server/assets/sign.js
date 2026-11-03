@@ -29,7 +29,7 @@
     });
     var total = required.length;
     progress.textContent = left === 0 ? "All required fields are done" : (total - left) + " of " + total + " required fields done";
-    finishBtns.forEach(function (b) { b.classList.toggle("ready", left === 0); b.classList.toggle("go", left === 0); b.classList.toggle("primary", left !== 0); });
+    finishBtns.forEach(function (b) { b.classList.toggle("ready", left === 0); b.classList.toggle("btn-go", left === 0); });
     nextBtn.classList.toggle("hidden", left === 0);
     nextBtn.textContent = started ? "Next" : "Start";
     if (left === 0) fields.forEach(function (x) { x.classList.remove("smd-current"); });
@@ -80,11 +80,15 @@
   var canvas = document.getElementById("adopt-pad");
   var textInput = document.getElementById("adopt-text");
   var preview = document.getElementById("adopt-preview");
-  var tabs = dialog.querySelectorAll(".tabs button");
+  var tabs = dialog.querySelectorAll(".sig-modes button");
 
   function setMode(m) {
     mode = m;
-    tabs.forEach(function (t) { t.classList.toggle("active", t.getAttribute("data-mode") === m); });
+    tabs.forEach(function (t) {
+      var on = t.getAttribute("data-mode") === m;
+      t.setAttribute("aria-pressed", on ? "true" : "false");
+      if (on) t.removeAttribute("data-variant"); else t.setAttribute("data-variant", "outline");
+    });
     dialog.querySelector('[data-pane="typed"]').classList.toggle("hidden", m !== "typed");
     dialog.querySelector('[data-pane="drawn"]').classList.toggle("hidden", m !== "drawn");
     if (m === "drawn") sizePad();

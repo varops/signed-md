@@ -631,7 +631,7 @@ Prefer straightforward, testable modules with explicit boundaries.
 | Auth | argon2id (`@node-rs/argon2`), cookie sessions in the database, hashed prefixed API keys; `openid-client` for OIDC login (v1.1) | Standard and simple; one OIDC library covers Google, Microsoft, and others |
 | Email | Nodemailer (SMTP) | |
 | Import (v1.2) | Firecrawl `pdf-inspector` (PDF) and `AnyDoc` (.docx and other formats), via Node bindings | Open source (MIT), fully local, fast; local OCR for scanned PDFs, on by default (model bundled in the image) |
-| UI | Server-rendered HTML (Hono `html` templates), one CSS file, a little vanilla JS; `signature_pad` on the signing page | No front-end build, works without JavaScript except drawn signatures, fast on phones |
+| UI | Server-rendered HTML (Hono `html` templates) with [Basecoat UI](https://basecoatui.com) components (shadcn/ui style, prebuilt CSS served locally), a small `app.css` for layout and the signing UI, a little vanilla JS; `signature_pad` on the signing page | No front-end build, works without JavaScript except drawn signatures, fast on phones |
 | Verifier | `signed-md verify agreement.zip`, also compiled to a single binary | Offline verification with no install |
 | Tests | Vitest; Playwright for the end-to-end signing flow | Playwright runs the acceptance test |
 | Container | `node:24-slim` with Typst, one volume at `/data` | About 480 MB unpacked, most of it the Node base image |

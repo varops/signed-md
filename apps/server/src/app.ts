@@ -28,6 +28,12 @@ function loadAssets(): Record<string, { body: string; type: string }> {
     "app.css": { body: readFileSync(join(dir, "app.css"), "utf8"), type: "text/css; charset=utf-8" },
     "app.js": { body: readFileSync(join(dir, "app.js"), "utf8"), type: "text/javascript; charset=utf-8" },
     "sign.js": { body: readFileSync(join(dir, "sign.js"), "utf8"), type: "text/javascript; charset=utf-8" },
+    "theme.js": { body: readFileSync(join(dir, "theme.js"), "utf8"), type: "text/javascript; charset=utf-8" },
+    // Basecoat UI (MIT), prebuilt, served locally so no CDN is involved.
+    "vendor/basecoat.css": {
+      body: readFileSync(join(dirname(require.resolve("basecoat-css")), "basecoat.cdn.min.css"), "utf8"),
+      type: "text/css; charset=utf-8",
+    },
     "signature_pad.js": {
       body: readFileSync(join(dirname(require.resolve("signature_pad")), "signature_pad.umd.min.js"), "utf8"),
       type: "text/javascript; charset=utf-8",
@@ -98,6 +104,14 @@ export function createApp(ctx: Ctx) {
     c.header("content-type", name.endsWith(".otf") ? "font/otf" : "font/ttf");
     c.header("cache-control", "public, max-age=604800, immutable");
     return c.body(readFileSync(join(here, "..", "assets", "fonts", name)));
+  });
+
+  app.get("/assets/vendor/:name", (c) => {
+    const a = assets[`vendor/${c.req.param("name")}`];
+    if (!a) return c.notFound();
+    c.header("content-type", a.type);
+    c.header("cache-control", "public, max-age=86400");
+    return c.body(a.body);
   });
 
   app.get("/assets/:name", (c) => {

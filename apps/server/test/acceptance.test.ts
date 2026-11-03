@@ -202,7 +202,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     await page.goto(`${base}/settings`);
     await page.fill("input[name=label]", "Sales agent");
     await page.click("button:has-text('Create API key')");
-    const apiKey = (await page.locator(".notice.ok pre").textContent())!.trim();
+    const apiKey = (await page.locator(".alert pre").textContent())!.trim();
     expect(apiKey).toMatch(/^smd_/);
 
     // Configure the webhook (REST).
@@ -275,7 +275,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
       for (let i = 0; i < 50; i++) {
         await page.goto(`${base}/outbox`);
         // Match the recipient line only: the sender's address also appears in other people's emails.
-        const mail = page.locator("details.card").filter({ has: page.locator("summary", { hasText: `→ ${email}` }) }).first();
+        const mail = page.locator("details").filter({ has: page.locator("summary", { hasText: `→ ${email}` }) }).first();
         const text = await mail.locator("pre").textContent({ timeout: 500 }).catch(() => null);
         const m = text ? /\/s\/([A-Za-z0-9_-]{30,})/.exec(text) : null;
         if (m) return `${base}/s/${m[1]}`;
@@ -310,7 +310,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     await signer.fill("input[name='f:client.date']", "2026-11-02");
     // Sign inline: the Sign tag opens "Adopt your signature". Draw it.
     await signer.click("[data-field='client.signature'] .smd-sign-tag");
-    await signer.click("#adopt .tabs button[data-mode=drawn]");
+    await signer.click("#adopt .sig-modes button[data-mode=drawn]");
     const canvas = signer.locator("#adopt-pad");
     const box = (await canvas.boundingBox())!;
     await signer.mouse.move(box.x + 30, box.y + 100);
@@ -384,7 +384,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     let inviteUrl = "";
     for (let i = 0; i < 50 && !inviteUrl; i++) {
       await page.goto(`${base}/outbox`);
-      const text = await page.locator("details.card").filter({ has: page.locator("summary", { hasText: "→ mia@automaze.example" }) }).first().locator("pre").textContent({ timeout: 500 }).catch(() => null);
+      const text = await page.locator("details").filter({ has: page.locator("summary", { hasText: "→ mia@automaze.example" }) }).first().locator("pre").textContent({ timeout: 500 }).catch(() => null);
       inviteUrl = (text && /\/invite\/([A-Za-z0-9_-]{30,})/.exec(text)?.[0]) ?? "";
       if (!inviteUrl) await new Promise((r) => setTimeout(r, 200));
     }

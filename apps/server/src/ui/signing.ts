@@ -18,13 +18,13 @@ import {
   submitSignature,
 } from "../services/signing.ts";
 import { type FormBody, str } from "./forms.ts";
-import { footer, type H } from "./layout.ts";
+import { footer, type H, icon } from "./layout.ts";
 import { CONTRACT_FONTS } from "../services/fonts.ts";
 
 function publicShell(title: string, account: string | null, body: H, opts: { scripts?: boolean; bodyClass?: string } = {}): H {
   return html`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex"><meta name="referrer" content="no-referrer">
-<title>${title}</title><link rel="stylesheet" href="/assets/app.css"></head><body class="${opts.bodyClass ?? ""}">
+<title>${title}</title><script src="/assets/theme.js"></script><link rel="stylesheet" href="/assets/vendor/basecoat.css"><link rel="stylesheet" href="/assets/app.css"></head><body class="${opts.bodyClass ?? ""}">
 ${body}
 ${footer()}
 ${opts.scripts ? html`<script src="/assets/signature_pad.js"></script><script src="/assets/sign.js"></script>` : ""}
@@ -39,7 +39,7 @@ function brandBar(account: string | null): H {
 }
 
 function message(title: string, text: string, extra?: H): H {
-  return publicShell(title, null, html`${brandBar(null)}<main class="sign-wrap"><div class="card intro-card" style="text-align:center"><h1>${title}</h1><p class="muted">${text}</p>${extra ?? ""}</div></main>`);
+  return publicShell(title, null, html`${brandBar(null)}<main class="sign-wrap"><div  style="text-align:center" class="card intro-card"><section><h1>${title}</h1><p class="muted">${text}</p>${extra ?? ""}</section></div></main>`);
 }
 
 function initials(name: string): string {
@@ -48,11 +48,11 @@ function initials(name: string): string {
 
 function declineBlock(token: string): H {
   return html`<details class="other-actions"><summary>Other actions</summary>
-    <form method="post" action="/s/${token}/decline" class="card" style="margin-top:10px">
+    <form method="post" action="/s/${token}/decline"  style="margin-top:10px" class="card"><section>
       <h3>Decline to sign</h3>
       <p class="small muted">The sender will be told. You can add a reason.</p>
-      <div class="field"><textarea name="reason" style="min-height:80px" placeholder="Reason (optional)"></textarea></div>
-      <button class="btn danger">Decline</button></form></details>`;
+      <div class="field"><textarea class="textarea" name="reason" style="min-height:80px" placeholder="Reason (optional)"></textarea></div>
+      <button class="btn" data-variant="destructive">Decline</button></section></form></details>`;
 }
 
 // ---- Step 1: "Let's start" ----
@@ -61,7 +61,7 @@ function introPage(token: string, view: SignerView, error: string | null): H {
   const due = view.expires_at ? new Date(view.expires_at).toUTCString().replace(/ \d\d:\d\d:\d\d GMT/, "") : null;
   return publicShell(view.title, view.account_name, html`${brandBar(view.account_name)}
     <main class="sign-wrap">
-      <div class="card intro-card">
+      <div  class="card intro-card"><section>
         <div class="intro-icon" aria-hidden="true">✍︎</div>
         <p class="muted" style="margin-bottom:4px">${view.sender_name ? `${view.sender_name} at ${view.account_name}` : view.account_name} sent you a document to review and sign</p>
         <h1>${view.title}</h1>
@@ -69,14 +69,14 @@ function introPage(token: string, view: SignerView, error: string | null): H {
           <dt>Fields</dt><dd>${view.fields.length} to complete</dd>
           ${view.progress.total > 1 ? html`<dt>Signers</dt><dd>${view.progress.signed} of ${view.progress.total} have signed</dd>` : ""}
           ${due ? html`<dt>Due</dt><dd>${due}</dd>` : ""}</dl>
-        ${error ? html`<div class="notice bad">${error}</div>` : ""}
+        ${error ? html`<div class="alert" data-variant="destructive">${icon("bad")}<section>${error}</section></div>` : ""}
         <form method="post" action="/s/${token}/start">
           <div class="disclosure"><strong>Electronic record and signature disclosure</strong><p>${view.consent_text}</p>
             <details style="margin-top:8px"><summary>Read the full disclosure</summary><pre class="disclosure-full">${view.disclosure}</pre></details></div>
-          <label class="check" style="margin:14px 0 18px"><input type="checkbox" name="consent" required> <span>I agree to use electronic records and signatures.</span></label>
-          <button class="btn go block">Continue</button>
+          <label class="check" style="margin:14px 0 18px"><input class="input" type="checkbox" name="consent" required> <span>I agree to use electronic records and signatures.</span></label>
+          <button class="btn btn-go w-full">Continue</button>
         </form>
-      </div>
+      </section></div>
       ${declineBlock(token)}
     </main>`);
 }
@@ -157,33 +157,44 @@ function signingPage(token: string, view: SignerView, error: SignedError | null,
       <div class="guide-bar"><div class="inner">
         <div class="guide-info"><strong class="guide-title">${view.title}</strong><span class="small muted" id="guide-progress">${required} required field${required === 1 ? "" : "s"}</span></div>
         <div class="row" style="gap:8px">
-          <button type="button" class="btn go" id="guide-next">Start</button>
-          <button type="submit" class="btn primary" id="guide-finish">Finish</button>
+          <button type="button" class="btn btn-go" id="guide-next">Start</button>
+          <button type="submit" class="btn" id="guide-finish">Finish</button>
         </div>
       </div></div>
       <main class="sign-wrap">
         ${logoVersion ? html`<div class="sign-logo"><img class="brand-logo" src="/branding/logo?v=${logoVersion}" alt="${view.account_name}"></div>` : ""}
-        ${error ? html`<div class="notice bad" id="sign-error">${error.message}${error.issues.length ? html`<ul>${error.issues.map((i) => html`<li>${i.message}</li>`)}</ul>` : ""}</div>` : ""}
+        ${error ? html`<div class="alert" data-variant="destructive" id="sign-error">${icon("bad")}<section>${error.message}${error.issues.length ? html`<ul>${error.issues.map((i) => html`<li>${i.message}</li>`)}</ul>` : ""}</section></div>` : ""}
         <p class="small muted guide-hint">Fill in the highlighted fields in the document. Use <strong>Next</strong> to jump between them, then <strong>Finish</strong>.</p>
         <article class="doc signing ${CONTRACT_FONTS[view.font].css}">${raw(docHtml)}</article>
-        <div class="finish-row"><button type="submit" class="btn primary">Finish</button></div>
+        <div class="finish-row"><button type="submit" class="btn">Finish</button></div>
       </main>
     </form>
     <main class="sign-wrap" style="padding-top:0">${declineBlock(token)}</main>
 
-    <dialog id="adopt" data-name="${view.signer.name}" data-initials="${initials(view.signer.name)}">
-      <form method="dialog" class="adopt">
-        <div class="spread"><h2 style="margin:0" id="adopt-title">Adopt your signature</h2><button value="cancel" class="btn small" aria-label="Close">✕</button></div>
-        <p class="small muted">Confirm your name and choose how your signature looks.</p>
-        <div class="tabs"><button type="button" data-mode="typed" class="active">Type</button><button type="button" data-mode="drawn">Draw</button></div>
-        <div data-pane="typed">
-          <div class="field"><label for="adopt-text" id="adopt-text-label">Full name</label><input type="text" id="adopt-text" autocomplete="name"></div>
-          <div class="typed-preview" id="adopt-preview"></div>
-        </div>
-        <div data-pane="drawn" class="hidden"><canvas class="sig-pad" id="adopt-pad" aria-label="Draw here"></canvas><a href="#" id="adopt-clear" class="small">Clear</a></div>
-        <p class="small muted">By selecting Adopt and sign, I agree that this is my electronic ${"signature"} for this document.</p>
-        <div class="row" style="justify-content:flex-end"><button value="cancel" class="btn">Cancel</button><button type="button" class="btn go" id="adopt-ok">Adopt and sign</button></div>
-      </form>
+    <dialog id="adopt" class="dialog" aria-labelledby="adopt-title" data-name="${view.signer.name}" data-initials="${initials(view.signer.name)}">
+      <div class="adopt">
+        <header>
+          <h2 id="adopt-title">Adopt your signature</h2>
+          <p>Confirm your name and choose how your signature looks.</p>
+        </header>
+        <section>
+          <div class="sig-modes" role="group" aria-label="Signature style">
+            <button type="button" class="btn" data-size="sm" data-mode="typed" aria-pressed="true">Type</button>
+            <button type="button" class="btn" data-variant="outline" data-size="sm" data-mode="drawn" aria-pressed="false">Draw</button>
+          </div>
+          <div data-pane="typed">
+            <div class="field"><label for="adopt-text" id="adopt-text-label">Full name</label><input class="input" type="text" id="adopt-text" autocomplete="name"></div>
+            <div class="typed-preview" id="adopt-preview"></div>
+          </div>
+          <div data-pane="drawn" class="hidden"><canvas class="sig-pad" id="adopt-pad" aria-label="Draw here"></canvas><a href="#" id="adopt-clear" class="small">Clear</a></div>
+          <p class="small muted">By selecting Adopt and sign, I agree that this is my electronic signature for this document.</p>
+        </section>
+        <footer>
+          <form method="dialog"><button value="cancel" class="btn" data-variant="outline">Cancel</button></form>
+          <button type="button" class="btn btn-go" id="adopt-ok">Adopt and sign</button>
+        </footer>
+        <form method="dialog"><button value="cancel" aria-label="Close" class="dialog-close">${icon("close")}</button></form>
+      </div>
     </dialog>`, { scripts: true, bodyClass: "signing-body" });
 }
 
@@ -236,7 +247,7 @@ export function createSigningRoutes(ctx: Ctx) {
         if (state.document_status === "finalized") {
           const s = await ctx.db.selectFrom("signers").select("document_id").where("token_hash", "=", sha256(token)).executeTakeFirst();
           const pdf = s ? await ctx.db.selectFrom("artifacts").select("id").where("document_id", "=", s.document_id).where("type", "=", "pdf").executeTakeFirst() : undefined;
-          if (pdf) extra = html`<a class="btn primary" href="${downloadLink(ctx, pdf.id, 600).url}">Download signed PDF</a>`;
+          if (pdf) extra = html`<a class="btn" href="${downloadLink(ctx, pdf.id, 600).url}">Download signed PDF</a>`;
         }
         const msg = state.document_status === "finalized" || state.document_status === "signed"
           ? `Everyone has signed “${state.title}”. A copy has been emailed to you.`

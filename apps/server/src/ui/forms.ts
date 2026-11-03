@@ -49,13 +49,13 @@ export function valueInput(f: FieldDef, current: unknown): H {
   ].filter(Boolean).join(" · ");
   const v = current === undefined || current === null ? "" : String(current);
   let input: H;
-  if (f.type === "longtext") input = html`<textarea name="${name}" id="${name}">${v}</textarea>`;
-  else if (f.type === "date") input = html`<input type="date" name="${name}" id="${name}" value="${v}">`;
-  else if (f.type === "checkbox") input = html`<label class="check"><input type="checkbox" name="${name}" ${current === true || current === "on" ? "checked" : ""}> Yes</label>`;
+  if (f.type === "longtext") input = html`<textarea class="textarea" name="${name}" id="${name}">${v}</textarea>`;
+  else if (f.type === "date") input = html`<input class="input" type="date" name="${name}" id="${name}" value="${v}">`;
+  else if (f.type === "checkbox") input = html`<label class="check"><input class="input" type="checkbox" name="${name}" ${current === true || current === "on" ? "checked" : ""}> Yes</label>`;
   else if (f.type === "choice" || Array.isArray(f.rules.allowed_values)) {
     const opts = (f.rules.options ?? f.rules.allowed_values ?? []).map(String);
-    input = html`<select name="${name}" id="${name}"><option value="">Choose…</option>${opts.map((o) => html`<option ${o === v ? "selected" : ""}>${o}</option>`)}</select>`;
-  } else input = html`<input type="text" name="${name}" id="${name}" value="${v}" ${f.type === "number" || f.type === "currency" ? html`inputmode="decimal"` : ""}>`;
+    input = html`<select class="select" name="${name}" id="${name}"><option value="">Choose…</option>${opts.map((o) => html`<option ${o === v ? "selected" : ""}>${o}</option>`)}</select>`;
+  } else input = html`<input class="input" type="text" name="${name}" id="${name}" value="${v}" ${f.type === "number" || f.type === "currency" ? html`inputmode="decimal"` : ""}>`;
   return html`<div class="field"><label for="${name}">${label} <span class="muted">${f.type}${hint ? ` · ${hint}` : ""}</span></label>${input}</div>`;
 }
 
@@ -63,13 +63,13 @@ export function signerRows(signers: { key: string; name: string; email: string; 
   const rows = signers.length ? signers : [{ key: "", name: "", email: "", order: 1 }];
   return html`<div id="signers" class="stack">
     ${rows.map(
-      (s, i) => html`<div class="signer-row card" style="padding:14px;margin:0">
+      (s, i) => html`<div class="signer-row">
         <div class="row" style="margin-bottom:8px"><label style="margin:0">Signer key</label>
-          <input type="text" name="signers[${i}][key]" value="${s.key}" ${fixedKeys && s.key ? "readonly" : ""} style="max-width:180px" placeholder="client"></div>
+          <input class="input" type="text" name="signers[${i}][key]" value="${s.key}" ${fixedKeys && s.key ? "readonly" : ""} style="max-width:180px" placeholder="client"></div>
         <div class="inline-fields">
-          <div><label>Name</label><input type="text" name="signers[${i}][name]" value="${s.name}" placeholder="Jane Doe"></div>
-          <div><label>Email</label><input type="email" name="signers[${i}][email]" value="${s.email}" placeholder="jane@example.com"></div>
-          <div><label>Order</label><input type="number" min="1" name="signers[${i}][order]" value="${s.order}"></div>
+          <div><label>Name</label><input class="input" type="text" name="signers[${i}][name]" value="${s.name}" placeholder="Jane Doe"></div>
+          <div><label>Email</label><input class="input" type="email" name="signers[${i}][email]" value="${s.email}" placeholder="jane@example.com"></div>
+          <div><label>Order</label><input class="input" type="number" min="1" name="signers[${i}][order]" value="${s.order}"></div>
         </div>
       </div>`,
     )}
