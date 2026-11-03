@@ -52,11 +52,11 @@ export async function sessionActor(ctx: Ctx, token: string | undefined): Promise
   const row = await ctx.db
     .selectFrom("sessions")
     .innerJoin("users", "users.id", "sessions.user_id")
-    .select(["users.id as user_id", "users.account_id", "users.email", "users.name", "users.role", "users.status", "sessions.expires_at"])
+    .select(["users.id as user_id", "users.account_id", "users.email", "users.name", "users.role", "users.theme", "users.status", "sessions.expires_at"])
     .where("sessions.id", "=", sha256(token))
     .executeTakeFirst();
   if (!row || row.status !== "active" || row.expires_at < now()) return null;
-  return { kind: "user", id: row.user_id, accountId: row.account_id, label: row.email, name: row.name || row.email.split("@")[0]!, role: row.role };
+  return { kind: "user", id: row.user_id, accountId: row.account_id, label: row.email, name: row.name || row.email.split("@")[0]!, role: row.role, theme: (["light", "dark"].includes(row.theme) ? row.theme : "system") as "system" | "light" | "dark" };
 }
 
 export async function logout(ctx: Ctx, token: string | undefined): Promise<void> {

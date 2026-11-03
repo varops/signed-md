@@ -133,7 +133,7 @@ export async function acceptInvitation(ctx: Ctx, token: string, input: { name: s
     if (taken) throw new SignedError("INVALID_REQUEST", "This email already has an account. Log in instead.");
     await trx
       .insertInto("users")
-      .values({ id: userId, account_id: inv.account_id, email: inv.email, name, role: inv.role, password_hash: passwordHash, status: "active", invited_by: inv.invited_by, last_login_at: now(), deactivated_at: null, created_at: now() })
+      .values({ id: userId, account_id: inv.account_id, email: inv.email, name, role: inv.role, password_hash: passwordHash, status: "active", invited_by: inv.invited_by, last_login_at: now(), deactivated_at: null, theme: "system", created_at: now() })
       .execute();
     await trx.updateTable("invitations").set({ accepted_at: now() }).where("id", "=", inv.id).execute();
   });
@@ -184,10 +184,11 @@ export async function reactivateMember(ctx: Ctx, actor: Actor, userId: string): 
   await recordAudit(ctx.db, actor, "team.reactivated", { email: user.email });
 }
 
-export async function updateProfile(ctx: Ctx, actor: Actor & { kind: "user" }, input: { name: string }): Promise<void> {
+export async function updateProfile(ctx: Ctx, actor: Actor & { kind: "user" }, input: { name: string; theme?: string }): Promise<void> {
   const name = input.name.trim().slice(0, 100);
   if (!name) throw new SignedError("INVALID_REQUEST", "Enter your name");
-  await ctx.db.updateTable("users").set({ name }).where("id", "=", actor.id).execute();
+  if (input.theme !== undefined && !["system", "light", "dark"].includes(input.theme)) throw new SignedError("INVALID_REQUEST", "Theme must be system, light, or dark");
+  await ctx.db.updateTable("users").set({ name, ...(input.theme ? { theme: input.theme } : {}) }).where("id", "=", actor.id).execute();
 }
 
 export async function userById(ctx: Ctx, id: string | null) {

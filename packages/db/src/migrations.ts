@@ -276,11 +276,19 @@ const m004: Migration = {
   },
 };
 
+/** Personal admin UI theme. */
+const m005: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema.alterTable("users").addColumn("theme", "text", (c) => c.notNull().defaultTo("system")).execute();
+  },
+};
+
 export const migrations: Record<string, Migration> = {
   "001_initial": m001,
   "002_signer_message": m002,
   "003_teams": m003,
   "004_document_font": m004,
+  "005_user_theme": m005,
 };
 
 export const migrationProvider: MigrationProvider = {

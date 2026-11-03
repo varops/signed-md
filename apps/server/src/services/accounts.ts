@@ -96,6 +96,7 @@ export async function setup(
         invited_by: null,
         last_login_at: null,
         deactivated_at: null,
+        theme: "system",
         created_at: now(),
       })
       .execute();

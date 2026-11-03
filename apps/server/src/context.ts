@@ -17,10 +17,11 @@ export interface Ctx {
 
 /** Who is acting. Recorded on every event. */
 export type Role = "owner" | "admin" | "member" | "viewer";
+export type Theme = "system" | "light" | "dark";
 
 export type Actor =
   /** A person logged in to the web UI. `label` is their email. */
-  | { kind: "user"; id: string; accountId: string; label: string; name: string; role: Role }
+  | { kind: "user"; id: string; accountId: string; label: string; name: string; role: Role; theme?: Theme }
   /** An API key. It acts as the user who owns it, with that user's role. */
   | { kind: "apikey"; id: string; accountId: string; label: string; via: "api" | "mcp"; userId: string; userName: string; role: Role }
   | { kind: "signer"; id: string; label: string }

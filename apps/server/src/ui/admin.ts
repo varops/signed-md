@@ -94,7 +94,7 @@ export function createAdmin(ctx: Ctx) {
     return m ? { kind: m[0], text: m[1] } : null;
   };
   const page = (c: Context<Env>, title: string, active: string, body: H, extra?: { kind: "ok" | "bad" | "warn" | "info"; text: string } | null) =>
-    c.html(shell({ title, user: { email: c.get("user").label, name: c.get("user").name, role: c.get("user").role }, csrf: c.get("csrf"), active, flash: extra ?? flash(c) }, body));
+    c.html(shell({ title, user: { email: c.get("user").label, name: c.get("user").name, role: c.get("user").role, theme: c.get("user").theme ?? "system" }, csrf: c.get("csrf"), active, flash: extra ?? flash(c) }, body));
 
   // ---- Public: setup and login ----
 
@@ -506,7 +506,7 @@ export function createAdmin(ctx: Ctx) {
         ${can(c.get("user"), "templates.approve") ? html`<form method="post" action="/templates/${t.id}/versions/${v.version}/approve" data-confirm="Approve version ${v.version}? Agents will be able to send it.">${csrfInput(csrf)}<button class="btn">Approve version ${v.version}</button></form>` : html`<span class="small">Only an owner can approve it.</span>`}</div></section></div>` : ""}
       <div class="grid">
         <div>
-          <article class="doc">${raw(renderHtml(body, {
+          <article class="doc ${CONTRACT_FONTS[(await getAccount(ctx)).config.branding.contract_font].css}">${raw(renderHtml(body, {
             fields: v.fields,
             valueSlots: true,
             renderField: (f) => ({
@@ -588,6 +588,8 @@ export function createAdmin(ctx: Ctx) {
           <div class="field"><label>Name</label><input class="input" type="text" name="name" value="${user.name}" required></div>
           <div class="field"><label>Email</label><input class="input" type="email" value="${user.label}" disabled></div>
         </div>
+        <div class="field"><label>Theme <span class="muted">· for this admin app only; signing pages follow each signer's device, and PDFs are always white</span></label>
+          <div class="row" style="gap:10px">${(["system", "light", "dark"] as const).map((t) => html`<label class="font-choice"><input type="radio" name="theme" value="${t}" ${(user.theme ?? "system") === t ? "checked" : ""}> ${{ system: "System", light: "Light", dark: "Dark" }[t]}</label>`)}</div></div>
         <p class="small muted">Role: <strong>${ROLE_LABELS[user.role]}</strong>. Signers see your name, email, and avatar on documents you send, and their replies come to you.</p>
         <button class="btn">Save</button>
       </section></form>
@@ -715,7 +717,7 @@ export function createAdmin(ctx: Ctx) {
   app.post("/settings/profile", async (c) => {
     const b = (await c.req.parseBody()) as FormBody;
     try {
-      await team.updateProfile(ctx, c.get("user"), { name: str(b, "name") });
+      await team.updateProfile(ctx, c.get("user"), { name: str(b, "name"), ...(str(b, "theme") ? { theme: str(b, "theme") } : {}) });
       return c.redirect("/settings?msg=profile");
     } catch (e) {
       if (!(e instanceof SignedError)) throw e;

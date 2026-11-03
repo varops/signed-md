@@ -43,6 +43,8 @@ export interface UserTable {
   invited_by: string | null;
   last_login_at: string | null;
   deactivated_at: string | null;
+  /** Admin UI theme: "system", "light", or "dark". */
+  theme: string;
   created_at: string;
 }
 

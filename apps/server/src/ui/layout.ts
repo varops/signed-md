@@ -17,7 +17,7 @@ export function footer(): H {
 
 export interface ShellOptions {
   title: string;
-  user?: { email: string; name: string; role: "owner" | "admin" | "member" | "viewer" } | null;
+  user?: { email: string; name: string; role: "owner" | "admin" | "member" | "viewer"; theme?: "system" | "light" | "dark" } | null;
   csrf?: string;
   active?: string;
   flash?: { kind: "ok" | "bad" | "warn" | "info"; text: string } | null;
@@ -35,7 +35,7 @@ const NAV: [string, string, string, NavRole[]][] = [
 
 export function shell(opts: ShellOptions, body: H): H {
   return html`<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="${opts.user?.theme ?? "system"}" class="${opts.user?.theme === "dark" ? "dark" : ""}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
