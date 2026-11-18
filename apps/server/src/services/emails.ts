@@ -5,7 +5,7 @@ import { getAccount } from "./accounts.ts";
 import { readLogo } from "./branding.ts";
 import { loadDocument, loadSigners } from "./documents.ts";
 import { type EmailParts, LOGO_CID, type Person, renderEmail } from "./emailtemplate.ts";
-import { avatarUrl, initialsOf } from "./avatars.ts";
+import { emailAvatar, initialsOf } from "./avatars.ts";
 import { downloadLink, slug } from "./finalize.ts";
 import type { MailAttachment, MailMessage } from "./mail.ts";
 import { personalizeMessage } from "./messagevars.ts";
@@ -48,7 +48,7 @@ async function sendInvitation(ctx: Ctx, job: EmailJob): Promise<void> {
     hasLogo: logo !== null,
     bannerColor: account.config.branding.banner_color,
     icon: "bell",
-    person: { name: inviterName, avatar: avatarUrl(ctx.config, account.config.branding.avatars, inviter?.email), initials: initialsOf(inviterName) },
+    person: { name: inviterName, avatar: await emailAvatar(ctx.config, account.config.branding.avatars, inviter?.email, inviterName), initials: initialsOf(inviterName) },
     headline: `${inviterName} invited you to join ${account.name} on Signed.md.`,
     button: { label: "Accept invitation", url: unseal(ctx.keys.serverSecret, job.link) },
     paragraphs: [`You'll join as ${role}. Signed.md is where ${account.name} prepares and sends agreements for signature.`, "The invitation expires in 7 days."],
@@ -80,9 +80,9 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
   const messages: MailMessage[] = [];
 
   const branding = account.config.branding;
-  const person = (name: string, email: string | null | undefined): Person => ({ name, avatar: avatarUrl(ctx.config, branding.avatars, email), initials: initialsOf(name) });
-  const sender = person(senderName, senderEmail);
-  const signerPeople = signers.map((s) => person(s.name, s.email));
+  const person = async (name: string, email: string | null | undefined): Promise<Person> => ({ name, avatar: await emailAvatar(ctx.config, branding.avatars, email, name), initials: initialsOf(name) });
+  const sender = await person(senderName, senderEmail);
+  const signerPeople = await Promise.all(signers.map((s) => person(s.name, s.email)));
 
   const msg = (to: string, subject: string, parts: Omit<EmailParts, "account" | "hasLogo">, attachments: MailAttachment[] = []) => {
     const { html, text } = renderEmail({ account: account.name, branding: ctx.config.branding, hasLogo: logo !== null, bannerColor: branding.banner_color, ...parts });
@@ -163,7 +163,7 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
       for (const to of admins) {
         msg(to, `Declined: ${doc.title}`, {
           icon: "cross",
-          ...(signer ? { person: person(signer.name, signer.email) } : {}),
+          ...(signer ? { person: await person(signer.name, signer.email) } : {}),
           headline: `${signer?.name ?? "A signer"} declined to sign.`,
           button: { label: "View document", url: docUrl },
           paragraphs: [signer?.decline_reason ? `Their reason: "${signer.decline_reason}"` : "They didn't give a reason."],

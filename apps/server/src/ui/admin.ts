@@ -19,7 +19,7 @@ import { can, canManageDocument, requirePermission, ROLE_LABELS, ROLES } from ".
 import * as team from "../services/team.ts";
 import { readLogo, removeLogo, setBannerAndAvatars, setContractFont, setDefaultMessage, setLogo } from "../services/branding.ts";
 import { CONTRACT_FONTS, CONTRACT_FONT_NAMES, type ContractFont } from "../services/fonts.ts";
-import { avatarOrigin, avatarUrl, initialsOf } from "../services/avatars.ts";
+import { avatarOrigin, avatarUrl, emailAvatar, initialsOf } from "../services/avatars.ts";
 import { renderEmail } from "../services/emailtemplate.ts";
 import { MESSAGE_VARIABLES, personalizeMessage } from "../services/messagevars.ts";
 import { type FormBody, parseSigners, parseValues, signerRows, str, valueInput } from "./forms.ts";
@@ -837,7 +837,7 @@ export function createAdmin(ctx: Ctx) {
               <div class="row"><input type="color" id="banner_color_picker" value="${account.config.branding.banner_color}" data-sync="banner_color" style="width:52px;height:38px;padding:2px">
               <input type="text" id="banner_color" name="banner_color" value="${account.config.branding.banner_color}" pattern="#[0-9a-fA-F]{6}" style="max-width:130px" class="input mono"></div>
               <p class="small muted" style="margin:6px 0 0">Text and button colours adjust automatically for contrast.</p></div>
-            <label class="check"><input class="input" type="checkbox" name="avatars" ${account.config.branding.avatars ? "checked" : ""}> <span>Show avatars in emails and in this app<br><span class="small muted">Pictures come from unavatar.io${ctx.config.avatarBaseUrl !== "https://unavatar.io" ? html` through <code>${ctx.config.avatarBaseUrl}</code>` : ""}. This shares email addresses with that service, and email clients load the pictures from it. Without a picture, initials are shown.</span></span></label>
+            <label class="check"><input class="input" type="checkbox" name="avatars" ${account.config.branding.avatars ? "checked" : ""}> <span>Show avatars in emails and in this app<br><span class="small muted">Pictures come from ${ctx.config.avatarProvider === "gravatar" ? "Gravatar" : "unavatar.io"}${!["https://unavatar.io", "https://gravatar.com/avatar"].includes(ctx.config.avatarBaseUrl) ? html` through <code>${new URL(ctx.config.avatarBaseUrl).host}</code>` : ""}. This shares ${ctx.config.avatarProvider === "gravatar" ? "a hash of each email address" : "email addresses"} with that service, and email clients load the pictures from it. Without a picture, initials are shown.</span></span></label>
             <button class="btn" style="margin-top:12px">Save</button>
           </section></form>
           <form method="post" action="/settings/branding/font"  class="card">${csrfInput(csrf)}
@@ -866,10 +866,10 @@ export function createAdmin(ctx: Ctx) {
       hasLogo: logo !== null,
       bannerColor: account.config.branding.banner_color,
       icon: "document",
-      person: { name: account.name, avatar: avatarUrl(ctx.config, account.config.branding.avatars, c.get("user").label), initials: initialsOf(account.name) },
+      person: { name: account.name, avatar: await emailAvatar(ctx.config, account.config.branding.avatars, c.get("user").label, account.name), initials: initialsOf(account.name) },
       signers: [
-        { name: "Jane Doe", avatar: avatarUrl(ctx.config, account.config.branding.avatars, "jane@acme.example"), initials: "JD" },
-        { name: "Sam Lee", avatar: avatarUrl(ctx.config, account.config.branding.avatars, "sam@automaze.example"), initials: "SL" },
+        { name: "Jane Doe", avatar: await emailAvatar(ctx.config, account.config.branding.avatars, "jane@acme.example", "Jane Doe"), initials: "JD" },
+        { name: "Sam Lee", avatar: await emailAvatar(ctx.config, account.config.branding.avatars, "sam@automaze.example", "Sam Lee"), initials: "SL" },
       ],
       headline: `${account.name} sent you a document to review and sign.`,
       button: { label: "Review document", url: "#" },
@@ -962,7 +962,7 @@ export function createAdmin(ctx: Ctx) {
 
 /** Avatar with initials underneath; app.js removes the image if it fails to load. */
 function avatar(ctx: Ctx, enabled: boolean, name: string, email: string, size: "sm" | "md" = "md"): H {
-  const url = avatarUrl(ctx.config, enabled, email);
+  const url = avatarUrl(ctx.config, enabled, email, name);
   return html`<span class="avatar" ${size === "sm" ? html`data-size="sm"` : ""} title="${name} <${email}>"><span>${initialsOf(name)}</span>${url ? html`<img src="${url}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</span>`;
 }
 

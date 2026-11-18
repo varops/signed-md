@@ -177,8 +177,26 @@ export async function signPdf(pdf: Buffer, identity: SigningIdentity, opts: PdfS
     appName: "Signed.md",
   });
   const signer = new CadesSigner(identity, opts.tsaUrl);
-  const signed = await new SignPdf().sign(withPlaceholder, signer);
+  const signed = await new SignPdf().sign(keepDocumentId(pdf, withPlaceholder), signer);
   return { pdf: signed, timestamped: signer.timestamped };
+}
+
+const PDF_STRING = String.raw`(?:<[0-9A-Fa-f\s]*>|\((?:\\.|[^\\)])*\))`;
+const ID_ENTRY = String.raw`/ID\s*\[\s*${PDF_STRING}\s*${PDF_STRING}\s*\]`;
+
+/**
+ * PDF/A (rule 6.1.3-1) needs the document /ID in every trailer. The signature placeholder is added
+ * as an incremental update whose new trailer has no /ID, so copy it over from the original.
+ * This runs before signing, so the trailer stays inside the signed byte range.
+ */
+export function keepDocumentId(original: Buffer, updated: Buffer): Buffer {
+  const id = [...original.toString("latin1").matchAll(new RegExp(ID_ENTRY, "g"))].at(-1)?.[0];
+  if (!id) return updated;
+  const text = updated.toString("latin1");
+  const at = text.lastIndexOf("trailer");
+  const end = text.indexOf(">>", at);
+  if (at < 0 || end < 0 || new RegExp(ID_ENTRY).test(text.slice(at, end))) return updated;
+  return Buffer.from(`${text.slice(0, end)}/ID${id.slice(3)}\n${text.slice(end)}`, "latin1");
 }
 
 const identities = new Map<string, SigningIdentity>();

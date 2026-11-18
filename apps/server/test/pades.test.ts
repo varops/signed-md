@@ -62,6 +62,11 @@ describe("PAdES-sealed PDF with trusted timestamps", async () => {
     expect(tsa.requests()).toBeGreaterThanOrEqual(2); // the PDF signature and the package
     // The PDF is PDF/A-2b.
     expect(Buffer.from(files["signed.pdf"]!).toString("latin1")).toContain("pdfaid:part");
+    // PDF/A rule 6.1.3-1: the signature's incremental update keeps the document /ID in its trailer.
+    const text = Buffer.from(files["signed.pdf"]!).toString("latin1");
+    const trailers = [...text.matchAll(/trailer\s*<<([\s\S]*?)>>\s*startxref/g)].map((m) => m[1]!);
+    expect(trailers.length).toBe(2);
+    for (const t of trailers) expect(t).toMatch(/\/ID\s*\[/);
   }, 60_000);
 
   it("detects a changed PDF", async () => {

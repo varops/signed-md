@@ -29,7 +29,7 @@ export interface Branding {
   email_message: string;
   /** Background colour of the email banner, as #rrggbb. */
   banner_color: string;
-  /** Show people's avatars from unavatar.io (or AVATAR_BASE_URL). Off by default: it shares email addresses with that service. */
+  /** Show people's avatars (AVATAR_PROVIDER). Off by default: it shares email addresses with that service. */
   avatars: boolean;
   /** Default font family for contracts: "serif" or "sans-serif". Documents can override it. */
   contract_font: "serif" | "sans-serif";

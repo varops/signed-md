@@ -43,7 +43,9 @@ All settings are environment variables. Invalid values stop the server at start 
 | `WORKER` | `1` | Set to `0` to run without the background worker (not recommended with one container). |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. Logs are JSON, one line per event. |
 | `SOURCE_URL` | `https://github.com/varops/signed-md` | The "Source" link in the app. If you run a modified version, point it at your source code (AGPL-3.0 section 13). |
-| `AVATAR_BASE_URL` | `https://unavatar.io` | Where avatars come from, when avatars are on (Settings → Branding). Point it at a CDN pull zone in front of unavatar.io. |
+| `AVATAR_PROVIDER` | `unavatar` | Where avatars come from when they are on (Settings → Branding): `unavatar` or `gravatar`. See [Avatars](#avatars). |
+| `UNAVATAR_DOMAIN`, `GRAVATAR_DOMAIN` | `unavatar.io`, `gravatar.com` | The provider's domain, or a CDN pull zone in front of it, such as `avatars.example.com`. |
+| `UNAVATAR_TOKEN` | – | An unavatar.io publishable key (`pk_…`) for paid use, added to avatar links as `?token=`. Secret keys (`sk_…`) are refused, because the links are public. See [Avatars](#avatars). |
 | `TSA_URL` | `http://timestamp.digicert.com` | RFC 3161 timestamp authority for the PDF seal and the evidence package. Only hashes are sent. Set to `off` to disable. |
 | `PDF_SIGNING_KEY_FILE`, `PDF_SIGNING_CERT_FILE` | – | Your own certificate (PEM key, PEM certificate chain) for sealing PDFs. Without them, each installation creates a self-signed certificate. |
 | `ALLOW_INSECURE_WEBHOOKS` | – | Development only. Allows `http://` and private-network webhook targets. |
@@ -137,15 +139,23 @@ Timestamps come from DigiCert's free service by default. Use any RFC 3161 author
 
 ## Avatars
 
-Avatars are off by default. When you turn them on (Settings → Branding), emails and the admin UI show people's pictures from [unavatar.io](https://unavatar.io), with initials as a fallback. The lookup uses email addresses, so it shares them with unavatar.io, and email clients load the pictures from there.
+Avatars are off by default. When you turn them on (Settings → Branding), emails and the admin UI show people's pictures, with initials for anyone without one. Two providers are supported:
 
-unavatar.io rate-limits anonymous use. To cache avatars and keep requests off your server, put a CDN pull zone in front of it (for example Bunny, Cloudflare, or CloudFront):
+- **unavatar** (default): [unavatar.io](https://unavatar.io) looks people up across many services, so more people have a picture. It gets the email address. People without a picture get an initials image from [ui-avatars.com](https://ui-avatars.com), which unavatar fetches, so it also gets their name. Anonymous use is rate-limited and heavier use is paid. unavatar is open source, so you can also run your own.
+- **gravatar**: [Gravatar](https://gravatar.com) only has people who created a Gravatar account. It gets a SHA-256 hash of the email address, not the address itself. It's free.
 
-1. Create a pull zone with origin `https://unavatar.io`.
-2. Cache responses for a day or more.
-3. Set `AVATAR_BASE_URL=https://your-zone.example-cdn.net`.
+People's browsers and email clients load the pictures. Before sending an email, Signed.md also checks once a day per address that a picture exists, so emails never show a broken image.
 
-Signed.md builds URLs as `AVATAR_BASE_URL/<email>` and allows that host in its Content-Security-Policy.
+To cache avatars, or to keep signers' IP addresses away from the provider, put a CDN pull zone in front of it (for example Bunny, Cloudflare or CloudFront):
+
+1. Create a pull zone with origin `https://unavatar.io` or `https://gravatar.com`.
+2. Pass the query string through to the origin (Signed.md adds `?fallback=…` or `?d=404&s=128`), and keep the `Content-Type` header. Each person's link never changes, so the initials images are cached too.
+3. Cache pictures for about a week, and 404s for a day, so new and changed pictures appear.
+4. Set `UNAVATAR_DOMAIN` or `GRAVATAR_DOMAIN` to the zone's domain.
+
+For paid unavatar use, set `UNAVATAR_TOKEN` to a publishable key (`pk_…`). It appears in every avatar link, so anyone can see it. If you restrict the key to your domains, avatars in emails won't load, because email clients send no `Origin` or `Referer`. Behind a CDN, you can instead leave `UNAVATAR_TOKEN` unset and have the pull zone send an `x-api-key` header to unavatar, so no key is ever public.
+
+Signed.md builds links as `https://<UNAVATAR_DOMAIN>/<email>?fallback=<ui-avatars.com link with the name>` or `https://<GRAVATAR_DOMAIN>/avatar/<sha256(email)>?d=404&s=128`, and allows that host in its Content-Security-Policy.
 
 ## Health
 

@@ -69,6 +69,11 @@ export interface Config {
   /** Where users can get this installation's source code (AGPL-3.0 section 13). */
   sourceUrl: string;
   /** Avatar service base URL: unavatar.io, or a CDN pull zone in front of it. Used only when avatars are on. */
+  /** Where avatars come from. unavatar looks people up in many places; Gravatar only has people with an account. */
+  avatarProvider: "unavatar" | "gravatar";
+  /** unavatar publishable key (pk_…), added to avatar links as ?token=. Never a secret key: links are public. */
+  unavatarToken: string | null;
+  /** Base URL for avatar links: https://<UNAVATAR_DOMAIN> or https://<GRAVATAR_DOMAIN>/avatar. Either can be a CDN pull zone. */
   avatarBaseUrl: string;
   /** RFC 3161 timestamp authority. Only a hash is sent. Null disables trusted timestamps. */
   tsaUrl: string | null;
@@ -94,10 +99,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigError(`PUBLIC_URL must be an http(s) URL, got '${publicUrl}'`);
   }
 
-  const avatarBase = env.AVATAR_BASE_URL ?? "https://unavatar.io";
-  if (!/^https:\/\/[^/\s]+/.test(avatarBase) && !/^http:\/\/localhost/.test(avatarBase)) {
-    throw new ConfigError(`AVATAR_BASE_URL must be an https URL, got '${avatarBase}'`);
+  const avatarProvider = (env.AVATAR_PROVIDER ?? "unavatar").trim().toLowerCase();
+  if (avatarProvider !== "unavatar" && avatarProvider !== "gravatar") throw new ConfigError(`AVATAR_PROVIDER must be unavatar or gravatar, got '${avatarProvider}'`);
+  // A domain (unavatar.io, avatars.example.com), or a full URL for local testing.
+  const avatarDomain = (name: string, def: string): string => {
+    const raw = (env[name] ?? "").trim().replace(/\/+$/, "") || def;
+    const url = raw.includes("://") ? raw : `https://${raw}`;
+    if (!/^https:\/\/[a-z0-9.-]+(:\d+)?(\/[^\s]*)?$/i.test(url) && !/^http:\/\/localhost(:\d+)?(\/[^\s]*)?$/.test(url)) {
+      throw new ConfigError(`${name} must be a domain like ${def}, got '${raw}'`);
+    }
+    return url;
+  };
+  const unavatarToken = (env.UNAVATAR_TOKEN ?? "").trim() || null;
+  if (unavatarToken?.startsWith("sk_")) {
+    throw new ConfigError("UNAVATAR_TOKEN must be a publishable key (pk_…). Avatar links are public, so a secret key (sk_…) would leak");
   }
+  const avatarBaseUrl = avatarProvider === "gravatar" ? `${avatarDomain("GRAVATAR_DOMAIN", "gravatar.com")}/avatar` : avatarDomain("UNAVATAR_DOMAIN", "unavatar.io");
 
   const tsaRaw = (env.TSA_URL ?? "http://timestamp.digicert.com").trim();
   const tsa = tsaRaw === "" || tsaRaw.toLowerCase() === "off" ? null : tsaRaw;
@@ -195,7 +212,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     workerIntervalMs: Number(env.WORKER_INTERVAL_MS ?? 1000),
     logLevel: ["debug", "info", "warn", "error"].includes(level) ? level : "info",
     sourceUrl: env.SOURCE_URL ?? "https://github.com/varops/signed-md",
-    avatarBaseUrl: (env.AVATAR_BASE_URL ?? "https://unavatar.io").replace(/\/+$/, ""),
+    avatarProvider,
+    avatarBaseUrl,
+    unavatarToken,
     tsaUrl: tsa,
   };
 }

@@ -187,9 +187,9 @@ describe("email banner and avatars", async () => {
   });
 
   it("shows avatars only when turned on, with initials otherwise", async () => {
-    const { ctx } = await testContext({ AVATAR_BASE_URL: "https://avatars.example-cdn.net" });
+    const { ctx } = await testContext({ UNAVATAR_DOMAIN: "https://avatars.example-cdn.net" });
     expect(avatarUrl(ctx.config, false, "jane@acme.example")).toBeNull();
-    expect(avatarUrl(ctx.config, true, "Jane@Acme.example")).toBe("https://avatars.example-cdn.net/jane%40acme.example");
+    expect(avatarUrl(ctx.config, true, "Jane@Acme.example", "Jane Doe")).toMatch(/^https:\/\/avatars\.example-cdn\.net\/jane%40acme\.example\?fallback=https%3A%2F%2Fui-avatars\.com%2Fapi%2F%3Fname%3DJane%2BDoe%26size%3D128%26background%3D[0-9A-F]{6}%26color%3D[0-9a-fA-F]{3,6}$/);
     const off = renderEmail({ account: "Acme", hasLogo: false, icon: "document", headline: "x", person: { name: "Acme", avatar: null, initials: "AC" } }).html;
     expect(off).toContain(">AC</div>");
     expect(off).not.toContain("<img");

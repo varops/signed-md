@@ -596,7 +596,7 @@ All checks live in `services/permissions.ts`. Services call `requirePermission`,
 
 ### v1.1
 
-v1.1 adds OpenID Connect login (Google, Microsoft, generic OIDC), configured by environment variables. New identities can only join through an invitation or a matching allowed email domain. Password login remains available.
+Signed.md does not implement OAuth or OpenID Connect itself. Single sign-on works through the login cookie: any sign-in service that holds `COOKIE_HASH_KEY` signs the person in however it likes, writes the `v1` cookie and redirects back. `OAUTH_GOOGLE_URL` and `OAUTH_MICROSOFT_URL` add buttons that link to such a service. The email must belong to an active user, so people still join through an invitation. `ALLOW_EMAIL_LOGIN=false` turns password login off. See `docs/self-hosting.md`, "Single sign-on".
 
 ## 15. Operational requirements
 
@@ -655,7 +655,7 @@ Prefer straightforward, testable modules with explicit boundaries.
 | Markdown | unified / remark (mdast) with a custom placeholder plugin; YAML front matter | Parse once, render to HTML (with `rehype-sanitize`) and to PDF |
 | PDF | Typst 0.13 CLI in the container; mdast converted to Typst markup; Typst's embedded fonts only (`--ignore-system-fonts`) | Small, fast, no network access, stable output |
 | Crypto | Node built-in Ed25519; canonical JSON (RFC 8785) | Verifiable with standard tools, including `openssl` |
-| Auth | argon2id (`@node-rs/argon2`), signed login cookies (HMAC, one-hour sliding expiry), hashed prefixed API keys; `openid-client` for OIDC login (v1.1) | Standard and simple; one OIDC library covers Google, Microsoft, and others |
+| Auth | argon2id (`@node-rs/argon2`), signed login cookies (HMAC, one-hour sliding expiry), hashed prefixed API keys; single sign-on through an external service that writes the login cookie | Standard and simple; no OAuth code in the product |
 | Email | Nodemailer (SMTP) | |
 | Import (v1.2) | Firecrawl `pdf-inspector` (PDF) and `AnyDoc` (.docx and other formats), via Node bindings | Open source (MIT), fully local, fast; local OCR for scanned PDFs, on by default (model bundled in the image) |
 | UI | Server-rendered HTML (Hono `html` templates) with [Basecoat UI](https://basecoatui.com) components (shadcn/ui style, prebuilt CSS served locally), a small `app.css` for layout and the signing UI, a little vanilla JS; `signature_pad` on the signing page | No front-end build, works without JavaScript except drawn signatures, fast on phones |

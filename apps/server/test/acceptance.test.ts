@@ -115,7 +115,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     });
     await new Promise<void>((r) => hookServer.listen(0, "127.0.0.1", r));
 
-    // Stands in for a CDN pull zone in front of unavatar.io (AVATAR_BASE_URL).
+    // Stands in for a CDN pull zone in front of unavatar.io (UNAVATAR_DOMAIN).
     const avatarPng = readFileSync(join(import.meta.dirname, "fixtures", "avatar.png"));
     avatarServer = createServer((req, res) => {
       avatarRequests.push(decodeURIComponent(req.url ?? ""));
@@ -139,7 +139,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     base = `http://localhost:${port}`;
     const dataDir = mkdtempSync(join(tmpdir(), "signedmd-e2e-"));
     const ctx = await createContext(
-      loadConfig({ DATA_DIR: dataDir, PORT: String(port), PUBLIC_URL: base, TSA_URL: tsa.url, AVATAR_BASE_URL: `http://localhost:${(avatarServer.address() as AddressInfo).port}`, LOG_LEVEL: "warn", ALLOW_INSECURE_WEBHOOKS: "1", WORKER_INTERVAL_MS: "100", ...(process.env.E2E_DATABASE_URL ? { DATABASE_URL: process.env.E2E_DATABASE_URL } : {}) }),
+      loadConfig({ DATA_DIR: dataDir, PORT: String(port), PUBLIC_URL: base, TSA_URL: tsa.url, UNAVATAR_DOMAIN: `http://localhost:${(avatarServer.address() as AddressInfo).port}`, LOG_LEVEL: "warn", ALLOW_INSECURE_WEBHOOKS: "1", WORKER_INTERVAL_MS: "100", ...(process.env.E2E_DATABASE_URL ? { DATABASE_URL: process.env.E2E_DATABASE_URL } : {}) }),
     );
     server = serve({ fetch: createApp(ctx).fetch, port });
     worker = startWorker(ctx);
