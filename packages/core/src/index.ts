@@ -1,5 +1,6 @@
 export * from "./errors.ts";
 export * from "./placeholders.ts";
+export * from "./columns.ts";
 export * from "./values.ts";
 export * from "./signers.ts";
 export * from "./format.ts";

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { type FieldDef, formatValue, parseTemplate } from "@signed-md/core";
+import { type ColumnsNode, type FieldDef, formatValue, groupColumns, parseTemplate } from "@signed-md/core";
 import type { Nodes, Root, RootContent } from "mdast";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
@@ -98,6 +98,13 @@ function inline(nodes: RootContent[], slots: FieldDef[], values: Map<string, Sig
 
 function node(n: Nodes, slots: FieldDef[], values: Map<string, SignerFieldValue>, assets: Asset[]): string {
   const kids = (c: RootContent[]) => inline(c, slots, values, assets);
+  if ((n as { type: string }).type === "columns") {
+    // Side-by-side blocks (<!-- columns -->). Kept on one page so a signature row never splits.
+    const cols = (n as unknown as ColumnsNode).children.map(
+      (col) => `[\n${(col.children as RootContent[]).map((c) => node(c, slots, values, assets)).join("\n\n")}\n]`,
+    );
+    return `#block(breakable: false, width: 100%, grid(columns: (${cols.map(() => "1fr").join(", ")},), column-gutter: 22pt, ${cols.join(", ")}))`;
+  }
   switch (n.type) {
     case "root":
       return n.children.map((c) => node(c, slots, values, assets)).join("\n\n");
@@ -199,6 +206,7 @@ export function buildTypst(input: PdfInput): { source: string; assets: Asset[] }
   md += parsed.body.slice(pos);
 
   const tree = unified().use(remarkParse).use(remarkGfm).parse(md) as Root;
+  groupColumns(tree);
   const assets: Asset[] = [];
   const body = node(tree, slots, input.values, assets);
   const t = (s: string) => typstText(s);

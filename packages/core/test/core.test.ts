@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canonicalJson,
+  checkColumns,
   computeRevision,
   parseTemplate,
   prepareDocument,
@@ -216,5 +217,42 @@ describe("renderHtml tables", () => {
     const html = renderHtml("| Item | Fee |\n|---|---|\n| Retainer | 100 |\n\nSign: {{c.signature:signature}}");
     expect(html).toContain("<table>");
     expect(html).toContain('data-field="c.signature"');
+  });
+});
+
+describe("columns", () => {
+  const block = (...cols: string[]) => `<!-- columns -->\n\n${cols.join("\n\n<!-- column -->\n\n")}\n\n<!-- /columns -->`;
+  const messages = (md: string) => parseTemplate(md).issues.map((i) => i.message);
+
+  it("renders side-by-side blocks with fields inside", () => {
+    const html = renderHtml(`Intro\n\n${block("**A**\n\n{{a.signature:signature}}", "**B**\n\n{{b.signature:signature}}")}\n\nAfter`);
+    expect(html).toContain('<div class="smd-columns smd-columns-2">');
+    expect(html.match(/<div class="smd-column">/g)).toHaveLength(2);
+    expect(html).toMatch(/smd-column">\s*<p><strong>A<\/strong><\/p>[\s\S]*data-field="a.signature"[\s\S]*<\/div>\s*<div class="smd-column">\s*<p><strong>B/);
+    expect(html).toMatch(/<\/div>\s*<p>After<\/p>/);
+    expect(html).not.toContain("<!--");
+  });
+
+  it("works without blank lines around the markers", () => {
+    const html = renderHtml("<!-- columns -->\nLeft\n<!-- column -->\nRight\n<!-- /columns -->");
+    expect(html.match(/<div class="smd-column">/g)).toHaveLength(2);
+  });
+
+  it("accepts up to three columns and rejects a fourth", () => {
+    expect(messages(block("1", "2", "3"))).toEqual([]);
+    expect(renderHtml(block("1", "2", "3"))).toContain("smd-columns-3");
+    expect(messages(block("1", "2", "3", "4"))).toEqual(["A columns block can have at most 3 columns"]);
+  });
+
+  it("reports typos, unclosed, nested and stray markers", () => {
+    expect(messages("<!-- columns -->\n\nA\n\n<!-- colum -->\n\nB\n\n<!-- /columns -->")[0]).toContain("Unknown column marker '<!-- colum -->'");
+    expect(messages("<!-- columns -->\n\nA")[0]).toContain("not closed");
+    expect(messages(`<!-- columns -->\n\n${block("A", "B")}`)[0]).toContain("cannot be nested");
+    expect(messages("A\n\n<!-- column -->\n\nB")[0]).toContain("has no <!-- columns --> before it");
+    expect(messages("- item\n  <!-- column -->")[0]).toContain("must be on its own line");
+  });
+
+  it("ignores other comments and markers shown as code", () => {
+    expect(checkColumns("<!-- a note -->\n\n```\n<!-- columns -->\n```\n\nUse `<!-- column -->` here")).toEqual([]);
   });
 });

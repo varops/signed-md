@@ -78,6 +78,24 @@ fields:
 ---
 ```
 
+To put blocks side by side (for example, two signature blocks), wrap them in column markers, each on its own line. At most 3 columns, no nesting:
+
+```markdown
+<!-- columns -->
+
+**Client**
+
+Signature: {{client.signature:signature}}
+
+<!-- column -->
+
+**Provider**
+
+Signature: {{provider.signature:signature}}
+
+<!-- /columns -->
+```
+
 ## Changing or cancelling
 
 - Drafts can be edited. Sent documents cannot.

@@ -334,6 +334,33 @@ A placeholder has:
 
 Front matter is optional. A template with only placeholders is valid. Choice options can be written inline (`{{$plan:choice(standard|premium)}}`), so front matter is only needed for rules such as minimums, allowed values, defaults, and labels.
 
+### Columns
+
+Blocks can sit side by side, which is mainly useful for signature blocks:
+
+```markdown
+<!-- columns -->
+
+**Client**
+
+Signature: {{client.signature:signature}}
+
+<!-- column -->
+
+**Provider**
+
+Signature: {{provider.signature:signature}}
+
+<!-- /columns -->
+```
+
+- `<!-- columns -->` opens the block, `<!-- column -->` starts the next column, and `<!-- /columns -->` closes it. Each marker sits on its own line, at the top level of the document.
+- A block has at most 3 columns, all the same width. Blocks cannot be nested.
+- The markers are HTML comments, so other Markdown viewers hide them and show the content stacked. All other raw HTML is still dropped.
+- Saving rejects mistakes with `TEMPLATE_INVALID`: a misspelt marker, an unclosed block, a nested block, a fourth column, or a marker inside a list, quote or table.
+- On narrow screens the signing page stacks the columns. In the PDF a block is never split across pages.
+- The markers are part of the Markdown, so they are covered by the revision hash.
+
 Rules:
 
 - Template values are filled at creation. Signer fields are filled during signing by the signer whose key matches.

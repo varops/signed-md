@@ -1,4 +1,5 @@
 import { parse as parseYaml } from "yaml";
+import { checkColumns } from "./columns.ts";
 import type { Issue } from "./errors.ts";
 
 export const FieldTypes = [
@@ -176,6 +177,8 @@ export function parseTemplate(source: string): ParsedTemplate {
       message: `Malformed placeholder '${m[0]}'. Use {{$name:type}} or {{signer.field:type}}, or write \\{{ for literal braces`,
     });
   }
+
+  issues.push(...checkColumns(body));
 
   for (const [key, rules] of Object.entries(ruleMap)) {
     const def = fields.get(key);

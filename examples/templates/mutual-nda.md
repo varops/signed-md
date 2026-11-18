@@ -6,10 +6,20 @@ This agreement is between {{$party_a:text}} and {{$party_b:text}}. Each party ma
 2. This does not cover information that is public, already known, or independently developed.
 3. These obligations last for {{$years:choice(1|2|3|5)}} years from the date of the last signature.
 
+<!-- columns -->
+
 **{{$party_a:text}}**
 
-Signature: {{a.signature:signature}} Date: {{a.date:date}}
+Signature: {{a.signature:signature}}
+
+Date: {{a.date:date}}
+
+<!-- column -->
 
 **{{$party_b:text}}**
 
-Signature: {{b.signature:signature}} Date: {{b.date:date}}
+Signature: {{b.signature:signature}}
+
+Date: {{b.date:date}}
+
+<!-- /columns -->

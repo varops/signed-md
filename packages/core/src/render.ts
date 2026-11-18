@@ -1,11 +1,12 @@
 import type { Element, ElementContent, Root, Text } from "hast";
-import rehypeSanitize from "rehype-sanitize";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import { visit, SKIP } from "unist-util-visit";
+import { MAX_COLUMNS, remarkColumns } from "./columns.ts";
 import { parseTemplate, type FieldDef } from "./placeholders.ts";
 
 /** What to show for a signer field. Return null to render an empty, fillable slot. */
@@ -20,6 +21,16 @@ export interface RenderOptions {
 }
 
 const SENTINEL = /SMDFIELD(\d+)X/g;
+
+// Raw HTML is dropped before this point, so the only divs are the column wrappers we build.
+const COLUMN_CLASSES = ["smd-columns", "smd-column", ...Array.from({ length: MAX_COLUMNS }, (_, i) => `smd-columns-${i + 1}`)];
+const SANITIZE = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    div: [...(defaultSchema.attributes?.div ?? []), ["className", ...COLUMN_CLASSES] as [string, ...string[]]],
+  },
+};
 
 function defaultSlot(def: FieldDef): Element {
   return {
@@ -80,8 +91,9 @@ export function renderHtml(resolvedMarkdown: string, opts: RenderOptions = {}): 
   const file = unified()
     .use(remarkParse)
     .use(remarkGfm) // Tables are common in agreements (fee schedules).
+    .use(remarkColumns) // <!-- columns --> blocks become grid wrappers.
     .use(remarkRehype) // allowDangerousHtml is off: raw HTML is dropped.
-    .use(rehypeSanitize)
+    .use(rehypeSanitize, SANITIZE)
     .use(injectFields)
     .use(rehypeStringify)
     .processSync(md);
