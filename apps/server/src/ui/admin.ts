@@ -17,7 +17,7 @@ import { listActivity } from "../services/audit.ts";
 import { can, canManageDocument, requirePermission, ROLE_LABELS, ROLES } from "../services/permissions.ts";
 import * as team from "../services/team.ts";
 import { readLogo, removeLogo, setBannerAndAvatars, setContractFont, setDefaultMessage, setLogo } from "../services/branding.ts";
-import { CONTRACT_FONTS, CONTRACT_FONT_NAMES } from "../services/fonts.ts";
+import { CONTRACT_FONTS, CONTRACT_FONT_NAMES, type ContractFont } from "../services/fonts.ts";
 import { avatarOrigin, avatarUrl, initialsOf } from "../services/avatars.ts";
 import { renderEmail } from "../services/emailtemplate.ts";
 import { MESSAGE_VARIABLES, personalizeMessage } from "../services/messagevars.ts";
@@ -93,6 +93,7 @@ export function createAdmin(ctx: Ctx) {
     const m = MESSAGES[c.req.query("msg") ?? ""];
     return m ? { kind: m[0], text: m[1] } : null;
   };
+  const accountFont = async (): Promise<ContractFont> => (await getAccount(ctx)).config.branding.contract_font;
   const page = (c: Context<Env>, title: string, active: string, body: H, extra?: { kind: "ok" | "bad" | "warn" | "info"; text: string } | null) =>
     c.html(shell({ title, user: { email: c.get("user").label, name: c.get("user").name, role: c.get("user").role, theme: c.get("user").theme ?? "system" }, csrf: c.get("csrf"), active, flash: extra ?? flash(c) }, body));
 
@@ -181,6 +182,15 @@ export function createAdmin(ctx: Ctx) {
 
   app.get("/", (c) => c.redirect("/documents"));
 
+  // Live preview for the Markdown editors. Pure rendering: reads no stored data.
+  app.post("/preview", async (c) => {
+    const b = (await c.req.parseBody()) as FormBody;
+    const source = str(b, "source").replace(/\r\n?/g, "\n");
+    if (source.length > 500_000) return c.html(html`<div class="alert" data-variant="destructive">${icon("bad")}<section>Too large to preview (max 500 KB).</section></div>`);
+    const font = str(b, "font");
+    return c.html(markdownPreview(source, isContractFont(font) ? font : (await getAccount(ctx)).config.branding.contract_font));
+  });
+
   // ---- Documents ----
 
   app.get("/documents", async (c) => {
@@ -238,7 +248,7 @@ export function createAdmin(ctx: Ctx) {
       const parsed = parseTemplate(v.source);
       return page(c, "New document", "documents", documentForm(c.get("csrf"), { mode: "template", templateId, templateName: v.template.name, version: v.version, fields: parsed.fields, signers: signerKeys(parsed.fields).map((key, i) => ({ key, name: "", email: "", order: i + 1 })), values: {} }));
     }
-    if (c.req.query("inline") === "1") return page(c, "New document", "documents", inlineStart(c.get("csrf")));
+    if (c.req.query("inline") === "1") return page(c, "New document", "documents", inlineStart(c.get("csrf"), await accountFont()));
     const templates = (await tpl.listTemplates(ctx)).filter((t) => t.approved_version !== null);
     const account = await getAccount(ctx);
     return page(
@@ -262,7 +272,7 @@ export function createAdmin(ctx: Ctx) {
     const b = (await c.req.parseBody()) as FormBody;
     const content = str(b, "content");
     const parsed = parseTemplate(content);
-    if (parsed.issues.length) return page(c, "New document", "documents", html`<div class="alert" data-variant="destructive">${icon("bad")}<section>The Markdown has problems:${issuesList(parsed.issues)}</section></div>${inlineStart(c.get("csrf"), content)}`);
+    if (parsed.issues.length) return page(c, "New document", "documents", html`<div class="alert" data-variant="destructive">${icon("bad")}<section>The Markdown has problems:${issuesList(parsed.issues)}</section></div>${inlineStart(c.get("csrf"), await accountFont(), content)}`);
     return page(c, "New document", "documents", documentForm(c.get("csrf"), { mode: "inline", content, fields: parsed.fields, signers: signerKeys(parsed.fields).map((key, i) => ({ key, name: "", email: "", order: i + 1 })), values: {} }));
   });
 
@@ -381,6 +391,7 @@ export function createAdmin(ctx: Ctx) {
       fields, values: d.values, signers: d.signers.map((s) => ({ key: s.key, name: s.name, email: s.email, order: s.order })), title: d.title,
       expires: d.expires_in_days,
       font: d.font,
+      previewFont: d.font,
     }));
   });
 
@@ -470,9 +481,9 @@ export function createAdmin(ctx: Ctx) {
       <a class="small" href="${archived ? "/templates" : "/templates?archived=1"}">${archived ? "Back to active templates" : "View archive"}</a>`);
   });
 
-  app.get("/templates/new", (c) => {
+  app.get("/templates/new", async (c) => {
     requirePermission(c.get("user"), "templates.create");
-    return page(c, "New template", "templates", templateForm(c.get("csrf"), { name: "", description: "", source: EXAMPLE_TEMPLATE }, can(c.get("user"), "templates.approve")));
+    return page(c, "New template", "templates", templateForm(c.get("csrf"), await accountFont(), { name: "", description: "", source: EXAMPLE_TEMPLATE }, can(c.get("user"), "templates.approve")));
   });
 
   app.post("/templates", async (c) => {
@@ -483,7 +494,7 @@ export function createAdmin(ctx: Ctx) {
       return c.redirect(`/templates/${t.id}?msg=created`);
     } catch (e) {
       if (!(e instanceof SignedError)) throw e;
-      return page(c, "New template", "templates", html`<div class="alert" data-variant="destructive">${icon("bad")}<section>${e.message}${issuesList(e.issues)}</section></div>${templateForm(c.get("csrf"), input, can(c.get("user"), "templates.approve"))}`);
+      return page(c, "New template", "templates", html`<div class="alert" data-variant="destructive">${icon("bad")}<section>${e.message}${issuesList(e.issues)}</section></div>${templateForm(c.get("csrf"), await accountFont(), input, can(c.get("user"), "templates.approve"))}`);
     }
   });
 
@@ -506,16 +517,7 @@ export function createAdmin(ctx: Ctx) {
         ${can(c.get("user"), "templates.approve") ? html`<form method="post" action="/templates/${t.id}/versions/${v.version}/approve" data-confirm="Approve version ${v.version}? Agents will be able to send it.">${csrfInput(csrf)}<button class="btn">Approve version ${v.version}</button></form>` : html`<span class="small">Only an owner can approve it.</span>`}</div></section></div>` : ""}
       <div class="grid">
         <div>
-          <article class="doc ${CONTRACT_FONTS[(await getAccount(ctx)).config.branding.contract_font].css}">${raw(renderHtml(body, {
-            fields: v.fields,
-            valueSlots: true,
-            renderField: (f) => ({
-              type: "element",
-              tagName: "span",
-              properties: { className: ["smd-field", f.kind === "value" ? "smd-field-value" : "smd-field-signer"] },
-              children: [{ type: "text", value: f.kind === "value" ? `${f.rules.label ?? f.name}` : `${f.rules.label ?? f.key.split(".")[1]!.replace(/_/g, " ")} – ${f.signer}` }],
-            }),
-          }))}</article>
+          ${previewArticle(body, v.fields, (await getAccount(ctx)).config.branding.contract_font)}
           <div class="card"><section><details  style="margin-top:16px"><summary>Markdown source</summary><pre>${v.source}</pre></details></section></div>
         </div>
         <aside>
@@ -536,7 +538,7 @@ export function createAdmin(ctx: Ctx) {
     const t = await tpl.getTemplate(ctx, id);
     const v = await tpl.getTemplateVersion(ctx, id);
     requirePermission(c.get("user"), "templates.create");
-    return page(c, `Edit ${t.name}`, "templates", templateForm(c.get("csrf"), { id, name: t.name, description: t.description, source: v.source }, can(c.get("user"), "templates.approve")));
+    return page(c, `Edit ${t.name}`, "templates", templateForm(c.get("csrf"), await accountFont(), { id, name: t.name, description: t.description, source: v.source }, can(c.get("user"), "templates.approve")));
   });
 
   app.post("/templates/:id/edit", async (c) => {
@@ -548,7 +550,7 @@ export function createAdmin(ctx: Ctx) {
       return c.redirect(`/templates/${id}?msg=saved`);
     } catch (e) {
       if (!(e instanceof SignedError)) throw e;
-      return page(c, "Edit template", "templates", html`<div class="alert" data-variant="destructive">${icon("bad")}<section>${e.message}${issuesList(e.issues)}</section></div>${templateForm(c.get("csrf"), { id, ...input }, can(c.get("user"), "templates.approve"))}`);
+      return page(c, "Edit template", "templates", html`<div class="alert" data-variant="destructive">${icon("bad")}<section>${e.message}${issuesList(e.issues)}</section></div>${templateForm(c.get("csrf"), await accountFont(), { id, ...input }, can(c.get("user"), "templates.approve"))}`);
     }
   });
 
@@ -1065,10 +1067,10 @@ function loginPage(error?: string, email = ""): H {
     </section></form></div>`);
 }
 
-function inlineStart(csrf: string, content = "# Agreement\n\nThis agreement is between {{$party_a:text}} and {{$party_b:text}}.\n\nSigned: {{client.signature:signature}}\n"): H {
+function inlineStart(csrf: string, font: ContractFont, content = "# Agreement\n\nThis agreement is between {{$party_a:text}} and {{$party_b:text}}.\n\nSigned: {{client.signature:signature}}\n"): H {
   return html`<div class="page-head"><h1>New inline document</h1></div>
     <form method="post" action="/documents/new/inline"  class="card">${csrfInput(csrf)}
-      <section><div class="field"><label>Markdown</label><textarea class="textarea code" name="content">${content}</textarea></div>
+      <section>${markdownEditor("content", content, font)}
       <p class="small muted">Use <code>{{$name:type}}</code> for values you fill in now and <code>{{signer.field:type}}</code> for what signers fill in.</p>
       <button class="btn">Continue</button></section></form>`;
 }
@@ -1086,6 +1088,8 @@ interface DocFormState {
   title?: string;
   expires?: number;
   font?: string;
+  /** Font for the editor preview (inline drafts). */
+  previewFont?: ContractFont;
 }
 
 function documentForm(csrf: string, s: DocFormState): H {
@@ -1093,7 +1097,7 @@ function documentForm(csrf: string, s: DocFormState): H {
   return html`<div class="page-head"><h1>${s.editId ? "Edit draft" : "New document"}</h1>${s.templateName ? html`<span class="muted">From ${s.templateName} v${s.version}</span>` : ""}</div>
     <form method="post" action="${s.editId ? `/documents/${s.editId}/edit` : "/documents"}">${csrfInput(csrf)}
       ${s.templateId ? html`<input type="hidden" name="template_id" value="${s.templateId}">` : ""}
-      ${s.mode === "inline" ? (s.editId ? html`<div  class="card"><header><h2>Markdown</h2></header><section><textarea class="textarea code" name="content">${s.content ?? ""}</textarea></section></div>` : html`<input type="hidden" name="content" value="${s.content ?? ""}">`) : ""}
+      ${s.mode === "inline" ? (s.editId ? html`<div  class="card"><header><h2>Markdown</h2></header><section>${markdownEditor("content", s.content ?? "", s.previewFont ?? "serif")}</section></div>` : html`<input type="hidden" name="content" value="${s.content ?? ""}">`) : ""}
       <div  class="card"><header><h2>Details</h2></header><section>
         <div class="inline-fields" style="grid-template-columns:2fr 1fr"><div class="field"><label>Title <span class="muted">· optional</span></label><input class="input" type="text" name="title" value="${s.title ?? ""}"></div>
         <div class="field"><label>Expires after (days)</label><input class="input" type="number" min="1" max="365" name="expires_in_days" value="${s.expires ?? ""}" placeholder="default"></div></div>
@@ -1108,21 +1112,54 @@ function documentForm(csrf: string, s: DocFormState): H {
     </form>`;
 }
 
-function templateForm(csrf: string, s: { id?: string; name: string; description: string; source: string }, canApprove: boolean): H {
+function templateForm(csrf: string, font: ContractFont, s: { id?: string; name: string; description: string; source: string }, canApprove: boolean): H {
   return html`<div class="page-head"><h1>${s.id ? "New template version" : "New template"}</h1></div>
     <form method="post" action="${s.id ? `/templates/${s.id}/edit` : "/templates"}">${csrfInput(csrf)}
       <div  class="card"><section>
         <div class="field"><label>Name</label><input class="input" type="text" name="name" value="${s.name}" required></div>
         <div class="field"><label>Description <span class="muted">· optional</span></label><input class="input" type="text" name="description" value="${s.description}"></div>
-        <div class="field"><label>Markdown</label><textarea class="textarea code" name="source">${s.source}</textarea></div>
+        ${markdownEditor("source", s.source, font)}
         <details><summary>Placeholder reference</summary><div class="small" style="margin-top:8px">
           <p><code>{{$name:type}}</code> – a value filled in when the document is created (by you or an agent).<br>
           <code>{{signer.field:type}}</code> – filled in by that signer while signing, e.g. <code>{{client.signature:signature}}</code>.</p>
           <p>Types: <code>text</code>, <code>longtext</code>, <code>number</code>, <code>currency(USD)</code>, <code>date</code>, <code>signature</code>, <code>initials</code>, <code>checkbox</code>, <code>choice(a|b)</code>.</p>
+          <p>Columns put blocks side by side, for example signature blocks: <code>&lt;!-- columns --&gt;</code>, then <code>&lt;!-- column --&gt;</code> between columns, then <code>&lt;!-- /columns --&gt;</code>, each on its own line. At most 3 columns.</p>
           <p>Optional front matter adds rules: <code>label</code>, <code>required</code>, <code>default</code>, <code>minimum</code>, <code>maximum</code>, <code>max_length</code>, <code>allowed_values</code>, <code>options</code>. Write <code>\\{{</code> for literal braces.</p></div></details>
       </section></div>
       ${canApprove
         ? html`<div class="row"><button class="btn" name="approve" value="1">Save and approve</button><button class="btn" data-variant="outline" name="approve" value="0">Save as pending</button></div>`
         : html`<div class="row"><button class="btn" name="approve" value="0">Save for approval</button><span class="small muted">An owner approves templates before anyone can use them.</span></div>`}
     </form>`;
+}
+
+function isContractFont(name: string): name is ContractFont {
+  return (CONTRACT_FONT_NAMES as readonly string[]).includes(name);
+}
+
+/** Render Markdown the way the template page shows it: values and signer fields as labelled chips. */
+function previewArticle(body: string, fields: FieldDef[], font: ContractFont): H {
+  return html`<article class="doc ${CONTRACT_FONTS[font].css}">${raw(renderHtml(body, {
+    fields,
+    valueSlots: true,
+    renderField: (f) => ({
+      type: "element",
+      tagName: "span",
+      properties: { className: ["smd-field", f.kind === "value" ? "smd-field-value" : "smd-field-signer"] },
+      children: [{ type: "text", value: f.kind === "value" ? `${f.rules.label ?? f.name}` : `${f.rules.label ?? f.key.split(".")[1]!.replace(/_/g, " ")} – ${f.signer}` }],
+    }),
+  }))}</article>`;
+}
+
+/** Problems in the source, then the rendered preview. Also the response of POST /preview. */
+function markdownPreview(source: string, font: ContractFont): H {
+  const parsed = parseTemplate(source);
+  return html`${parsed.issues.length ? html`<div class="alert" data-variant="destructive">${icon("bad")}<section>Fix before saving:${issuesList(parsed.issues)}</section></div>` : ""}${previewArticle(parsed.body, parsed.fields, font)}`;
+}
+
+/** A Markdown textarea with a live preview beside it (stacked on narrow screens). */
+function markdownEditor(name: string, value: string, font: ContractFont): H {
+  return html`<div class="editor">
+    <div class="field"><label>Markdown</label><textarea class="textarea code" name="${name}" data-preview-source data-font="${font}" spellcheck="false">${value}</textarea></div>
+    <div class="field"><label>Preview</label><div class="editor-preview" data-preview-target aria-live="polite">${markdownPreview(value, font)}</div></div>
+  </div>`;
 }

@@ -43,3 +43,26 @@
     sel.addEventListener("change", function () { sel.form.submit(); });
   });
 })();
+// Markdown editors: re-render the preview on the server as you type.
+(function () {
+  document.querySelectorAll("[data-preview-source]").forEach(function (area) {
+    var target = area.closest(".editor").querySelector("[data-preview-target]");
+    var csrf = area.form && area.form.querySelector("input[name=_csrf]");
+    if (!target || !csrf) return;
+    var timer = null, seq = 0;
+    function render() {
+      var mine = ++seq;
+      var body = new URLSearchParams({ _csrf: csrf.value, source: area.value, font: area.getAttribute("data-font") || "" });
+      fetch("/preview", { method: "POST", body: body, credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.text() : null; })
+        .then(function (htmlText) {
+          if (htmlText === null || mine !== seq) return;
+          var top = target.scrollTop;
+          target.innerHTML = htmlText;
+          target.scrollTop = top;
+        })
+        .catch(function () {});
+    }
+    area.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(render, 300); });
+  });
+})();
