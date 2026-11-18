@@ -655,7 +655,7 @@ Prefer straightforward, testable modules with explicit boundaries.
 | Markdown | unified / remark (mdast) with a custom placeholder plugin; YAML front matter | Parse once, render to HTML (with `rehype-sanitize`) and to PDF |
 | PDF | Typst 0.13 CLI in the container; mdast converted to Typst markup; Typst's embedded fonts only (`--ignore-system-fonts`) | Small, fast, no network access, stable output |
 | Crypto | Node built-in Ed25519; canonical JSON (RFC 8785) | Verifiable with standard tools, including `openssl` |
-| Auth | argon2id (`@node-rs/argon2`), cookie sessions in the database, hashed prefixed API keys; `openid-client` for OIDC login (v1.1) | Standard and simple; one OIDC library covers Google, Microsoft, and others |
+| Auth | argon2id (`@node-rs/argon2`), signed login cookies (HMAC, one-hour sliding expiry), hashed prefixed API keys; `openid-client` for OIDC login (v1.1) | Standard and simple; one OIDC library covers Google, Microsoft, and others |
 | Email | Nodemailer (SMTP) | |
 | Import (v1.2) | Firecrawl `pdf-inspector` (PDF) and `AnyDoc` (.docx and other formats), via Node bindings | Open source (MIT), fully local, fast; local OCR for scanned PDFs, on by default (model bundled in the image) |
 | UI | Server-rendered HTML (Hono `html` templates) with [Basecoat UI](https://basecoatui.com) components (shadcn/ui style, prebuilt CSS served locally), a small `app.css` for layout and the signing UI, a little vanilla JS; `signature_pad` on the signing page | No front-end build, works without JavaScript except drawn signatures, fast on phones |

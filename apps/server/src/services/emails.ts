@@ -54,7 +54,7 @@ async function sendInvitation(ctx: Ctx, job: EmailJob): Promise<void> {
     paragraphs: [`You'll join as ${role}. Signed.md is where ${account.name} prepares and sends agreements for signature.`, "The invitation expires in 7 days."],
     security: true,
   });
-  await ctx.mailer.send({ to: inv.email, subject: `Join ${account.name} on Signed.md`, html, text, ...(inviter ? { replyTo: inviter.email } : {}), attachments: inline }, account.config.smtp);
+  await ctx.mailer.send({ to: inv.email, subject: `Join ${account.name} on Signed.md`, html, text, ...(inviter ? { replyTo: inviter.email } : {}), attachments: inline });
 }
 
 /** Build and send the messages for one email job. */
@@ -223,5 +223,5 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
     }
   }
 
-  for (const m of messages) await ctx.mailer.send(m, account.config.smtp);
+  for (const m of messages) await ctx.mailer.send(m);
 }

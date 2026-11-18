@@ -17,6 +17,13 @@ export function setBranding(on: boolean): void {
   branding = on;
 }
 
+let hosted = false;
+
+/** Set once at startup from HOSTED. Hosted installations have no Outbox. */
+export function setHosted(on: boolean): void {
+  hosted = on;
+}
+
 export const PRODUCT_URL = "https://signed.md";
 
 /**
@@ -63,7 +70,7 @@ export function shell(opts: ShellOptions, body: H): H {
 ${opts.user
   ? html`<header class="topbar">
   <a class="brand" href="/documents">Signed<span>.md</span></a>
-  <nav class="nav">${NAV.filter(([, , , roles]) => roles.includes(opts.user!.role)).map(([k, href, label]) => html`<a href="${href}" class="${opts.active === k ? "active" : ""}">${label}</a>`)}</nav>
+  <nav class="nav">${NAV.filter(([k, , , roles]) => roles.includes(opts.user!.role) && !(hosted && k === "outbox")).map(([k, href, label]) => html`<a href="${href}" class="${opts.active === k ? "active" : ""}">${label}</a>`)}</nav>
   <a class="whoami small" href="/settings" title="${opts.user.email}">${opts.user.name} <span class="muted">· ${opts.user.role === "admin" ? "administrator" : opts.user.role}</span></a>
   <form method="post" action="/logout" class="inline"><input type="hidden" name="_csrf" value="${opts.csrf ?? ""}"><button class="btn" data-variant="outline" data-size="sm">Log out</button></form>
 </header>`

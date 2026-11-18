@@ -82,3 +82,44 @@ describe("ACTIVE=false", async () => {
     expect((await app.request("/assets/app.css")).status).toBe(200);
   });
 });
+
+describe("HOSTED", async () => {
+  const SMTP = { SMTP_HOST: "smtp.host.example", SMTP_FROM: "Signed.md <no-reply@signed.md>" };
+  const { ctx, user: owner } = await testContext({ HOSTED: "true", ...SMTP });
+  afterAll(() => ctx.close());
+
+  it("is off by default and needs SMTP from the environment", () => {
+    expect(loadConfig({}).hosted).toBe(false);
+    expect(() => loadConfig({ HOSTED: "true" })).toThrow(/HOSTED=true needs SMTP_HOST/);
+    expect(loadConfig({ HOSTED: "true", ...SMTP }).hosted).toBe(true);
+  });
+
+  it("hides the signing key settings and the Outbox", async () => {
+    const app = createApp(ctx);
+    const cookie = `smd_session=${await createSession(ctx, owner.id)}`;
+    const page = await (await app.request("/settings", { headers: { cookie } })).text();
+    expect(page).toContain("API keys");
+    expect(page).not.toContain("Signing key");
+    expect(page).not.toContain('href="/outbox"');
+    expect((await app.request("/outbox", { headers: { cookie } })).status).toBe(404);
+  });
+});
+
+describe("SMTP", async () => {
+  const { ctx, user: owner } = await testContext();
+  afterAll(() => ctx.close());
+
+  it("can only be set in the environment, and old saved settings are dropped", async () => {
+    const app = createApp(ctx);
+    const cookie = `smd_session=${await createSession(ctx, owner.id)}`;
+    const page = await (await app.request("/settings", { headers: { cookie } })).text();
+    expect(page).not.toContain("Email (SMTP)");
+    expect(page).toContain("Signing key");
+    expect(page).toContain('href="/outbox"');
+
+    const { getAccount } = await import("../src/services/accounts.ts");
+    const acct = await getAccount(ctx);
+    await ctx.db.updateTable("accounts").set({ config: JSON.stringify({ ...acct.config, smtp: { host: "smtp.old.example", pass: "secret" } }) }).execute();
+    expect("smtp" in (await getAccount(ctx)).config).toBe(false);
+  });
+});

@@ -8,7 +8,7 @@ import { WEBHOOK_EVENTS } from "../http/api.ts";
 import { clientIp, rateLimit } from "../http/ratelimit.ts";
 import { getAccount, isSetUp, newWebhookSecret, setup, updateAccount, type InlineDocumentsSetting } from "../services/accounts.ts";
 import { type LimitHit, limitReached } from "../services/usage.ts";
-import { changePassword, createApiKey, csrfToken, listApiKeys, login, logout, revokeApiKey, sessionActor } from "../services/auth.ts";
+import { changePassword, createApiKey, csrfToken, listApiKeys, login, revokeApiKey, SESSION_SECONDS, sessionActor, sessionCookie } from "../services/auth.ts";
 import * as docs from "../services/documents.ts";
 import { listEvents } from "../services/events.ts";
 import { listArtifacts } from "../services/finalize.ts";
@@ -25,7 +25,7 @@ import { MESSAGE_VARIABLES, personalizeMessage } from "../services/messagevars.t
 import { type FormBody, parseSigners, parseValues, signerRows, str, valueInput } from "./forms.ts";
 import { alert, badge, csrfInput, empty, type H, icon, issuesList, shell, when } from "./layout.ts";
 
-type Env = { Variables: { user: Actor & { kind: "user" }; csrf: string; session: string } };
+type Env = { Variables: { user: Actor & { kind: "user" }; csrf: string } };
 
 const COOKIE = "smd_session";
 
@@ -39,7 +39,6 @@ const MESSAGES: Record<string, ["ok" | "bad" | "warn" | "info", string]> = {
   saved: ["ok", "Saved."],
   created: ["ok", "Created."],
   password: ["ok", "Password changed."],
-  testmail: ["ok", "Test email sent."],
   invited: ["ok", "Invitation sent."],
   team: ["ok", "Team updated."],
   profile: ["ok", "Profile saved."],
@@ -98,6 +97,11 @@ export function createAdmin(ctx: Ctx) {
   const page = (c: Context<Env>, title: string, active: string, body: H, extra?: { kind: "ok" | "bad" | "warn" | "info"; text: string } | null) =>
     c.html(shell({ title, user: { email: c.get("user").label, name: c.get("user").name, role: c.get("user").role, theme: c.get("user").theme ?? "system" }, csrf: c.get("csrf"), active, flash: extra ?? flash(c) }, body));
 
+  // Login cookie: renewed for another hour on every page visit. COOKIE_DOMAIN shares it with
+  // subdomains (the hosted service uses .signed.md, so app.signed.md can log people in).
+  const cookieOpts = { httpOnly: true, sameSite: "Lax" as const, secure, path: "/", ...(ctx.config.cookieDomain ? { domain: ctx.config.cookieDomain } : {}) };
+  const setSession = (c: Context<Env>, value: string) => setCookie(c, COOKIE, value, { ...cookieOpts, maxAge: SESSION_SECONDS });
+
   // ---- Public: setup and login ----
 
   const loginLimit = rateLimit({ windowMs: 15 * 60_000, max: 20, key: (c) => `login:${clientIp(c)}` });
@@ -112,7 +116,7 @@ export function createAdmin(ctx: Ctx) {
     try {
       await setup(ctx, { accountName: str(b, "account"), name: str(b, "name"), email: str(b, "email"), password: str(b, "password") });
       const s = await login(ctx, str(b, "email"), str(b, "password"));
-      setCookie(c, COOKIE, s!.token, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: 14 * 86400 });
+      setSession(c, s!.token);
       return c.redirect("/documents?welcome=1");
     } catch (e) {
       return c.html(setupPage((e as Error).message, b), 400);
@@ -127,7 +131,7 @@ export function createAdmin(ctx: Ctx) {
     const b = (await c.req.parseBody()) as FormBody;
     const s = await login(ctx, str(b, "email"), str(b, "password"));
     if (!s) return c.html(loginPage("Email or password is not correct.", str(b, "email")), 401);
-    setCookie(c, COOKIE, s.token, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: 14 * 86400 });
+    setSession(c, s.token);
     return c.redirect("/documents");
   });
 
@@ -145,7 +149,7 @@ export function createAdmin(ctx: Ctx) {
     if (!inv) return c.redirect(`/invite/${token}`);
     try {
       const session = await team.acceptInvitation(ctx, token, { name: str(b, "name"), password: str(b, "password") });
-      setCookie(c, COOKIE, session, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: 14 * 86400 });
+      setSession(c, session);
       return c.redirect("/documents?welcome=1");
     } catch (e) {
       if (!(e instanceof SignedError)) throw e;
@@ -171,13 +175,12 @@ export function createAdmin(ctx: Ctx) {
     }
     c.set("user", user);
     c.set("csrf", csrf);
-    c.set("session", token!);
+    setSession(c, sessionCookie(ctx, user.label));
     await next();
   });
 
   app.post("/logout", async (c) => {
-    await logout(ctx, c.get("session"));
-    deleteCookie(c, COOKIE, { path: "/" });
+    deleteCookie(c, COOKIE, cookieOpts);
     return c.redirect("/login");
   });
 
@@ -585,8 +588,6 @@ export function createAdmin(ctx: Ctx) {
     const admin = can(user, "settings.manage");
     const keys = await listApiKeys(ctx, user);
     const deliveries = admin ? await listDeliveries(ctx, 10) : [];
-    const smtp = account.config.smtp;
-    const envSmtp = ctx.config.smtp;
     const csrf = c.get("csrf");
     const newKey = c.req.query("key");
     return page(c, "Settings", "settings", html`
@@ -641,20 +642,8 @@ export function createAdmin(ctx: Ctx) {
         ${deliveries.length ? html`<h3 style="margin-top:18px">Recent deliveries</h3><div class="table-container"><table class="table"><tbody>${deliveries.map((d) => html`<tr><td>${d.event_type}</td><td>${badge(d.status)}</td><td>${d.last_status_code ?? ""} ${d.last_error ? html`<span class="muted">${d.last_error.slice(0, 80)}</span>` : ""}</td><td class="nowrap">${when(d.created_at)}</td></tr>`)}</tbody></table></div>` : ""}
       </section></form>
 
-      <form method="post" action="/settings/smtp"  class="card">${csrfInput(csrf)}<header><h2>Email (SMTP)</h2></header><section>
-        ${!smtp?.host && !envSmtp ? html`<div class="alert" data-tone="warn">${icon("warn")}<section>No SMTP server is set. Emails go to the <a href="/outbox">Outbox</a> so you can test without one.</section></div>` : ""}
-        ${envSmtp && !smtp?.host ? html`<p class="small muted">Using SMTP from environment variables (${envSmtp.host}). Settings saved here take precedence.</p>` : ""}
-        <div class="inline-fields" style="grid-template-columns:2fr 1fr"><div class="field"><label>Host</label><input class="input" type="text" name="host" value="${smtp?.host ?? ""}"></div>
-          <div class="field"><label>Port</label><input class="input" type="number" name="port" value="${smtp?.port ?? 587}"></div></div>
-        <div class="inline-fields" style="grid-template-columns:1fr 1fr"><div class="field"><label>Username</label><input class="input" type="text" name="user" value="${smtp?.user ?? ""}" autocomplete="off"></div>
-          <div class="field"><label>Password <span class="muted">· leave empty to keep</span></label><input class="input" type="password" name="pass" autocomplete="new-password"></div></div>
-        <div class="field"><label>From</label><input class="input" type="text" name="from" value="${smtp?.from ?? ""}" placeholder="Acme Contracts <contracts@acme.com>"></div>
-        <label class="check"><input class="input" type="checkbox" name="secure" ${smtp?.secure ? "checked" : ""}> Use TLS from the start (port 465)</label>
-        <div class="row" style="margin-top:12px"><button class="btn" name="do" value="save">Save</button><button class="btn" data-variant="outline" name="do" value="test">Save and send test email</button></div>
-      </section></form>
-
-      <div  class="card"><header><h2>Signing key</h2><p>Completed packages are signed with this key. Back up <code>${ctx.config.dataDir}/keys</code> together with the database.</p></header><section>
-        <dl class="kv small"><dt>Key ID</dt><dd class="mono">${ctx.keys.info.kid}</dd><dt>Public keys</dt><dd><a href="/.well-known/signed-md-keys.json">/.well-known/signed-md-keys.json</a></dd></dl></section></div>` : ""}
+      ${ctx.config.hosted ? "" : html`<div  class="card"><header><h2>Signing key</h2><p>Completed packages are signed with this key. Back up <code>${ctx.config.dataDir}/keys</code> together with the database.</p></header><section>
+        <dl class="kv small"><dt>Key ID</dt><dd class="mono">${ctx.keys.info.kid}</dd><dt>Public keys</dt><dd><a href="/.well-known/signed-md-keys.json">/.well-known/signed-md-keys.json</a></dd></dl></section></div>`}` : ""}
 
       <form method="post" action="/settings/password"  class="card">${csrfInput(csrf)}<header><h2>Password</h2></header><section>
         <div class="field"><label>New password <span class="muted">· at least 10 characters</span></label><input class="input" type="password" name="password" autocomplete="new-password"></div>
@@ -696,34 +685,6 @@ export function createAdmin(ctx: Ctx) {
     } catch (e) {
       return page(c, "Settings", "settings", html`<div class="alert" data-variant="destructive">${icon("bad")}<section>${(e as Error).message}</section></div><a class="btn" data-variant="outline" href="/settings">Back</a>`);
     }
-  });
-  app.post("/settings/smtp", async (c) => {
-    requirePermission(c.get("user"), "settings.manage");
-    const b = (await c.req.parseBody()) as FormBody;
-    const account = await getAccount(ctx);
-    const host = str(b, "host").trim();
-    const smtp = host
-      ? {
-          host,
-          port: Number(str(b, "port")) || 587,
-          secure: str(b, "secure") === "on",
-          from: str(b, "from").trim() || `Signed.md <no-reply@${new URL(ctx.config.publicUrl).hostname}>`,
-          ...(str(b, "user") ? { user: str(b, "user") } : {}),
-          ...(str(b, "pass") ? { pass: str(b, "pass") } : account.config.smtp?.pass ? { pass: account.config.smtp.pass } : {}),
-        }
-      : null;
-    await updateAccount(ctx, c.get("user"), { config: { smtp } });
-    if (str(b, "do") === "test") {
-      try {
-        const acct = await getAccount(ctx);
-        const t = renderEmail({ account: acct.name, hasLogo: false, icon: "check", headline: "SMTP works. Signed.md can send email.", paragraphs: ["This is a test email from your Signed.md settings."] });
-        await ctx.mailer.send({ to: c.get("user").label, subject: "Signed.md test email", text: t.text, html: t.html }, smtp);
-        return c.redirect("/settings?msg=testmail");
-      } catch (e) {
-        return page(c, "Settings", "settings", html`<div class="alert" data-variant="destructive">${icon("bad")}<section>Saved, but the test email failed: ${(e as Error).message}</section></div><a class="btn" data-variant="outline" href="/settings">Back</a>`);
-      }
-    }
-    return c.redirect("/settings?msg=saved");
   });
   app.post("/settings/profile", async (c) => {
     const b = (await c.req.parseBody()) as FormBody;
@@ -962,6 +923,9 @@ export function createAdmin(ctx: Ctx) {
     }
   });
 
+  // Hosted: email always goes out over SMTP, so there is no Outbox.
+  if (ctx.config.hosted) app.use("/outbox/*", async (c) => c.notFound()).use("/outbox", async (c) => c.notFound());
+
   app.get("/outbox/:id/html", async (c) => {
     requirePermission(c.get("user"), "settings.manage");
     const m = await ctx.mailer.outboxEntry(c.req.param("id"));
@@ -973,11 +937,10 @@ export function createAdmin(ctx: Ctx) {
 
   app.get("/outbox", async (c) => {
     requirePermission(c.get("user"), "settings.manage");
-    const account = await getAccount(ctx);
-    const smtp = ctx.mailer.effectiveSmtp(account.config.smtp);
+    const smtp = ctx.mailer.smtp;
     const mails = await ctx.mailer.outbox(50);
     return page(c, "Outbox", "outbox", html`<div class="page-head"><h1>Outbox</h1></div>
-      ${alert(smtp ? "info" : "warn", smtp ? `SMTP is configured (${smtp.host}). New emails are sent there. This list shows emails written before SMTP was set.` : "No SMTP server is set. Emails are kept here instead of being sent, so you can test the full flow. Configure SMTP in Settings.")}
+      ${alert(smtp ? "info" : "warn", smtp ? `SMTP is configured (${smtp.host}). New emails are sent there. This list shows emails written before SMTP was set.` : "No SMTP server is set. Emails are kept here instead of being sent, so you can test the full flow. Set the SMTP_* environment variables to send them.")}
       ${mails.length === 0 ? html`<div  class="card"><section>No emails yet.</section></div>` : mails.map((m, i) => html`<div class="card"><section><details  ${i === 0 ? "open" : ""}><summary><strong>${m.subject}</strong> <span class="muted">→ ${m.to} · ${when(m.created_at)}</span></summary>
         ${m.html ? html`<iframe class="email-frame" src="/outbox/${m.id}/html" title="${m.subject}" loading="lazy"></iframe>` : ""}
         ${m.attachments.length ? html`<p class="small muted">Attachments: ${m.attachments.map((a) => `${a.filename} (${Math.round(a.size / 1024)} KB)`).join(", ")}</p>` : ""}

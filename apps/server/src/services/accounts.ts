@@ -1,7 +1,6 @@
 import { SignedError } from "@signed-md/core";
 import { type Database, newId, now } from "@signed-md/db";
 import type { Kysely } from "kysely";
-import type { SmtpConfig } from "../config.ts";
 import type { Actor, Ctx } from "../context.ts";
 import { recordAudit } from "./audit.ts";
 import { requirePermission } from "./permissions.ts";
@@ -17,8 +16,6 @@ export interface AccountConfig {
   default_expiry_days: number;
   timezone: string;
   locale: string;
-  /** SMTP saved in the UI. Overrides SMTP_* environment variables. */
-  smtp: SmtpConfig | null;
   /** Attach the completed ZIP to completion emails (the PDF is always attached). */
   attach_zip: boolean;
   /** Minimal branding: a logo and a default message to signers. */
@@ -51,7 +48,6 @@ const DEFAULTS: Omit<AccountConfig, "webhook_secret"> = {
   default_expiry_days: 14,
   timezone: "UTC",
   locale: "en-US",
-  smtp: null,
   attach_zip: false,
   branding: { logo: null, email_message: "", banner_color: "#1c1917", avatars: false, contract_font: "serif" },
 };
@@ -108,7 +104,9 @@ export async function setup(
 export async function getAccount(ctx: Ctx, db: Kysely<Database> = ctx.db): Promise<Account> {
   const row = await db.selectFrom("accounts").selectAll().limit(1).executeTakeFirst();
   if (!row) throw new SignedError("PERMISSION_DENIED", "Signed.md is not set up yet");
-  const stored = JSON.parse(row.config) as Partial<AccountConfig>;
+  const stored = JSON.parse(row.config) as Partial<AccountConfig> & { smtp?: unknown };
+  // SMTP used to be saved in the UI. It now comes from the environment only, so drop it.
+  delete stored.smtp;
   return {
     id: row.id,
     name: row.name,

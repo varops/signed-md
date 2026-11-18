@@ -166,14 +166,13 @@ export async function changeRole(ctx: Ctx, actor: Actor, userId: string, newRole
   await recordAudit(ctx.db, actor, "team.role_changed", { email: user.email, from: user.role, to: role });
 }
 
-/** Deactivate (never delete). Their sessions and API keys stop working at once. Their documents stay. */
+/** Deactivate (never delete). Their login and API keys stop working at once. Their documents stay. */
 export async function deactivateMember(ctx: Ctx, actor: Actor, userId: string): Promise<void> {
   const user = await targetUser(ctx, actor, userId);
   if (userId === userIdOf(actor)) throw new SignedError("INVALID_REQUEST", "You can't deactivate yourself.");
   if (user.status === "disabled") return;
   if (user.role === "owner" && (await activeOwners(ctx)) <= 1) throw new SignedError("INVALID_REQUEST", "There must be at least one active owner.");
   await ctx.db.updateTable("users").set({ status: "disabled", deactivated_at: now() }).where("id", "=", userId).execute();
-  await ctx.db.updateTable("sessions").set({ expires_at: now() }).where("user_id", "=", userId).where("expires_at", ">", now()).execute();
   await recordAudit(ctx.db, actor, "team.deactivated", { email: user.email });
 }
 

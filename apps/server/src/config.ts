@@ -34,14 +34,21 @@ export interface Config {
    * Hosted-service controls. Not documented on purpose.
    * BRANDING=false removes the "Powered by Signed.md" links from emails and signing pages.
    * ACTIVE=false disables the account: no logins, API, MCP or signing links, and no worker.
+   * HOSTED=true needs SMTP_HOST, and hides the signing key settings and the Outbox.
    * MONTHLY_LIMIT and TOTAL_LIMIT cap sent contracts (-1, the default, means no limit).
    */
   branding: boolean;
   active: boolean;
+  /** Domain for the login cookie. Null means the current host only. */
+  cookieDomain: string | null;
+  /** Key that signs the login cookie. Null derives one from keys/server-secret. */
+  cookieHashKey: string | null;
+  /** Our hosted service: needs SMTP, and hides the signing key settings and the Outbox. */
+  hosted: boolean;
   /** Plan limits on sent contracts, per calendar month (UTC) and in total. -1 means no limit. */
   monthlyLimit: number;
   totalLimit: number;
-  /** SMTP from the environment. Settings saved in the UI take precedence. */
+  /** SMTP from the environment. It can't be set in the UI. Null writes emails to the outbox. */
   smtp: SmtpConfig | null;
   typstBin: string;
   /** Development only: allow http:// and private-network webhook targets. */
@@ -116,6 +123,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     };
   }
 
+  const cookieDomain = (env.COOKIE_DOMAIN ?? "").trim() || null;
+  if (cookieDomain) {
+    const host = new URL(publicUrl).hostname;
+    const bare = cookieDomain.replace(/^\./, "");
+    if (!/^[a-z0-9.-]+$/i.test(bare) || (host !== bare && !host.endsWith(`.${bare}`))) {
+      throw new ConfigError(`COOKIE_DOMAIN must be PUBLIC_URL's host or a parent domain of it, got '${cookieDomain}'`);
+    }
+  }
+  const cookieHashKey = (env.COOKIE_HASH_KEY ?? "").trim() || null;
+  if (cookieHashKey && cookieHashKey.length < 32) throw new ConfigError("COOKIE_HASH_KEY must be at least 32 characters");
+
+  const hosted = bool(env.HOSTED);
+  if (hosted && !smtp) throw new ConfigError("HOSTED=true needs SMTP_HOST");
+
   const limit = (name: string): number => {
     const raw = (env[name] ?? "").trim();
     if (raw === "") return -1;
@@ -135,6 +156,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     backupDb: bool(env.BACKUP_DB),
     branding: bool(env.BRANDING, true),
     active: bool(env.ACTIVE, true),
+    hosted,
+    cookieDomain,
+    cookieHashKey,
     monthlyLimit: limit("MONTHLY_LIMIT"),
     totalLimit: limit("TOTAL_LIMIT"),
     smtp,

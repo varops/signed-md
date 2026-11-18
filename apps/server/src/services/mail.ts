@@ -38,23 +38,19 @@ export interface OutboxEntry {
  */
 export class Mailer {
   private readonly outboxDir: string;
-  private readonly envSmtp: SmtpConfig | null;
+  /** SMTP from the SMTP_* environment variables. Null writes emails to the outbox. */
+  readonly smtp: SmtpConfig | null;
   private transportKey = "";
   private transport: Transporter | null = null;
 
-  constructor(dataDir: string, envSmtp: SmtpConfig | null) {
+  constructor(dataDir: string, smtp: SmtpConfig | null) {
     this.outboxDir = join(dataDir, "outbox");
     mkdirSync(this.outboxDir, { recursive: true });
-    this.envSmtp = envSmtp;
+    this.smtp = smtp;
   }
 
-  /** Account SMTP (saved in the UI) wins over environment SMTP. */
-  effectiveSmtp(accountSmtp: SmtpConfig | null): SmtpConfig | null {
-    return accountSmtp?.host ? accountSmtp : this.envSmtp;
-  }
-
-  async send(msg: MailMessage, accountSmtp: SmtpConfig | null): Promise<"smtp" | "outbox"> {
-    const smtp = this.effectiveSmtp(accountSmtp);
+  async send(msg: MailMessage): Promise<"smtp" | "outbox"> {
+    const smtp = this.smtp;
     if (!smtp) {
       await this.toOutbox(msg);
       return "outbox";
@@ -116,8 +112,8 @@ export class Mailer {
     }
   }
 
-  async verify(accountSmtp: SmtpConfig | null): Promise<void> {
-    const smtp = this.effectiveSmtp(accountSmtp);
+  async verify(): Promise<void> {
+    const smtp = this.smtp;
     if (!smtp) throw new Error("No SMTP server configured");
     await nodemailer
       .createTransport({ host: smtp.host, port: smtp.port, secure: smtp.secure, ...(smtp.user ? { auth: { user: smtp.user, pass: smtp.pass ?? "" } } : {}) })

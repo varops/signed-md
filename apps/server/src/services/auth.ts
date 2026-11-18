@@ -4,9 +4,7 @@ import { newId, now } from "@signed-md/db";
 import type { Actor, Ctx } from "../context.ts";
 import { recordAudit } from "./audit.ts";
 import { can, userIdOf } from "./permissions.ts";
-import { hmacHex, randomToken, sha256 } from "../crypto.ts";
-
-const SESSION_DAYS = 14;
+import { hmacHex, randomToken, safeEqual, sha256 } from "../crypto.ts";
 
 export function hashPassword(password: string): Promise<string> {
   // argon2id with library defaults (m=19456 KiB, t=2, p=1), as recommended by OWASP.
@@ -27,18 +25,40 @@ export async function login(ctx: Ctx, email: string, password: string): Promise<
   return { token: await createSession(ctx, user.id), userId: user.id };
 }
 
+/**
+ * Login cookie. The same on every installation:
+ *
+ *   v1.<base64url(email)>.<expires: unix seconds>.<hex HMAC-SHA256(key, "v1.<base64url(email)>.<expires>")>
+ *
+ * The key is COOKIE_HASH_KEY, or one derived from keys/server-secret. The hosted service's
+ * app.signed.md writes the same cookie (same key, COOKIE_DOMAIN=.signed.md), so a person logged in
+ * there is logged in to their workspaces. Every page visit renews it for another hour. The expiry is
+ * signed, so a copied cookie stops working when it runs out. Each request also checks that the email
+ * belongs to an active user here, so deactivating someone takes effect at once.
+ */
+export const SESSION_SECONDS = 3600;
+
+function cookieKey(ctx: Ctx): string | Buffer {
+  return ctx.config.cookieHashKey ?? Buffer.from(hmacHex(ctx.keys.serverSecret, "session-cookie"), "hex");
+}
+
+export function sessionCookie(ctx: Ctx, email: string, nowMs = Date.now()): string {
+  const body = `v1.${Buffer.from(email.toLowerCase()).toString("base64url")}.${Math.floor(nowMs / 1000) + SESSION_SECONDS}`;
+  return `${body}.${hmacHex(cookieKey(ctx), body)}`;
+}
+
+/** The email in a valid, unexpired cookie, or null. */
+export function readSessionCookie(ctx: Ctx, value: string | undefined, nowMs = Date.now()): string | null {
+  const m = /^(v1\.([A-Za-z0-9_-]+)\.(\d+))\.([0-9a-f]{64})$/.exec(value ?? "");
+  if (!m || !safeEqual(m[4]!, hmacHex(cookieKey(ctx), m[1]!))) return null;
+  if (Number(m[3]) * 1000 <= nowMs) return null;
+  return Buffer.from(m[2]!, "base64url").toString("utf8");
+}
+
+/** A login cookie for this user. */
 export async function createSession(ctx: Ctx, userId: string): Promise<string> {
-  const token = randomToken(32);
-  await ctx.db
-    .insertInto("sessions")
-    .values({
-      id: sha256(token),
-      user_id: userId,
-      created_at: now(),
-      expires_at: new Date(Date.now() + SESSION_DAYS * 86400_000).toISOString(),
-    })
-    .execute();
-  return token;
+  const user = await ctx.db.selectFrom("users").select("email").where("id", "=", userId).executeTakeFirstOrThrow();
+  return sessionCookie(ctx, user.email);
 }
 
 let dummy: Promise<string> | null = null;
@@ -48,26 +68,20 @@ function dummyHash(): Promise<string> {
 }
 
 export async function sessionActor(ctx: Ctx, token: string | undefined): Promise<(Actor & { kind: "user" }) | null> {
-  if (!token) return null;
+  const email = readSessionCookie(ctx, token);
+  if (!email) return null;
   const row = await ctx.db
-    .selectFrom("sessions")
-    .innerJoin("users", "users.id", "sessions.user_id")
-    .select(["users.id as user_id", "users.account_id", "users.email", "users.name", "users.role", "users.theme", "users.status", "sessions.expires_at"])
-    .where("sessions.id", "=", sha256(token))
+    .selectFrom("users")
+    .select(["id as user_id", "account_id", "email", "name", "role", "theme", "status"])
+    .where("email", "=", email)
     .executeTakeFirst();
-  if (!row || row.status !== "active" || row.expires_at < now()) return null;
+  if (!row || row.status !== "active") return null;
   return { kind: "user", id: row.user_id, accountId: row.account_id, label: row.email, name: row.name || row.email.split("@")[0]!, role: row.role, theme: (["light", "dark"].includes(row.theme) ? row.theme : "system") as "system" | "light" | "dark" };
 }
 
-export async function logout(ctx: Ctx, token: string | undefined): Promise<void> {
-  if (!token) return;
-  // Expire rather than delete: nothing is ever deleted.
-  await ctx.db.updateTable("sessions").set({ expires_at: now() }).where("id", "=", sha256(token)).execute();
-}
-
-/** CSRF token bound to the session. */
+/** CSRF token bound to the person, so it stays valid while the login cookie is renewed. */
 export function csrfToken(ctx: Ctx, sessionToken: string): string {
-  return hmacHex(ctx.keys.serverSecret, `csrf:${sha256(sessionToken)}`).slice(0, 32);
+  return hmacHex(ctx.keys.serverSecret, `csrf:${readSessionCookie(ctx, sessionToken) ?? ""}`).slice(0, 32);
 }
 
 export async function changePassword(ctx: Ctx, userId: string, password: string): Promise<void> {

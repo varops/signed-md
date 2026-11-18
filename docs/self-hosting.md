@@ -33,7 +33,9 @@ All settings are environment variables. Invalid values stop the server at start 
 | `S3_REGION` | `us-east-1` | The bucket's region. Some services need it to match exactly. |
 | `S3_PREFIX` | – | Put everything under this folder in the bucket, such as `signed-md`. |
 | `BACKUP_DB` | – | Set to `true` to also back up the SQLite database and keys to S3. See [Backups to S3](#backups-to-s3). |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, `SMTP_SECURE` | – | SMTP server. You can also set SMTP in the UI (Settings), which takes precedence. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, `SMTP_SECURE` | – | SMTP server. Without it, emails go to the Outbox page. Check it with `node apps/server/src/cli.ts test-email you@example.com`. |
+| `COOKIE_DOMAIN` | the current host | Share the login cookie with subdomains, such as `.example.com`. Must be `PUBLIC_URL`'s host or a parent of it. |
+| `COOKIE_HASH_KEY` | derived from `keys/server-secret` | Key that signs the login cookie (at least 32 characters). Changing it logs everyone out. |
 | `TYPST_BIN` | `typst` | Path to the Typst binary. |
 | `TRUST_PROXY` | – | Set to `1` behind a reverse proxy so client IPs come from `X-Forwarded-For`. |
 | `WORKER` | `1` | Set to `0` to run without the background worker (not recommended with one container). |
