@@ -179,3 +179,22 @@ describe("login with Google or Microsoft", () => {
     await ctx.close();
   });
 });
+
+describe("account menu", () => {
+  it("shows avatar, name, Manage account and Log out when HOSTED, and the plain name otherwise", async () => {
+    const hosted = await testContext({ HOSTED: "true", SMTP_HOST: "smtp.host.example" });
+    const page = await (await createApp(hosted.ctx).request("/documents", { headers: { cookie: `smd_session=${await createSession(hosted.ctx, hosted.user.id)}` } })).text();
+    expect(page).toContain('class="account-menu"');
+    expect(page).toContain('href="https://app.signed.md/account"');
+    expect(page).toMatch(/action="\/logout"/);
+    expect(page).toContain("unavatar.io/admin%40automaze.example");
+    expect(page).not.toContain('class="whoami');
+    await hosted.ctx.close();
+
+    const plain = await testContext();
+    const own = await (await createApp(plain.ctx).request("/documents", { headers: { cookie: `smd_session=${await createSession(plain.ctx, plain.user.id)}` } })).text();
+    expect(own).toContain('class="whoami');
+    expect(own).not.toContain("account-menu");
+    await plain.ctx.close();
+  });
+});

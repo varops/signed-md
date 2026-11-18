@@ -95,7 +95,7 @@ export function createAdmin(ctx: Ctx) {
   };
   const accountFont = async (): Promise<ContractFont> => (await getAccount(ctx)).config.branding.contract_font;
   const page = (c: Context<Env>, title: string, active: string, body: H, extra?: { kind: "ok" | "bad" | "warn" | "info"; text: string } | null) =>
-    c.html(shell({ title, user: { email: c.get("user").label, name: c.get("user").name, role: c.get("user").role, theme: c.get("user").theme ?? "system" }, csrf: c.get("csrf"), active, flash: extra ?? flash(c) }, body));
+    c.html(shell({ title, user: { email: c.get("user").label, name: c.get("user").name, role: c.get("user").role, theme: c.get("user").theme ?? "system", avatar: ctx.config.hosted ? avatarUrl(ctx.config, true, c.get("user").label, c.get("user").name) : null }, csrf: c.get("csrf"), active, flash: extra ?? flash(c) }, body));
 
   // Login cookie: renewed for another hour on every page visit. COOKIE_DOMAIN shares it with
   // subdomains (the hosted service uses .signed.md, so app.signed.md can log people in).

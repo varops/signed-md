@@ -66,3 +66,10 @@
     area.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(render, 300); });
   });
 })();
+// Hosted account menu: close on a click outside it, or on Escape.
+(function () {
+  var menu = document.querySelector(".account-menu");
+  if (!menu) return;
+  document.addEventListener("click", function (e) { if (menu.open && !menu.contains(e.target)) menu.open = false; });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape" && menu.open) { menu.open = false; menu.querySelector("summary").focus(); } });
+})();

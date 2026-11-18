@@ -1,5 +1,7 @@
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
+import { HOSTED_APP_URL } from "../hosted.ts";
+import { initialsOf } from "../services/avatars.ts";
 
 export type H = HtmlEscapedString | Promise<HtmlEscapedString>;
 
@@ -38,7 +40,7 @@ export function footer(): H {
 
 export interface ShellOptions {
   title: string;
-  user?: { email: string; name: string; role: "owner" | "admin" | "member" | "viewer"; theme?: "system" | "light" | "dark" } | null;
+  user?: { email: string; name: string; role: "owner" | "admin" | "member" | "viewer"; theme?: "system" | "light" | "dark"; avatar?: string | null } | null;
   csrf?: string;
   active?: string;
   flash?: { kind: "ok" | "bad" | "warn" | "info"; text: string } | null;
@@ -71,8 +73,10 @@ ${opts.user
   ? html`<header class="topbar">
   <a class="brand" href="/documents">Signed<span>.md</span></a>
   <nav class="nav">${NAV.filter(([k, , , roles]) => roles.includes(opts.user!.role) && !(hosted && k === "outbox")).map(([k, href, label]) => html`<a href="${href}" class="${opts.active === k ? "active" : ""}">${label}</a>`)}</nav>
-  <a class="whoami small" href="/settings" title="${opts.user.email}">${opts.user.name} <span class="muted">· ${opts.user.role === "admin" ? "administrator" : opts.user.role}</span></a>
-  <form method="post" action="/logout" class="inline"><input type="hidden" name="_csrf" value="${opts.csrf ?? ""}"><button class="btn" data-variant="outline" data-size="sm">Log out</button></form>
+  ${hosted
+    ? accountMenu(opts.user, opts.csrf ?? "")
+    : html`<a class="whoami small" href="/settings" title="${opts.user.email}">${opts.user.name} <span class="muted">· ${opts.user.role === "admin" ? "administrator" : opts.user.role}</span></a>
+  <form method="post" action="/logout" class="inline"><input type="hidden" name="_csrf" value="${opts.csrf ?? ""}"><button class="btn" data-variant="outline" data-size="sm">Log out</button></form>`}
 </header>`
   : ""}
 <main class="wrap">
@@ -85,6 +89,20 @@ ${footer()}
 </html>`;
 }
 
+/** Hosted: the person's avatar and name, opening a menu with their account on app.signed.md and log out. */
+function accountMenu(user: { email: string; name: string; avatar?: string | null }, csrf: string): H {
+  const face = (size: "sm" | "md") =>
+    html`<span class="avatar" ${size === "sm" ? html`data-size="sm"` : ""}><span>${initialsOf(user.name)}</span>${user.avatar ? html`<img src="${user.avatar}" alt="" referrerpolicy="no-referrer">` : ""}</span>`;
+  return html`<details class="account-menu">
+    <summary title="${user.email}">${face("sm")}<span class="account-name small">${user.name}</span></summary>
+    <div class="account-pop" role="menu">
+      <div class="account-head">${face("md")}<div><strong>${user.name}</strong><div class="small muted">${user.email}</div></div></div>
+      <a role="menuitem" href="${HOSTED_APP_URL}/account">${icon("account")} Manage account</a>
+      <form method="post" action="/logout"><input type="hidden" name="_csrf" value="${csrf}"><button role="menuitem" type="submit">${icon("logout")} Log out</button></form>
+    </div>
+  </details>`;
+}
+
 /** Lucide icons (ISC licence), inline so no icon font or external request is needed. */
 const ICONS = {
   ok: '<path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/>',
@@ -92,6 +110,8 @@ const ICONS = {
   warn: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   bad: '<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>',
   close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  account: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="10" r="3"/><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"/>',
+  logout: '<path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>',
   inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
 } as const;
 
