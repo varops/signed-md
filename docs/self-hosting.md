@@ -114,6 +114,8 @@ domain: COOKIE_DOMAIN (your service must be on the same domain or a subdomain)
 flags:  HttpOnly, Secure, SameSite=Lax, Path=/
 ```
 
+Ready-made functions that write this cookie, in TypeScript, Python, PHP, Go and Ruby, are in [`sso/`](../sso/README.md).
+
 Set `COOKIE_HASH_KEY` explicitly, so your service and Signed.md share it. The email must belong to an active user in Signed.md. The people still need to be invited first.
 
 ## Upgrades
