@@ -22,7 +22,8 @@ async function main() {
   const server = serve({ fetch: app.fetch, port: config.port, hostname: process.env.HOST ?? "0.0.0.0" }, (info) => {
     log.info("Signed.md listening", { port: info.port, public_url: config.publicUrl, database: ctx.dialect, smtp: config.smtp ? config.smtp.host : "outbox", storage: ctx.storage.location });
   });
-  const worker = config.worker ? startWorker(ctx) : null;
+  // A disabled account sends nothing: no reminders, emails or webhooks.
+  const worker = config.worker && config.active ? startWorker(ctx) : null;
   const backup = startDbBackup(ctx);
 
   let stopping = false;

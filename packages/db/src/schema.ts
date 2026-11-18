@@ -20,6 +20,15 @@ export interface Database {
   webhook_deliveries: WebhookDeliveryTable;
   invitations: InvitationTable;
   audit_events: AuditEventTable;
+  usage_counters: UsageCounterTable;
+}
+
+/** One row per calendar month (UTC). */
+export interface UsageCounterTable {
+  /** YYYY-MM */
+  period: string;
+  /** Contracts sent that month. */
+  sent: number;
 }
 
 export type Role = "owner" | "admin" | "member" | "viewer";

@@ -22,6 +22,7 @@ export const ErrorCodes = [
   "UNAUTHENTICATED",
   "PERMISSION_DENIED",
   "RATE_LIMITED",
+  "LIMIT_REACHED",
 ] as const;
 
 export type ErrorCode = (typeof ErrorCodes)[number];

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ping } from "@signed-md/db";
 import { Hono } from "hono";
+import { html } from "hono/html";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
 import type { Ctx } from "./context.ts";
@@ -16,7 +17,7 @@ import { readLogo } from "./services/branding.ts";
 import { certificatePem, pdfIdentity } from "./services/pdfsign.ts";
 import { checkDownloadSignature, readArtifact } from "./services/finalize.ts";
 import { createAdmin } from "./ui/admin.ts";
-import { setBranding, setSourceUrl } from "./ui/layout.ts";
+import { setBranding, setSourceUrl, shell } from "./ui/layout.ts";
 import { createSigningRoutes } from "./ui/signing.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -84,6 +85,20 @@ export function createApp(ctx: Ctx) {
   );
 
   app.onError((e, c) => errorResponse(c, e));
+
+  // ACTIVE=false (hosted service, after an account is closed): no logins, no API or MCP, and no
+  // signing links. Health, public keys and static assets still answer. Not documented on purpose:
+  // self-hosters never need it.
+  if (!ctx.config.active) {
+    const OPEN = /^\/(health|\.well-known\/|assets\/)/;
+    app.use("*", async (c, next) => {
+      if (OPEN.test(c.req.path)) return next();
+      const message = "This account is disabled.";
+      if (c.req.path.startsWith("/v1/")) return c.json({ error: { code: "PERMISSION_DENIED", message, details: [] } }, 403);
+      if (c.req.path === "/mcp") return c.json({ jsonrpc: "2.0", error: { code: -32001, message }, id: null }, 403);
+      return c.html(shell({ title: "Account disabled" }, html`<div class="narrow" style="margin:60px auto"><div class="card"><section><h1>Account disabled</h1><p class="muted">${message}</p></section></div></div>`), 403);
+    });
+  }
 
   app.get("/health", async (c) => {
     const db = await ping(ctx.db);

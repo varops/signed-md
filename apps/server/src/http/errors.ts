@@ -26,6 +26,7 @@ const STATUS: Record<ErrorCode, ContentfulStatusCode> = {
   UNAUTHENTICATED: 401,
   PERMISSION_DENIED: 403,
   RATE_LIMITED: 429,
+  LIMIT_REACHED: 402,
 };
 
 export function errorBody(err: SignedError) {

@@ -3,20 +3,14 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.ts";
 import { loadConfig } from "../src/config.ts";
-import { apiKeyActor, createApiKey, login, sessionActor, createSession } from "../src/services/auth.ts";
-import { createDocument, getDocument, listDocuments, previewDocument, sendDocument } from "../src/services/documents.ts";
+import { createApiKey, createSession } from "../src/services/auth.ts";
+import { createDocument, previewDocument, sendDocument } from "../src/services/documents.ts";
 import { renderEmail } from "../src/services/emailtemplate.ts";
-import { setAccountActive } from "../src/services/permissions.ts";
-import { submitSignature } from "../src/services/signing.ts";
-import * as team from "../src/services/team.ts";
 import { setBranding, footer } from "../src/ui/layout.ts";
 import { drainJobs } from "../src/worker.ts";
 import { testContext } from "./helpers.ts";
 
 // Hidden settings for the hosted service: BRANDING and ACTIVE. Not in the public docs.
-
-const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
-const meta = { ip: "203.0.113.7", user_agent: "vitest" };
 
 describe("BRANDING", () => {
   it("is on by default", () => {
@@ -46,66 +40,45 @@ describe("BRANDING", () => {
 
 describe("ACTIVE=false", async () => {
   const { ctx, user: owner, dataDir } = await testContext();
-  afterAll(() => {
-    setAccountActive(true);
-    return ctx.close();
-  });
+  afterAll(() => ctx.close());
 
-  // Set up while active: a member with a session and an API key, and a document out for signing.
-  await team.inviteMember(ctx, owner, { email: "mia@x.example", role: "member" });
-  await drainJobs(ctx);
-  const mails = () => readdirSync(join(dataDir, "outbox")).sort().map((f) => JSON.parse(readFileSync(join(dataDir, "outbox", f), "utf8")) as { to: string; text: string });
-  const invite = /\/invite\/([A-Za-z0-9_-]+)/.exec(mails().find((m) => m.to === "mia@x.example")!.text)![1]!;
-  await team.acceptInvitation(ctx, invite, { name: "Mia Member", password: "long enough password" });
-  const miaId = (await team.listMembers(ctx)).find((m) => m.email === "mia@x.example")!.id;
-  const mia = { kind: "user" as const, id: miaId, accountId: owner.accountId, label: "mia@x.example", name: "Mia Member", role: "member" as const };
-  const miaSession = await createSession(ctx, miaId);
-  const miaKey = (await createApiKey(ctx, mia, "mia")).key;
-  const ownerKey = (await createApiKey(ctx, owner, "owner")).key;
-  await team.inviteMember(ctx, owner, { email: "late@x.example", role: "member" });
-  await drainJobs(ctx);
-  const lateInvite = /\/invite\/([A-Za-z0-9_-]+)/.exec(mails().find((m) => m.to === "late@x.example")!.text)![1]!;
+  // While active: an API key and a document out for signing.
+  const key = (await createApiKey(ctx, owner, "owner")).key;
   const doc = await createDocument(ctx, owner, { content: "# NDA\n\n{{a.signature:signature}}", signers: [{ key: "a", name: "Ann", email: "ann@client.example" }] });
   await sendDocument(ctx, owner, doc.id, { approved_revision: (await previewDocument(ctx, owner, doc.id)).revision });
   await drainJobs(ctx);
-  const signerToken = /\/s\/([A-Za-z0-9_-]+)/.exec(mails().find((m) => m.to === "ann@client.example")!.text)![1]!;
+  const mail = readdirSync(join(dataDir, "outbox")).map((f) => JSON.parse(readFileSync(join(dataDir, "outbox", f), "utf8")) as { to: string; text: string }).find((m) => m.to === "ann@client.example")!;
+  const signingPath = /\/s\/[A-Za-z0-9_-]+/.exec(mail.text)![0];
+  const session = await createSession(ctx, owner.id);
 
-  setAccountActive(false);
-
-  it("lets only owners log in, and only to read", async () => {
-    await expect(login(ctx, "mia@x.example", "long enough password")).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
-    expect(await sessionActor(ctx, miaSession)).toBeNull();
-    await expect(apiKeyActor(ctx, miaKey, "api")).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
-    await expect(team.acceptInvitation(ctx, lateInvite, { name: "Late", password: "long enough password" })).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
-
-    expect(await login(ctx, "admin@automaze.example", "correct horse battery")).not.toBeNull();
-    expect(await apiKeyActor(ctx, ownerKey, "api")).not.toBeNull();
-    expect((await listDocuments(ctx, owner)).data.map((d) => d.id)).toContain(doc.id);
-    expect((await getDocument(ctx, owner, doc.id)).id).toBe(doc.id);
-    await expect(createDocument(ctx, owner, { content: "# X", signers: [] })).rejects.toThrow(/This account is disabled/);
-    await expect(team.inviteMember(ctx, owner, { email: "new@x.example", role: "member" })).rejects.toThrow(/This account is disabled/);
+  it("defaults to active", () => {
+    expect(loadConfig({}).active).toBe(true);
+    expect(loadConfig({ ACTIVE: "false" }).active).toBe(false);
   });
 
-  it("lets signers finish documents already sent", async () => {
-    const r = await submitSignature(ctx, signerToken, { consent: true, fields: { "a.signature": { kind: "drawn", image: PNG } } }, meta);
-    expect(r.document_status).toBe("signed");
-    await drainJobs(ctx);
-    expect((await getDocument(ctx, owner, doc.id)).status).toBe("finalized");
-  }, 60_000);
-
-  it("shows owners a banner, refuses members at the login page, and refuses member API keys", async () => {
+  it("works normally while active", async () => {
     const app = createApp(ctx);
-    const res = await app.request("/login", { method: "POST", body: new URLSearchParams({ email: "mia@x.example", password: "long enough password" }) });
-    expect(res.status).toBe(403);
-    expect(await res.text()).toContain("This account is disabled.");
+    expect((await app.request(signingPath)).status).toBe(200);
+    expect((await app.request("/v1/documents", { headers: { authorization: `Bearer ${key}` } })).status).toBe(200);
+  });
 
-    const api = await app.request("/v1/documents", { headers: { authorization: `Bearer ${miaKey}` } });
+  it("blocks logins, the API, MCP and signing links, but not health, keys or assets", async () => {
+    const app = createApp({ ...ctx, config: { ...ctx.config, active: false } });
+    for (const path of ["/login", "/setup", "/documents", signingPath]) {
+      const res = await app.request(path, { headers: { cookie: `smd_session=${session}` } });
+      expect(res.status, path).toBe(403);
+      expect(await res.text()).toContain("This account is disabled.");
+    }
+    const login = await app.request("/login", { method: "POST", body: new URLSearchParams({ email: "admin@automaze.example", password: "correct horse battery" }) });
+    expect(login.status).toBe(403);
+    const api = await app.request("/v1/documents", { headers: { authorization: `Bearer ${key}` } });
     expect(api.status).toBe(403);
-    const mcp = await app.request("/mcp", { method: "POST", headers: { authorization: `Bearer ${miaKey}`, "content-type": "application/json" }, body: "{}" });
+    expect(((await api.json()) as { error: { code: string } }).error.code).toBe("PERMISSION_DENIED");
+    const mcp = await app.request("/mcp", { method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: "{}" });
     expect(mcp.status).toBe(403);
 
-    const ownerSession = await createSession(ctx, owner.id);
-    const page = await app.request("/documents", { headers: { cookie: `smd_session=${ownerSession}` } });
-    expect(await page.text()).toContain("This account is disabled. Owners can still log in");
+    expect((await app.request("/health")).status).toBe(200);
+    expect((await app.request("/.well-known/signed-md-keys.json")).status).toBe(200);
+    expect((await app.request("/assets/app.css")).status).toBe(200);
   });
 });

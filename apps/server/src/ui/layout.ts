@@ -1,6 +1,5 @@
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
-import { ACCOUNT_DISABLED, isAccountActive } from "../services/permissions.ts";
 
 export type H = HtmlEscapedString | Promise<HtmlEscapedString>;
 
@@ -70,7 +69,6 @@ ${opts.user
 </header>`
   : ""}
 <main class="wrap">
-${opts.user && !isAccountActive() ? alert("warn", ACCOUNT_DISABLED) : ""}
 ${opts.flash ? alert(opts.flash.kind, opts.flash.text) : ""}
 ${body}
 </main>

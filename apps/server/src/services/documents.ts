@@ -23,6 +23,7 @@ import { checkMessageVariables } from "./messagevars.ts";
 import { appendEvent } from "./events.ts";
 import { resolveVersionForDocument } from "./templates.ts";
 import { assertWebhookUrlShape } from "./webhooks.ts";
+import { countSent, requireUnderLimit } from "./usage.ts";
 
 export type DocRow = Selectable<DocumentTable>;
 export type SignerRow = Selectable<SignerTable>;
@@ -180,6 +181,7 @@ async function writeSigners(trx: Transaction<Database>, documentId: string, sign
 
 export async function createDocument(ctx: Ctx, actor: Actor, input: CreateDocumentInput): Promise<DocumentView> {
   requirePermission(actor, "documents.create");
+  await requireUnderLimit(ctx);
   const account = await getAccount(ctx);
   // The person who creates a document owns it and is its sender.
   const ownerId =
@@ -457,6 +459,8 @@ export async function sendDocument(
     const doc = await lockDocument(ctx, trx, id);
     requireManageDocument(actor, doc);
     if (doc.status !== "draft") throw new SignedError("DOCUMENT_ALREADY_SENT", "This document has already been sent");
+    // Checked again here: drafts made before the limit was reached can't be sent past it.
+    await requireUnderLimit(ctx, trx);
     const signerRows = await loadSigners(trx, id);
     const prepared = prepareFrom(doc, signerInputs(signerRows));
     if (!prepared.valid) throw new SignedError(prepared.issues[0]!.code, "The document is not valid. Fix the errors and preview again.", prepared.issues);
@@ -487,6 +491,7 @@ export async function sendDocument(
       })
       .where("id", "=", id)
       .execute();
+    await countSent(trx);
 
     // Freeze the field schema for this document.
     for (const [position, f] of prepared.fields.entries()) {

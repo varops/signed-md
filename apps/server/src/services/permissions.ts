@@ -41,26 +41,6 @@ export const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
 export const ROLE_LABELS: Record<Role, string> = { owner: "Owner", admin: "Administrator", member: "Member", viewer: "Viewer" };
 export const ROLES: Role[] = ["owner", "admin", "member", "viewer"];
 
-/**
- * ACTIVE=false (hosted service, after cancellation): the account is read-only. Only owners can
- * log in or use their API keys, and only to view and download. Signers can still finish documents
- * already sent, and the worker keeps running. Not documented on purpose.
- */
-let accountActive = true;
-
-export function setAccountActive(active: boolean): void {
-  accountActive = active;
-}
-
-export function isAccountActive(): boolean {
-  return accountActive;
-}
-
-export const ACCOUNT_DISABLED = "This account is disabled. Owners can still log in to view and download documents.";
-
-/** Permissions an owner keeps while the account is disabled. */
-const READ_ONLY: ReadonlySet<Permission> = new Set(["documents.read_all", "activity.read"]);
-
 export function roleOf(actor: Actor): Role | null {
   return actor.kind === "user" || actor.kind === "apikey" ? actor.role : null;
 }
@@ -75,9 +55,7 @@ export function userIdOf(actor: Actor): string | null {
 export function can(actor: Actor, permission: Permission): boolean {
   if (actor.kind === "system") return true;
   const role = roleOf(actor);
-  if (role === null) return false;
-  if (!accountActive) return role === "owner" && READ_ONLY.has(permission);
-  return ROLE_PERMISSIONS[role].has(permission);
+  return role !== null && ROLE_PERMISSIONS[role].has(permission);
 }
 
 const MESSAGES: Partial<Record<Permission, string>> = {
@@ -92,7 +70,6 @@ const MESSAGES: Partial<Record<Permission, string>> = {
 
 export function requirePermission(actor: Actor, permission: Permission): void {
   if (!can(actor, permission)) {
-    if (!accountActive && roleOf(actor) !== null) throw new SignedError("PERMISSION_DENIED", ACCOUNT_DISABLED);
     throw new SignedError("PERMISSION_DENIED", MESSAGES[permission] ?? "You don't have permission to do this.");
   }
 }
@@ -113,6 +90,5 @@ export function requireReadDocument(actor: Actor, doc: { id: string; owner_user_
 
 export function requireManageDocument(actor: Actor, doc: { id: string; owner_user_id: string | null }): void {
   requireReadDocument(actor, doc);
-  if (!canManageDocument(actor, doc) && !accountActive) throw new SignedError("PERMISSION_DENIED", ACCOUNT_DISABLED);
   if (!canManageDocument(actor, doc)) throw new SignedError("PERMISSION_DENIED", "Only the document's owner or an administrator can change it.");
 }

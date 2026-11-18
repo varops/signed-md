@@ -33,10 +33,14 @@ export interface Config {
   /**
    * Hosted-service controls. Not documented on purpose.
    * BRANDING=false removes the "Powered by Signed.md" links from emails and signing pages.
-   * ACTIVE=false makes the account read-only: only owners can log in, to view and download.
+   * ACTIVE=false disables the account: no logins, API, MCP or signing links, and no worker.
+   * MONTHLY_LIMIT and TOTAL_LIMIT cap sent contracts (-1, the default, means no limit).
    */
   branding: boolean;
   active: boolean;
+  /** Plan limits on sent contracts, per calendar month (UTC) and in total. -1 means no limit. */
+  monthlyLimit: number;
+  totalLimit: number;
   /** SMTP from the environment. Settings saved in the UI take precedence. */
   smtp: SmtpConfig | null;
   typstBin: string;
@@ -112,6 +116,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     };
   }
 
+  const limit = (name: string): number => {
+    const raw = (env[name] ?? "").trim();
+    if (raw === "") return -1;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < -1) throw new ConfigError(`${name} must be a whole number, or -1 for no limit, got '${raw}'`);
+    return n;
+  };
+
   const level = (env.LOG_LEVEL ?? "info") as Config["logLevel"];
   return {
     port,
@@ -123,6 +135,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     backupDb: bool(env.BACKUP_DB),
     branding: bool(env.BRANDING, true),
     active: bool(env.ACTIVE, true),
+    monthlyLimit: limit("MONTHLY_LIMIT"),
+    totalLimit: limit("TOTAL_LIMIT"),
     smtp,
     typstBin: env.TYPST_BIN ?? "typst",
     allowInsecureWebhooks: bool(env.ALLOW_INSECURE_WEBHOOKS),

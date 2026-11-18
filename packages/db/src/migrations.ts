@@ -283,12 +283,24 @@ const m005: Migration = {
   },
 };
 
+/** Contracts sent per calendar month (UTC), for plan limits. */
+const m006: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("usage_counters")
+      .addColumn("period", "text", (c) => c.primaryKey())
+      .addColumn("sent", "integer", (c) => c.notNull().defaultTo(0))
+      .execute();
+  },
+};
+
 export const migrations: Record<string, Migration> = {
   "001_initial": m001,
   "002_signer_message": m002,
   "003_teams": m003,
   "004_document_font": m004,
   "005_user_theme": m005,
+  "006_usage_counters": m006,
 };
 
 export const migrationProvider: MigrationProvider = {

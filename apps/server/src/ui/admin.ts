@@ -7,6 +7,7 @@ import { safeEqual } from "../crypto.ts";
 import { WEBHOOK_EVENTS } from "../http/api.ts";
 import { clientIp, rateLimit } from "../http/ratelimit.ts";
 import { getAccount, isSetUp, newWebhookSecret, setup, updateAccount, type InlineDocumentsSetting } from "../services/accounts.ts";
+import { type LimitHit, limitReached } from "../services/usage.ts";
 import { changePassword, createApiKey, csrfToken, listApiKeys, login, logout, revokeApiKey, sessionActor } from "../services/auth.ts";
 import * as docs from "../services/documents.ts";
 import { listEvents } from "../services/events.ts";
@@ -124,13 +125,7 @@ export function createAdmin(ctx: Ctx) {
   });
   app.post("/login", loginLimit, async (c) => {
     const b = (await c.req.parseBody()) as FormBody;
-    let s;
-    try {
-      s = await login(ctx, str(b, "email"), str(b, "password"));
-    } catch (e) {
-      if (!(e instanceof SignedError)) throw e;
-      return c.html(loginPage(e.message, str(b, "email")), 403);
-    }
+    const s = await login(ctx, str(b, "email"), str(b, "password"));
     if (!s) return c.html(loginPage("Email or password is not correct.", str(b, "email")), 401);
     setCookie(c, COOKIE, s.token, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: 14 * 86400 });
     return c.redirect("/documents");
@@ -209,11 +204,13 @@ export function createAdmin(ctx: Ctx) {
     const list = await docs.listDocuments(ctx, user, { archived, mine, ...(status ? { status } : {}), ...(q ? { q } : {}), limit: 100 });
     const avatarsOn = (await getAccount(ctx)).config.branding.avatars;
     const welcome = c.req.query("welcome") === "1";
+    const hit = can(user, "documents.create") ? await limitReached(ctx) : null;
     return page(
       c,
       "Documents",
       "documents",
       html`
+      ${hit ? limitAlert(hit) : ""}
       ${welcome ? html`<div class="alert">${icon("info")}<section><strong>Welcome to Signed.md.</strong> ${user.role === "owner" ? "Next steps: create a template, invite your team, and create an API key in Settings so your agent can send agreements." : user.role === "viewer" ? "You can read every document and template." : "Create an API key in Settings to connect your agent, or start a document from an approved template."}</section></div>` : ""}
       <div class="page-head"><h1>Documents</h1><div class="row">${can(user, "documents.create") ? html`<a class="btn" href="/documents/new">New document</a>` : ""}</div></div>
       ${seesAll ? tabs([["All documents", `/documents${archived ? "?archived=1" : ""}`, !mine], ["Mine", `/documents?mine=1${archived ? "&archived=1" : ""}`, mine]]) : ""}
@@ -247,6 +244,8 @@ export function createAdmin(ctx: Ctx) {
 
   app.get("/documents/new", async (c) => {
     requirePermission(c.get("user"), "documents.create");
+    const hit = await limitReached(ctx);
+    if (hit) return page(c, "New document", "documents", html`<div class="page-head"><h1>New document</h1></div>${limitAlert(hit)}`);
     const templateId = c.req.query("template");
     if (templateId) {
       const v = await tpl.resolveVersionForDocument(ctx, templateId).catch((e: Error) => e);
@@ -302,6 +301,8 @@ export function createAdmin(ctx: Ctx) {
       return c.redirect(`/documents/${d.id}?msg=created`);
     } catch (e) {
       if (!(e instanceof SignedError)) throw e;
+      const hit = e.code === "LIMIT_REACHED" ? await limitReached(ctx) : null;
+      if (hit) return page(c, "New document", "documents", limitAlert(hit));
       return page(c, "New document", "documents", html`<div class="alert" data-variant="destructive">${icon("bad")}<section>${e.message}${e.issues.length ? issuesList(e.issues) : ""}</section></div>
         ${documentForm(c.get("csrf"), { mode: templateId ? "template" : "inline", ...(templateId ? { templateId } : { content: content! }), fields, signers, values, title: str(b, "title") })}`);
     }
@@ -434,6 +435,8 @@ export function createAdmin(ctx: Ctx) {
       } catch (e) {
         if (!(e instanceof SignedError)) throw e;
         const back = c.req.path.split("/").slice(0, 3).join("/");
+        const hit = e.code === "LIMIT_REACHED" ? await limitReached(ctx) : null;
+        if (hit) return page(c, "Limit reached", "documents", html`${limitAlert(hit)}<a class="btn" data-variant="outline" href="${back}">Back</a>`);
         return page(c, "Error", "documents", html`<div class="alert" data-variant="destructive">${icon("bad")}<section>${e.message}${e.issues.length ? issuesList(e.issues) : ""}</section></div><a class="btn" data-variant="outline" href="${back}">Back</a>`);
       }
     });
@@ -1168,4 +1171,9 @@ function markdownEditor(name: string, value: string, font: ContractFont): H {
     <div class="field"><label>Markdown</label><textarea class="textarea code" name="${name}" data-preview-source data-font="${font}" spellcheck="false">${value}</textarea></div>
     <div class="field"><label>Preview</label><div class="editor-preview" data-preview-target aria-live="polite">${markdownPreview(value, font)}</div></div>
   </div>`;
+}
+
+/** Shown when the plan's sending limit is reached (hosted service only). */
+function limitAlert(hit: LimitHit): H {
+  return html`<div class="alert" data-variant="destructive">${icon("bad")}<section><strong>${hit.summary}</strong> New contracts can't be created or sent until you upgrade.<div style="margin-top:10px"><a class="btn" data-size="sm" href="${hit.url}">Upgrade plan</a></div></section></div>`;
 }

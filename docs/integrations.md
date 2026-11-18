@@ -478,6 +478,7 @@ Examples:
 | `DOCUMENT_NOT_FINALIZED` | Completion artifacts are not ready |
 | `PERMISSION_DENIED` | API key lacks required permission |
 | `RATE_LIMITED` | Request exceeds configured limits |
+| `LIMIT_REACHED` | The plan's limit on sent contracts is reached. The message says where to upgrade |
 
 Errors must be actionable for both developers and agents.
 
