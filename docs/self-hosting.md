@@ -36,6 +36,8 @@ All settings are environment variables. Invalid values stop the server at start 
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, `SMTP_SECURE` | – | SMTP server. Without it, emails go to the Outbox page. Check it with `node apps/server/src/cli.ts test-email you@example.com`. |
 | `COOKIE_DOMAIN` | the current host | Share the login cookie with subdomains, such as `.example.com`. Must be `PUBLIC_URL`'s host or a parent of it. |
 | `COOKIE_HASH_KEY` | derived from `keys/server-secret` | Key that signs the login cookie (at least 32 characters). Changing it logs everyone out. |
+| `ALLOW_EMAIL_LOGIN` | `true` | Set to `false` to turn off email and password login, so people sign in only with the buttons below. Needs at least one of them. With it off, there are no passwords: invited people only enter their name, and `cli.ts setup` doesn't need `--password`. |
+| `OAUTH_GOOGLE_URL`, `OAUTH_MICROSOFT_URL` | – | Show "Continue with Google" or "Continue with Microsoft" on the login page, next to the email login. See [Single sign-on](#single-sign-on). |
 | `TYPST_BIN` | `typst` | Path to the Typst binary. |
 | `TRUST_PROXY` | – | Set to `1` behind a reverse proxy so client IPs come from `X-Forwarded-For`. |
 | `WORKER` | `1` | Set to `0` to run without the background worker (not recommended with one container). |
@@ -95,6 +97,22 @@ At start, if the database or keys are missing on disk, Signed.md restores them f
 Signed.md never deletes old snapshots. Add a lifecycle rule to the bucket to expire `<prefix>/db/` after, say, 30 days. The keys file holds your private signing key, so keep the bucket private and the credentials safe.
 
 `BACKUP_DB` works with SQLite only. With PostgreSQL, back up with `pg_dump` or your provider's backups. The startup log says whether backups are on.
+
+## Single sign-on
+
+Signed.md doesn't talk to Google or Microsoft itself. Instead, it accepts a login cookie written by any service that holds `COOKIE_HASH_KEY`. Set `OAUTH_GOOGLE_URL` or `OAUTH_MICROSOFT_URL` to your own sign-in service, and the login page shows a button for it, with `?next=<where to return>` added to the link.
+
+Your service signs the person in, then writes this cookie and redirects to `next` (check that `next` is your own domain):
+
+```text
+name:   smd_session
+value:  v1.<base64url(email)>.<expires>.<HMAC-SHA256(COOKIE_HASH_KEY, "v1.<base64url(email)>.<expires>") as hex>
+        expires is a Unix time in seconds, at most an hour ahead
+domain: COOKIE_DOMAIN (your service must be on the same domain or a subdomain)
+flags:  HttpOnly, Secure, SameSite=Lax, Path=/
+```
+
+Set `COOKIE_HASH_KEY` explicitly, so your service and Signed.md share it. The email must belong to an active user in Signed.md. The people still need to be invited first.
 
 ## Upgrades
 

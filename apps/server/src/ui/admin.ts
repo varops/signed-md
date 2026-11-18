@@ -107,11 +107,12 @@ export function createAdmin(ctx: Ctx) {
   const loginLimit = rateLimit({ windowMs: 15 * 60_000, max: 20, key: (c) => `login:${clientIp(c)}` });
 
   app.get("/setup", async (c) => {
-    if (await isSetUp(ctx)) return c.redirect("/login");
+    // Without email login, the first owner is created with the CLI (the hosted service does this).
+    if (!ctx.config.allowEmailLogin || (await isSetUp(ctx))) return c.redirect("/login");
     return c.html(setupPage());
   });
   app.post("/setup", loginLimit, async (c) => {
-    if (await isSetUp(ctx)) return c.redirect("/login");
+    if (!ctx.config.allowEmailLogin || (await isSetUp(ctx))) return c.redirect("/login");
     const b = (await c.req.parseBody()) as FormBody;
     try {
       await setup(ctx, { accountName: str(b, "account"), name: str(b, "name"), email: str(b, "email"), password: str(b, "password") });
@@ -123,14 +124,21 @@ export function createAdmin(ctx: Ctx) {
     }
   });
 
+  // Email login unless ALLOW_EMAIL_LOGIN=false, plus optional Google and Microsoft buttons
+  // (OAUTH_*_URL). Hosted: app.signed.md signs people in and writes the cookie for .signed.md.
+  const next = `${ctx.config.publicUrl}/documents`;
+  const withNext = (url: string | null) => (url ? `${url}${url.includes("?") ? "&" : "?"}next=${encodeURIComponent(next)}` : null);
+  const buttons = { google: withNext(ctx.config.oauth.google), microsoft: withNext(ctx.config.oauth.microsoft) };
+  const loginView = (error?: string, email?: string) => loginPage(error, email, buttons, ctx.config.allowEmailLogin);
   app.get("/login", async (c) => {
-    if (!(await isSetUp(ctx))) return c.redirect("/setup");
-    return c.html(loginPage());
+    if (ctx.config.allowEmailLogin && !(await isSetUp(ctx))) return c.redirect("/setup");
+    return c.html(loginView());
   });
   app.post("/login", loginLimit, async (c) => {
+    if (!ctx.config.allowEmailLogin) return c.redirect("/login");
     const b = (await c.req.parseBody()) as FormBody;
     const s = await login(ctx, str(b, "email"), str(b, "password"));
-    if (!s) return c.html(loginPage("Email or password is not correct.", str(b, "email")), 401);
+    if (!s) return c.html(loginView("Email or password is not correct.", str(b, "email")), 401);
     setSession(c, s.token);
     return c.redirect("/documents");
   });
@@ -140,7 +148,7 @@ export function createAdmin(ctx: Ctx) {
   app.get("/invite/:token", async (c) => {
     const inv = await team.findInvitation(ctx, c.req.param("token"));
     if (!inv) return c.html(shell({ title: "Invitation" }, html`<div class="narrow" style="margin:60px auto"><div  class="card"><section><h1>Invitation not valid</h1><p class="muted">This invitation has expired, was revoked, or was already used. Ask for a new one.</p><a class="btn" data-variant="outline" href="/login">Log in</a></section></div></div>`), 404);
-    return c.html(invitePage(inv, null));
+    return c.html(invitePage(inv, null, "", !ctx.config.allowEmailLogin));
   });
   app.post("/invite/:token", loginLimit, async (c) => {
     const token = c.req.param("token");
@@ -148,12 +156,12 @@ export function createAdmin(ctx: Ctx) {
     const inv = await team.findInvitation(ctx, token);
     if (!inv) return c.redirect(`/invite/${token}`);
     try {
-      const session = await team.acceptInvitation(ctx, token, { name: str(b, "name"), password: str(b, "password") });
+      const session = await team.acceptInvitation(ctx, token, { name: str(b, "name"), ...(ctx.config.allowEmailLogin ? { password: str(b, "password") } : {}) });
       setSession(c, session);
       return c.redirect("/documents?welcome=1");
     } catch (e) {
       if (!(e instanceof SignedError)) throw e;
-      return c.html(invitePage(inv, e.message, str(b, "name")), 422);
+      return c.html(invitePage(inv, e.message, str(b, "name"), !ctx.config.allowEmailLogin), 422);
     }
   });
 
@@ -645,9 +653,9 @@ export function createAdmin(ctx: Ctx) {
       ${ctx.config.hosted ? "" : html`<div  class="card"><header><h2>Signing key</h2><p>Completed packages are signed with this key. Back up <code>${ctx.config.dataDir}/keys</code> together with the database.</p></header><section>
         <dl class="kv small"><dt>Key ID</dt><dd class="mono">${ctx.keys.info.kid}</dd><dt>Public keys</dt><dd><a href="/.well-known/signed-md-keys.json">/.well-known/signed-md-keys.json</a></dd></dl></section></div>`}` : ""}
 
-      <form method="post" action="/settings/password"  class="card">${csrfInput(csrf)}<header><h2>Password</h2></header><section>
+      ${!ctx.config.allowEmailLogin ? "" : html`<form method="post" action="/settings/password"  class="card">${csrfInput(csrf)}<header><h2>Password</h2></header><section>
         <div class="field"><label>New password <span class="muted">· at least 10 characters</span></label><input class="input" type="password" name="password" autocomplete="new-password"></div>
-        <button class="btn" data-variant="outline">Change password</button></section></form>`);
+        <button class="btn" data-variant="outline">Change password</button></section></form>`}`);
   });
 
   app.post("/settings/keys", async (c) => {
@@ -1015,7 +1023,7 @@ function setupPage(error?: string, b?: FormBody): H {
     </section></form></div>`);
 }
 
-function invitePage(inv: { email: string; role: string; account_name: string; inviter: string | null }, error: string | null, name = ""): H {
+function invitePage(inv: { email: string; role: string; account_name: string; inviter: string | null }, error: string | null, name = "", hosted = false): H {
   return shell({ title: "Join" }, html`<div class="narrow" style="margin:50px auto">
     <h1>Join ${inv.account_name}</h1>
     <p class="muted">${inv.inviter ?? "Someone"} invited you to Signed.md as ${ROLE_LABELS[inv.role as keyof typeof ROLE_LABELS].toLowerCase()}.</p>
@@ -1023,20 +1031,35 @@ function invitePage(inv: { email: string; role: string; account_name: string; in
     <form method="post"  class="card"><section>
       <div class="field"><label>Email</label><input class="input" type="email" value="${inv.email}" disabled></div>
       <div class="field"><label>Your name</label><input class="input" type="text" name="name" value="${name}" required autocomplete="name"></div>
-      <div class="field"><label>Choose a password <span class="muted">· at least 10 characters</span></label><input class="input" type="password" name="password" required minlength="10" autocomplete="new-password"></div>
+      ${hosted
+        ? html`<p class="small muted">Next time, sign in with the Google or Microsoft account for ${inv.email}.</p>`
+        : html`<div class="field"><label>Choose a password <span class="muted">· at least 10 characters</span></label><input class="input" type="password" name="password" required minlength="10" autocomplete="new-password"></div>`}
       <button class="btn w-full">Join ${inv.account_name}</button>
     </section></form></div>`);
 }
 
-function loginPage(error?: string, email = ""): H {
+const GOOGLE_LOGO = raw('<svg viewBox="0 0 48 48" width="18" height="18" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.2l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.7 6c4.5-4.2 6.9-10.3 6.9-17.7z"/><path fill="#FBBC05" d="M10.6 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.2.8-4.7l-7.9-6.1C1 16.5 0 20.1 0 24s1 7.5 2.7 10.8l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.7-6c-2.2 1.5-5 2.3-8.2 2.3-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>');
+const MICROSOFT_LOGO = raw('<svg viewBox="0 0 21 21" width="18" height="18" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#F25022"/><rect x="11" y="1" width="9" height="9" fill="#7FBA00"/><rect x="1" y="11" width="9" height="9" fill="#00A4EF"/><rect x="11" y="11" width="9" height="9" fill="#FFB900"/></svg>');
+
+/** Email login (unless hosted) and the optional Google and Microsoft buttons. */
+function loginPage(error: string | undefined, email: string | undefined, buttons: { google: string | null; microsoft: string | null }, passwords: boolean): H {
+  const any = buttons.google || buttons.microsoft;
   return shell({ title: "Log in" }, html`<div class="narrow" style="margin:60px auto">
     <h1>Signed.md</h1>
     ${error ? html`<div class="alert" data-variant="destructive">${icon("bad")}<section>${error}</section></div>` : ""}
-    <form method="post"  class="card"><section>
-      <div class="field"><label>Email</label><input class="input" type="email" name="email" value="${email}" required autocomplete="username"></div>
+    ${any
+      ? html`<div class="card"><section style="display:grid;gap:10px">
+      ${buttons.google ? html`<a class="btn w-full" data-variant="outline" href="${buttons.google}">${GOOGLE_LOGO} Continue with Google</a>` : ""}
+      ${buttons.microsoft ? html`<a class="btn w-full" data-variant="outline" href="${buttons.microsoft}">${MICROSOFT_LOGO} Continue with Microsoft</a>` : ""}
+    </section></div>`
+      : ""}
+    ${passwords
+      ? html`<form method="post"  class="card"><section>
+      <div class="field"><label>Email</label><input class="input" type="email" name="email" value="${email ?? ""}" required autocomplete="username"></div>
       <div class="field"><label>Password</label><input class="input" type="password" name="password" required autocomplete="current-password"></div>
       <button class="btn w-full">Log in</button>
-    </section></form></div>`);
+    </section></form>`
+      : ""}</div>`);
 }
 
 function inlineStart(csrf: string, font: ContractFont, content = "# Agreement\n\nThis agreement is between {{$party_a:text}} and {{$party_b:text}}.\n\nSigned: {{client.signature:signature}}\n"): H {

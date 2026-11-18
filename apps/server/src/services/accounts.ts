@@ -64,11 +64,13 @@ export async function isSetUp(ctx: Ctx): Promise<boolean> {
 /** First-run setup: one account and one administrator. */
 export async function setup(
   ctx: Ctx,
-  input: { accountName: string; email: string; password: string; name?: string },
+  input: { accountName: string; email: string; password?: string; name?: string },
 ): Promise<{ accountId: string; userId: string }> {
-  if (input.password.length < 10) throw new SignedError("INVALID_REQUEST", "Password must be at least 10 characters");
+  // Without email login, people sign in with Google or Microsoft, so there are no passwords.
+  const password = !ctx.config.allowEmailLogin ? null : (input.password ?? "");
+  if (password !== null && password.length < 10) throw new SignedError("INVALID_REQUEST", "Password must be at least 10 characters");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) throw new SignedError("INVALID_REQUEST", "A valid email is required");
-  const passwordHash = await hashPassword(input.password);
+  const passwordHash = password === null ? null : await hashPassword(password);
   return ctx.db.transaction().execute(async (trx) => {
     const existing = await trx.selectFrom("accounts").select("id").limit(1).executeTakeFirst();
     if (existing) throw new SignedError("PERMISSION_DENIED", "Signed.md is already set up");

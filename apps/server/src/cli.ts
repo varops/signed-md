@@ -39,9 +39,9 @@ async function main(argv: string[]): Promise<number> {
         const email = arg(args, "email");
         const name = arg(args, "name");
         const password = arg(args, "password") ?? process.env.ADMIN_PASSWORD;
-        if (!account || !email || !password) throw new Error("setup needs --account, --email and --password (or ADMIN_PASSWORD)");
+        if (!account || !email || (!password && ctx.config.allowEmailLogin)) throw new Error("setup needs --account, --email and --password (or ADMIN_PASSWORD)");
         if (await isSetUp(ctx)) throw new Error("Already set up");
-        await setup(ctx, { accountName: account, email, password, ...(name ? { name } : {}) });
+        await setup(ctx, { accountName: account, email, ...(password ? { password } : {}), ...(name ? { name } : {}) });
         console.log(`Created account "${account}" with administrator ${email}.`);
         return 0;
       }

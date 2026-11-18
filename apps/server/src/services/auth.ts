@@ -12,6 +12,7 @@ export function hashPassword(password: string): Promise<string> {
 }
 
 export async function login(ctx: Ctx, email: string, password: string): Promise<{ token: string; userId: string } | null> {
+  if (!ctx.config.allowEmailLogin) return null;
   const user = await ctx.db
     .selectFrom("users")
     .selectAll()
@@ -85,6 +86,7 @@ export function csrfToken(ctx: Ctx, sessionToken: string): string {
 }
 
 export async function changePassword(ctx: Ctx, userId: string, password: string): Promise<void> {
+  if (!ctx.config.allowEmailLogin) throw new SignedError("PERMISSION_DENIED", "Email login is turned off, so there are no passwords to change.");
   if (password.length < 10) throw new SignedError("INVALID_REQUEST", "Password must be at least 10 characters");
   await ctx.db.updateTable("users").set({ password_hash: await hashPassword(password) }).where("id", "=", userId).execute();
 }

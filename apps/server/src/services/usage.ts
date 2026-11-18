@@ -2,6 +2,7 @@ import { SignedError } from "@signed-md/core";
 import type { Database } from "@signed-md/db";
 import { type Kysely, sql } from "kysely";
 import type { Ctx } from "../context.ts";
+import { HOSTED_APP_URL } from "../hosted.ts";
 
 /**
  * Plan limits on sent contracts, for the hosted service. MONTHLY_LIMIT and TOTAL_LIMIT default to
@@ -9,7 +10,7 @@ import type { Ctx } from "../context.ts";
  * counter for its calendar month (UTC).
  */
 
-const BILLING_URL = "https://app.signed.md/billing";
+const BILLING_URL = `${HOSTED_APP_URL}/billing`;
 
 /** The current calendar month, YYYY-MM, in UTC. */
 export function currentPeriod(at = new Date()): string {

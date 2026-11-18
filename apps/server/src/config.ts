@@ -1,4 +1,5 @@
 import { join, resolve } from "node:path";
+import { HOSTED_APP_URL } from "./hosted.ts";
 
 export interface SmtpConfig {
   host: string;
@@ -43,6 +44,14 @@ export interface Config {
   cookieDomain: string | null;
   /** Key that signs the login cookie. Null derives one from keys/server-secret. */
   cookieHashKey: string | null;
+  /**
+   * "Continue with Google / Microsoft" links. Each points at a service that signs the person in,
+   * writes the login cookie (same format and COOKIE_HASH_KEY) and redirects to `?next=`.
+   * Hosted defaults to app.signed.md/oauth/google and /microsoft.
+   */
+  oauth: { google: string | null; microsoft: string | null };
+  /** Email and password login. Off, people sign in only through the OAUTH_*_URL buttons. */
+  allowEmailLogin: boolean;
   /** Our hosted service: needs SMTP, and hides the signing key settings and the Outbox. */
   hosted: boolean;
   /** Plan limits on sent contracts, per calendar month (UTC) and in total. -1 means no limit. */
@@ -137,6 +146,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const hosted = bool(env.HOSTED);
   if (hosted && !smtp) throw new ConfigError("HOSTED=true needs SMTP_HOST");
 
+  const oauthLink = (name: string, hostedDefault: string): string | null => {
+    const raw = (env[name] ?? "").trim();
+    if (!raw) return hosted ? hostedDefault : null;
+    if (!/^https?:\/\/[^/\s]+/.test(raw)) throw new ConfigError(`${name} must be an http(s) URL, got '${raw}'`);
+    return raw;
+  };
+  const oauth = {
+    google: oauthLink("OAUTH_GOOGLE_URL", `${HOSTED_APP_URL}/oauth/google`),
+    microsoft: oauthLink("OAUTH_MICROSOFT_URL", `${HOSTED_APP_URL}/oauth/microsoft`),
+  };
+
+  const allowEmailLogin = bool(env.ALLOW_EMAIL_LOGIN, true);
+  if (!allowEmailLogin && !oauth.google && !oauth.microsoft) {
+    throw new ConfigError("ALLOW_EMAIL_LOGIN=false needs OAUTH_GOOGLE_URL or OAUTH_MICROSOFT_URL, or nobody can log in");
+  }
+
   const limit = (name: string): number => {
     const raw = (env[name] ?? "").trim();
     if (raw === "") return -1;
@@ -159,6 +184,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     hosted,
     cookieDomain,
     cookieHashKey,
+    oauth,
+    allowEmailLogin,
     monthlyLimit: limit("MONTHLY_LIMIT"),
     totalLimit: limit("TOTAL_LIMIT"),
     smtp,

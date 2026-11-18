@@ -123,3 +123,59 @@ describe("SMTP", async () => {
     expect("smtp" in (await getAccount(ctx)).config).toBe(false);
   });
 });
+
+describe("login with Google or Microsoft", () => {
+  it("adds buttons next to the email login when the links are set", async () => {
+    const { ctx } = await testContext({ OAUTH_GOOGLE_URL: "https://login.acme.example/google" });
+    const page = await (await createApp(ctx).request("/login")).text();
+    expect(page).toContain('href="https://login.acme.example/google?next=http%3A%2F%2Flocalhost%3A3999%2Fdocuments"');
+    expect(page).not.toContain("Continue with Microsoft");
+    expect(page).toContain('name="password"');
+    await ctx.close();
+  });
+
+  it("default to app.signed.md when HOSTED, which keeps email login unless it is turned off", async () => {
+    const hosted = loadConfig({ HOSTED: "true", SMTP_HOST: "smtp.x" });
+    expect(hosted.oauth).toEqual({ google: "https://app.signed.md/oauth/google", microsoft: "https://app.signed.md/oauth/microsoft" });
+    expect(hosted.allowEmailLogin).toBe(true);
+    expect(loadConfig({}).allowEmailLogin).toBe(true);
+    expect(() => loadConfig({ ALLOW_EMAIL_LOGIN: "false" })).toThrow(/needs OAUTH_GOOGLE_URL or OAUTH_MICROSOFT_URL/);
+  });
+
+  it("are the only way in with ALLOW_EMAIL_LOGIN=false", async () => {
+    const { ctx, user } = await testContext({ HOSTED: "true", ALLOW_EMAIL_LOGIN: "false", SMTP_HOST: "smtp.host.example" });
+    const app = createApp(ctx);
+    const page = await (await app.request("/login")).text();
+    expect(page).toContain("https://app.signed.md/oauth/google?next=");
+    expect(page).toContain("https://app.signed.md/oauth/microsoft?next=");
+    expect(page).not.toContain('name="password"');
+
+    // No email login, no setup page, no password changes.
+    expect((await app.request("/login", { method: "POST", body: new URLSearchParams({ email: "admin@automaze.example", password: "correct horse battery" }) })).headers.get("set-cookie")).toBeNull();
+    expect((await app.request("/setup")).headers.get("location")).toBe("/login");
+    const { changePassword, login } = await import("../src/services/auth.ts");
+    expect(await login(ctx, "admin@automaze.example", "correct horse battery")).toBeNull();
+    await expect(changePassword(ctx, user.id, "a new long password")).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    const settings = await (await app.request("/settings", { headers: { cookie: `smd_session=${await createSession(ctx, user.id)}` } })).text();
+    expect(settings).not.toContain("Change password");
+    await ctx.close();
+  });
+
+  it("lets invited people join without a password when email login is off", async () => {
+    const { ctx, user } = await testContext({ ALLOW_EMAIL_LOGIN: "false", OAUTH_GOOGLE_URL: "https://login.acme.example/google" });
+    const { inviteMember, acceptInvitation } = await import("../src/services/team.ts");
+    await inviteMember(ctx, user, { email: "neo@x.example", role: "member" });
+    const inv = await ctx.db.selectFrom("invitations").select("id").where("email", "=", "neo@x.example").executeTakeFirstOrThrow();
+    // The invitation token is only in the email; mint one the same way the service does.
+    const { randomToken, sha256 } = await import("../src/crypto.ts");
+    const token = randomToken(24);
+    await ctx.db.updateTable("invitations").set({ token_hash: sha256(token) }).where("id", "=", inv.id).execute();
+    const page = await (await createApp(ctx).request(`/invite/${token}`)).text();
+    expect(page).not.toContain('name="password"');
+    const cookie = await acceptInvitation(ctx, token, { name: "Neo" });
+    const { sessionActor } = await import("../src/services/auth.ts");
+    expect((await sessionActor(ctx, cookie))?.label).toBe("neo@x.example");
+    expect((await ctx.db.selectFrom("users").select("password_hash").where("email", "=", "neo@x.example").executeTakeFirstOrThrow()).password_hash).toBeNull();
+    await ctx.close();
+  });
+});

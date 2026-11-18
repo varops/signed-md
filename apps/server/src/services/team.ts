@@ -120,13 +120,15 @@ export async function findInvitation(ctx: Ctx, token: string) {
 }
 
 /** Accept an invitation: create the user and log them in. Returns a session token. */
-export async function acceptInvitation(ctx: Ctx, token: string, input: { name: string; password: string }): Promise<string> {
+export async function acceptInvitation(ctx: Ctx, token: string, input: { name: string; password?: string }): Promise<string> {
   const inv = await findInvitation(ctx, token);
   if (!inv) throw new SignedError("INVALID_REQUEST", "This invitation is not valid or has expired. Ask for a new one.");
   const name = input.name.trim().slice(0, 100);
   if (!name) throw new SignedError("INVALID_REQUEST", "Enter your name");
-  if (input.password.length < 10) throw new SignedError("INVALID_REQUEST", "Password must be at least 10 characters");
-  const passwordHash = await hashPassword(input.password);
+  // Without email login there are no passwords. The invitation link proves the email; later logins use Google or Microsoft.
+  const password = !ctx.config.allowEmailLogin ? null : (input.password ?? "");
+  if (password !== null && password.length < 10) throw new SignedError("INVALID_REQUEST", "Password must be at least 10 characters");
+  const passwordHash = password === null ? null : await hashPassword(password);
   const userId = newId("usr");
   await ctx.db.transaction().execute(async (trx) => {
     const taken = await trx.selectFrom("users").select("id").where("email", "=", inv.email).executeTakeFirst();
