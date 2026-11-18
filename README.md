@@ -6,7 +6,7 @@ Signed.md is an open-source, self-hosted e-signature service built for humans, d
 
 An independent open-source product by VarOps.
 
-> **Status:** v1.0 MVP. The end-to-end workflow works and is tested. Have the security, signing validity, and evidence design reviewed before you use it for production legal agreements.
+> **Status:** v1.0. The end-to-end workflow works and is tested. Signed.md creates simple electronic signatures designed to meet the US ESIGN Act and UETA, EU eIDAS and similar laws. See [legal compatibility](docs/legal.md). This is not legal advice: consult an attorney before relying on it for agreements that matter to you.
 
 <p>
   <img src="docs/screenshots/05-signing-intro.png" width="260" alt="Let's start">
@@ -130,6 +130,11 @@ examples           sample templates
 - [Technical specification](docs/spec.md)
 - [REST, MCP, and agent skills](docs/integrations.md)
 - [Self-hosting](docs/self-hosting.md)
+- [Legal compatibility](docs/legal.md)
+
+## Legal
+
+Signed.md creates simple electronic signatures with evidence designed to meet common legal requirements. [Legal compatibility](docs/legal.md) explains how it meets each one, what it doesn't cover, and what senders are responsible for. It is not legal advice, and Signed.md comes without warranty. Whether a signature is valid depends on your country, the document and the facts, so consult an attorney if it matters.
 
 ## Licence
 
