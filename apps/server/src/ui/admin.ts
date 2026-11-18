@@ -124,7 +124,13 @@ export function createAdmin(ctx: Ctx) {
   });
   app.post("/login", loginLimit, async (c) => {
     const b = (await c.req.parseBody()) as FormBody;
-    const s = await login(ctx, str(b, "email"), str(b, "password"));
+    let s;
+    try {
+      s = await login(ctx, str(b, "email"), str(b, "password"));
+    } catch (e) {
+      if (!(e instanceof SignedError)) throw e;
+      return c.html(loginPage(e.message, str(b, "email")), 403);
+    }
     if (!s) return c.html(loginPage("Email or password is not correct.", str(b, "email")), 401);
     setCookie(c, COOKIE, s.token, { httpOnly: true, sameSite: "Lax", secure, path: "/", maxAge: 14 * 86400 });
     return c.redirect("/documents");

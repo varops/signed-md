@@ -64,7 +64,8 @@ async function main(argv: string[]): Promise<number> {
           console.log("PostgreSQL: back up the database with pg_dump. Copying keys and files only.");
         }
         cpSync(join(ctx.config.dataDir, "keys"), join(out, "keys"), { recursive: true });
-        if (existsSync(ctx.config.storagePath)) cpSync(ctx.config.storagePath, join(out, "files"), { recursive: true });
+        if (ctx.config.s3) console.log(`Files are stored in S3 (${ctx.storage.location}). Back them up from the bucket.`);
+        else if (existsSync(ctx.config.storagePath)) cpSync(ctx.config.storagePath, join(out, "files"), { recursive: true });
         const account = await getAccount(ctx).catch(() => null);
         writeFileSync(join(out, "backup.json"), JSON.stringify({ created_at: new Date().toISOString(), account: account?.name ?? null, database: ctx.dialect, key_id: ctx.keys.info.kid }, null, 2));
         console.log(`Backup written to ${out}`);

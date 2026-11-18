@@ -3,7 +3,9 @@ import { SignedError } from "@signed-md/core";
 import { newId, now } from "@signed-md/db";
 import type { Actor, Ctx } from "../context.ts";
 import { recordAudit } from "./audit.ts";
-import { can, userIdOf } from "./permissions.ts";
+import { can, isAccountActive, userIdOf } from "./permissions.ts";
+
+const DISABLED = "This account is disabled.";
 import { hmacHex, randomToken, sha256 } from "../crypto.ts";
 
 const SESSION_DAYS = 14;
@@ -23,6 +25,8 @@ export async function login(ctx: Ctx, email: string, password: string): Promise<
   // Verify against a dummy hash when the user does not exist, so timing does not reveal accounts.
   const ok = await verify(user?.password_hash ?? (await dummyHash()), password).catch(() => false);
   if (!user || !user.password_hash || !ok) return null;
+  // A disabled (read-only) account: only owners can still log in.
+  if (!isAccountActive() && user.role !== "owner") throw new SignedError("PERMISSION_DENIED", DISABLED);
   await ctx.db.updateTable("users").set({ last_login_at: now() }).where("id", "=", user.id).execute();
   return { token: await createSession(ctx, user.id), userId: user.id };
 }
@@ -56,6 +60,7 @@ export async function sessionActor(ctx: Ctx, token: string | undefined): Promise
     .where("sessions.id", "=", sha256(token))
     .executeTakeFirst();
   if (!row || row.status !== "active" || row.expires_at < now()) return null;
+  if (!isAccountActive() && row.role !== "owner") return null;
   return { kind: "user", id: row.user_id, accountId: row.account_id, label: row.email, name: row.name || row.email.split("@")[0]!, role: row.role, theme: (["light", "dark"].includes(row.theme) ? row.theme : "system") as "system" | "light" | "dark" };
 }
 
@@ -143,6 +148,7 @@ export async function apiKeyActor(ctx: Ctx, key: string | undefined, via: "api" 
     .where("api_keys.key_hash", "=", sha256(key))
     .executeTakeFirst();
   if (!row || row.revoked_at || row.status !== "active") return null;
+  if (!isAccountActive() && row.role !== "owner") throw new SignedError("PERMISSION_DENIED", DISABLED);
   // Touch last_used_at at most once a minute.
   const t = now();
   if (!row.last_used_at || Date.parse(t) - Date.parse(row.last_used_at) > 60_000) {

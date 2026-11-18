@@ -4,6 +4,8 @@
  * Table-based with inline styles, because that is what email clients render reliably.
  */
 
+const PRODUCT_URL = "https://signed.md";
+
 export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
@@ -19,6 +21,8 @@ export interface Person {
 
 export interface EmailParts {
   account: string;
+  /** "Powered by" link to signed.md in the footer. Off only on the hosted service's paid plans. Default on. */
+  branding?: boolean;
   /** Banner background as #rrggbb. Text and button colours follow it. */
   bannerColor?: string;
   /** Show this person in the banner circle instead of the icon. */
@@ -135,6 +139,10 @@ export function renderEmail(p: EmailParts): { html: string; text: string } {
         <p style="margin:0;font:13px/1.55 ${FONT};color:#57534e">This email contains a secure link to your document. Please don't share it or forward it. Anyone with the link can view the document and act on your behalf.</p></td></tr>`
     : "";
 
+  const byline = p.branding === false
+    ? `Sent by ${esc(p.account)}. `
+    : `Sent by ${esc(p.account)} with <a href="${PRODUCT_URL}" style="color:#a8a29e;text-decoration:underline">Signed.md</a>, open-source electronic signatures. `;
+
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light only"><title>${esc(p.headline)}</title></head>
 <body style="margin:0;padding:0;background:#f2f1ef">
@@ -151,7 +159,7 @@ export function renderEmail(p: EmailParts): { html: string; text: string } {
     </td></tr>
     <tr><td style="padding:28px 36px 6px">${from}${message}${paragraphs}${details}</td></tr>
     ${security}
-    <tr><td style="padding:26px 36px 30px"><p style="margin:0;font:12px/1.5 ${FONT};color:#a8a29e">Sent by ${esc(p.account)} with Signed.md, open-source electronic signatures. If you weren't expecting this email, you can ignore it.</p></td></tr>
+    <tr><td style="padding:26px 36px 30px"><p style="margin:0;font:12px/1.5 ${FONT};color:#a8a29e">${byline}If you weren't expecting this email, you can ignore it.</p></td></tr>
   </table>
 </td></tr></table>
 </body></html>`;
@@ -165,7 +173,7 @@ export function renderEmail(p: EmailParts): { html: string; text: string } {
     p.details?.length ? "\n" + p.details.map(([k, v]) => `${k}: ${v}`).join("\n") : "",
     p.signers?.length ? `Signers: ${p.signers.map((x) => x.name).join(", ")}` : "",
     p.security ? "\nDo not share this email. It contains a secure link to your document." : "",
-    `\n--\nSent by ${p.account} with Signed.md.`,
+    p.branding === false ? `\n--\nSent by ${p.account}.` : `\n--\nSent by ${p.account} with Signed.md (${PRODUCT_URL}).`,
   ]
     .filter(Boolean)
     .join("\n");

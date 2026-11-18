@@ -9,12 +9,34 @@ export interface SmtpConfig {
   from: string;
 }
 
+export interface S3Config {
+  /** Custom endpoint for S3-compatible services. Empty means AWS. */
+  endpoint: string | null;
+  bucket: string;
+  region: string;
+  /** Key prefix, empty or ending in "/". */
+  prefix: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+}
+
 export interface Config {
   port: number;
   publicUrl: string;
   dataDir: string;
   databaseUrl: string;
   storagePath: string;
+  /** S3 storage for files (and database backups). Null stores files on disk. */
+  s3: S3Config | null;
+  /** Back up the SQLite database and keys to S3. Needs `s3` and SQLite. */
+  backupDb: boolean;
+  /**
+   * Hosted-service controls. Not documented on purpose.
+   * BRANDING=false removes the "Powered by Signed.md" links from emails and signing pages.
+   * ACTIVE=false makes the account read-only: only owners can log in, to view and download.
+   */
+  branding: boolean;
+  active: boolean;
   /** SMTP from the environment. Settings saved in the UI take precedence. */
   smtp: SmtpConfig | null;
   typstBin: string;
@@ -74,6 +96,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (env.SMTP_PASS) smtp.pass = env.SMTP_PASS;
   }
 
+  let s3: S3Config | null = null;
+  if (env.S3_BUCKET) {
+    const endpoint = (env.S3_ENDPOINT ?? "").trim().replace(/\/+$/, "");
+    if (endpoint && !/^https?:\/\/[^/\s]+$/.test(endpoint)) throw new ConfigError(`S3_ENDPOINT must be an http(s) URL with no path, got '${endpoint}'`);
+    if (!env.S3_ACCESS_KEY_ID || !env.S3_SECRET_ACCESS_KEY) throw new ConfigError("S3_BUCKET is set, so S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are required");
+    const prefix = (env.S3_PREFIX ?? "").trim().replace(/^\/+/, "").replace(/\/*$/, "");
+    s3 = {
+      endpoint: endpoint || null,
+      bucket: env.S3_BUCKET,
+      region: env.S3_REGION || "us-east-1",
+      prefix: prefix ? `${prefix}/` : "",
+      accessKeyId: env.S3_ACCESS_KEY_ID,
+      secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+    };
+  }
+
   const level = (env.LOG_LEVEL ?? "info") as Config["logLevel"];
   return {
     port,
@@ -81,6 +119,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dataDir,
     databaseUrl: env.DATABASE_URL ?? `sqlite://${join(dataDir, "signed.db")}`,
     storagePath: resolve(env.STORAGE_PATH ?? join(dataDir, "files")),
+    s3,
+    backupDb: bool(env.BACKUP_DB),
+    branding: bool(env.BRANDING, true),
+    active: bool(env.ACTIVE, true),
     smtp,
     typstBin: env.TYPST_BIN ?? "typst",
     allowInsecureWebhooks: bool(env.ALLOW_INSECURE_WEBHOOKS),

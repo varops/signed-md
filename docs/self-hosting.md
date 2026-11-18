@@ -27,7 +27,12 @@ All settings are environment variables. Invalid values stop the server at start 
 | `PORT` | `3000` | HTTP port. |
 | `DATA_DIR` | `/data` in Docker, `./.data` otherwise | Database, signing keys, files, and the outbox. Back this up. |
 | `DATABASE_URL` | `sqlite://$DATA_DIR/signed.db` | `sqlite:///path/file.db` or `postgres://user:pass@host:5432/db`. |
-| `STORAGE_PATH` | `$DATA_DIR/files` | Where signed PDFs and packages are stored. |
+| `STORAGE_PATH` | `$DATA_DIR/files` | Where signed PDFs and packages are stored, when S3 is not set. |
+| `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | – | Store files in an S3 bucket instead of on disk. See [S3 storage](#s3-storage). |
+| `S3_ENDPOINT` | AWS | For S3-compatible services (Cloudflare R2, Backblaze B2, MinIO, and others), the service's URL, such as `https://<account>.r2.cloudflarestorage.com`. |
+| `S3_REGION` | `us-east-1` | The bucket's region. Some services need it to match exactly. |
+| `S3_PREFIX` | – | Put everything under this folder in the bucket, such as `signed-md`. |
+| `BACKUP_DB` | – | Set to `true` to also back up the SQLite database and keys to S3. See [Backups to S3](#backups-to-s3). |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, `SMTP_SECURE` | – | SMTP server. You can also set SMTP in the UI (Settings), which takes precedence. |
 | `TYPST_BIN` | `typst` | Path to the Typst binary. |
 | `TRUST_PROXY` | – | Set to `1` behind a reverse proxy so client IPs come from `X-Forwarded-For`. |
@@ -63,11 +68,31 @@ Back up three things together: the database, the signing keys, and the files.
 docker compose exec signed node apps/server/src/cli.ts backup /data/backups/$(date +%F)
 ```
 
-This makes an online SQLite backup (safe while running) and copies `keys/` and `files/`. With PostgreSQL, use `pg_dump` for the database; the command still copies keys and files.
+This makes an online SQLite backup (safe while running) and copies `keys/` and `files/`. With PostgreSQL, use `pg_dump` for the database; the command still copies keys and files. With S3 storage, files stay in the bucket and are not copied.
 
 **The signing key matters.** Completed packages carry their public key, so they stay verifiable without it. But the published key at `/.well-known/signed-md-keys.json` is how others know a package came from you. If you lose `keys/`, you lose that link.
 
 To restore, stop the container, put the backup back into the data volume (`signed.db`, `keys/`, `files/`), and start it again.
+
+## S3 storage
+
+Set `S3_BUCKET`, `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` (and `S3_ENDPOINT` for services other than AWS) to store signed PDFs, evidence packages and logos in a bucket instead of `STORAGE_PATH`. Files go under `<prefix>/files/`. Keep the bucket private. People download files through Signed.md, never straight from the bucket.
+
+The key needs to read and write objects only. Signed.md never deletes files. Switching an existing installation to S3 doesn't move old files, so copy `files/` into the bucket under `<prefix>/files/` first.
+
+## Backups to S3
+
+With S3 set, `BACKUP_DB=true` backs up the SQLite database and the `keys/` folder to the same bucket:
+
+- every minute, if anything changed, a compressed snapshot goes to `<prefix>/db/<time>.db.gz`, and `<prefix>/db/latest.json` points to it;
+- once at start and once at shutdown, so a stopped container is always fully backed up;
+- the keys go to `<prefix>/keys/keys.json` whenever they change.
+
+At start, if the database or keys are missing on disk, Signed.md restores them from the latest backup. To move to a new server, start it with the same S3 settings and an empty data volume.
+
+Signed.md never deletes old snapshots. Add a lifecycle rule to the bucket to expire `<prefix>/db/` after, say, 30 days. The keys file holds your private signing key, so keep the bucket private and the credentials safe.
+
+`BACKUP_DB` works with SQLite only. With PostgreSQL, back up with `pg_dump` or your provider's backups. The startup log says whether backups are on.
 
 ## Upgrades
 

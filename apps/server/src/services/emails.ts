@@ -44,6 +44,7 @@ async function sendInvitation(ctx: Ctx, job: EmailJob): Promise<void> {
   const role = { owner: "an owner", admin: "an administrator", member: "a member", viewer: "a viewer" }[inv.role];
   const { html, text } = renderEmail({
     account: account.name,
+    branding: ctx.config.branding,
     hasLogo: logo !== null,
     bannerColor: account.config.branding.banner_color,
     icon: "bell",
@@ -84,7 +85,7 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
   const signerPeople = signers.map((s) => person(s.name, s.email));
 
   const msg = (to: string, subject: string, parts: Omit<EmailParts, "account" | "hasLogo">, attachments: MailAttachment[] = []) => {
-    const { html, text } = renderEmail({ account: account.name, hasLogo: logo !== null, bannerColor: branding.banner_color, ...parts });
+    const { html, text } = renderEmail({ account: account.name, branding: ctx.config.branding, hasLogo: logo !== null, bannerColor: branding.banner_color, ...parts });
     messages.push({ to, subject, html, text, ...(senderEmail ? { replyTo: senderEmail } : {}), attachments: [...inline, ...attachments] });
   };
 

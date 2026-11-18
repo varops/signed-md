@@ -204,7 +204,13 @@ export function createMcpRoutes(ctx: Ctx) {
   app.post("/mcp", async (c) => {
     const header = c.req.header("authorization") ?? "";
     const key = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : undefined;
-    const actor = await apiKeyActor(ctx, key, "mcp");
+    let actor;
+    try {
+      actor = await apiKeyActor(ctx, key, "mcp");
+    } catch (e) {
+      if (!(e instanceof SignedError)) throw e;
+      return c.json({ jsonrpc: "2.0", error: { code: -32001, message: e.message }, id: null }, 403);
+    }
     if (!actor) {
       return c.json({ jsonrpc: "2.0", error: { code: -32001, message: "Missing or invalid API key. Send Authorization: Bearer <key>." }, id: null }, 401);
     }

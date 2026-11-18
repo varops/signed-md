@@ -17,6 +17,7 @@
     "@signpdf/placeholder-plain": "^4.0.0",
     "@signpdf/signpdf": "^4.0.0",
     "@signpdf/utils": "^4.0.0",
+    "aws4fetch": "^1.0.20",
     "basecoat-css": "1.1.0",
     "fflate": "^0.8.3",
     "hono": "^4.13.16",

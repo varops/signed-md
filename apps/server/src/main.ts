@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
+import { startDbBackup } from "./backup.ts";
 import { createContext } from "./bootstrap.ts";
 import { ConfigError, loadConfig } from "./config.ts";
 import { log } from "./log.ts";
@@ -19,9 +20,10 @@ async function main() {
   const ctx = await createContext(config);
   const app = createApp(ctx);
   const server = serve({ fetch: app.fetch, port: config.port, hostname: process.env.HOST ?? "0.0.0.0" }, (info) => {
-    log.info("Signed.md listening", { port: info.port, public_url: config.publicUrl, database: ctx.dialect, smtp: config.smtp ? config.smtp.host : "outbox" });
+    log.info("Signed.md listening", { port: info.port, public_url: config.publicUrl, database: ctx.dialect, smtp: config.smtp ? config.smtp.host : "outbox", storage: ctx.storage.location });
   });
   const worker = config.worker ? startWorker(ctx) : null;
+  const backup = startDbBackup(ctx);
 
   let stopping = false;
   const shutdown = async (signal: string) => {
@@ -30,6 +32,8 @@ async function main() {
     log.info("shutting down", { signal });
     server.close();
     await worker?.stop();
+    // Last snapshot after the worker's final writes, so a stopped container is fully backed up.
+    await backup?.stop();
     await ctx.close();
     process.exit(0);
   };

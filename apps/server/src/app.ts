@@ -16,7 +16,7 @@ import { readLogo } from "./services/branding.ts";
 import { certificatePem, pdfIdentity } from "./services/pdfsign.ts";
 import { checkDownloadSignature, readArtifact } from "./services/finalize.ts";
 import { createAdmin } from "./ui/admin.ts";
-import { setSourceUrl } from "./ui/layout.ts";
+import { setBranding, setSourceUrl } from "./ui/layout.ts";
 import { createSigningRoutes } from "./ui/signing.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -45,6 +45,7 @@ export function createApp(ctx: Ctx) {
   const app = new Hono();
   const assets = loadAssets();
   setSourceUrl(ctx.config.sourceUrl);
+  setBranding(ctx.config.branding);
 
   // Email previews set their own, stricter policy that allows same-origin framing.
   const EMAIL_PREVIEW = /^\/(outbox\/[A-Za-z0-9-]+\/html|settings\/branding\/preview)$/;

@@ -1,5 +1,6 @@
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
+import { ACCOUNT_DISABLED, isAccountActive } from "../services/permissions.ts";
 
 export type H = HtmlEscapedString | Promise<HtmlEscapedString>;
 
@@ -10,9 +11,23 @@ export function setSourceUrl(url: string): void {
   sourceUrl = url;
 }
 
-/** Footer with the source link that AGPL-3.0 section 13 asks network services to offer. */
+let branding = true;
+
+/** Set once at startup from BRANDING (hosted service only). */
+export function setBranding(on: boolean): void {
+  branding = on;
+}
+
+export const PRODUCT_URL = "https://signed.md";
+
+/**
+ * Footer with the source link that AGPL-3.0 section 13 asks network services to offer.
+ * The source link stays even when branding is off.
+ */
 export function footer(): H {
-  return html`<footer class="site-foot">Signed.md · open source under AGPL-3.0 · <a href="${sourceUrl}" rel="noopener">Source</a></footer>`;
+  return branding
+    ? html`<footer class="site-foot">Powered by <a href="${PRODUCT_URL}" rel="noopener">Signed.md</a> · open source under AGPL-3.0 · <a href="${sourceUrl}" rel="noopener">Source</a></footer>`
+    : html`<footer class="site-foot">Open source under AGPL-3.0 · <a href="${sourceUrl}" rel="noopener">Source</a></footer>`;
 }
 
 export interface ShellOptions {
@@ -55,6 +70,7 @@ ${opts.user
 </header>`
   : ""}
 <main class="wrap">
+${opts.user && !isAccountActive() ? alert("warn", ACCOUNT_DISABLED) : ""}
 ${opts.flash ? alert(opts.flash.kind, opts.flash.text) : ""}
 ${body}
 </main>

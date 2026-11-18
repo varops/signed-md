@@ -4,7 +4,7 @@ import type { Actor, Ctx, Role } from "../context.ts";
 import { randomToken, seal, sha256 } from "../crypto.ts";
 import { recordAudit } from "./audit.ts";
 import { createSession, hashPassword } from "./auth.ts";
-import { ROLES, requirePermission, roleOf, userIdOf } from "./permissions.ts";
+import { ROLES, isAccountActive, requirePermission, roleOf, userIdOf } from "./permissions.ts";
 
 const INVITE_DAYS = 7;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -121,6 +121,7 @@ export async function findInvitation(ctx: Ctx, token: string) {
 
 /** Accept an invitation: create the user and log them in. Returns a session token. */
 export async function acceptInvitation(ctx: Ctx, token: string, input: { name: string; password: string }): Promise<string> {
+  if (!isAccountActive()) throw new SignedError("PERMISSION_DENIED", "This account is disabled, so invitations can't be accepted.");
   const inv = await findInvitation(ctx, token);
   if (!inv) throw new SignedError("INVALID_REQUEST", "This invitation is not valid or has expired. Ask for a new one.");
   const name = input.name.trim().slice(0, 100);
