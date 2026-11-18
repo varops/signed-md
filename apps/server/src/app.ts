@@ -17,7 +17,8 @@ import { readLogo } from "./services/branding.ts";
 import { certificatePem, pdfIdentity } from "./services/pdfsign.ts";
 import { checkDownloadSignature, readArtifact } from "./services/finalize.ts";
 import { createAdmin } from "./ui/admin.ts";
-import { setBranding, setHosted, setSourceUrl, shell } from "./ui/layout.ts";
+import { setAssetVersion, setBranding, setHosted, setSourceUrl, shell } from "./ui/layout.ts";
+import { sha256 } from "./crypto.ts";
 import { createSigningRoutes } from "./ui/signing.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -45,6 +46,7 @@ function loadAssets(): Record<string, { body: string; type: string }> {
 export function createApp(ctx: Ctx) {
   const app = new Hono();
   const assets = loadAssets();
+  setAssetVersion(sha256(Object.values(assets).map((a) => a.body).join("\n")).slice(0, 10));
   setSourceUrl(ctx.config.sourceUrl);
   setBranding(ctx.config.branding);
   setHosted(ctx.config.hosted);

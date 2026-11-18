@@ -7,7 +7,7 @@ import { safeEqual } from "../crypto.ts";
 import { WEBHOOK_EVENTS } from "../http/api.ts";
 import { clientIp, rateLimit } from "../http/ratelimit.ts";
 import { getAccount, isSetUp, newWebhookSecret, setup, updateAccount, type InlineDocumentsSetting } from "../services/accounts.ts";
-import { type LimitHit, limitReached } from "../services/usage.ts";
+import { type LimitHit, limitReached, remaining } from "../services/usage.ts";
 import { changePassword, createApiKey, csrfToken, listApiKeys, login, revokeApiKey, SESSION_SECONDS, sessionActor, sessionCookie } from "../services/auth.ts";
 import * as docs from "../services/documents.ts";
 import { listEvents } from "../services/events.ts";
@@ -94,8 +94,8 @@ export function createAdmin(ctx: Ctx) {
     return m ? { kind: m[0], text: m[1] } : null;
   };
   const accountFont = async (): Promise<ContractFont> => (await getAccount(ctx)).config.branding.contract_font;
-  const page = (c: Context<Env>, title: string, active: string, body: H, extra?: { kind: "ok" | "bad" | "warn" | "info"; text: string } | null) =>
-    c.html(shell({ title, user: { email: c.get("user").label, name: c.get("user").name, role: c.get("user").role, theme: c.get("user").theme ?? "system", avatar: ctx.config.hosted ? avatarUrl(ctx.config, true, c.get("user").label, c.get("user").name) : null }, csrf: c.get("csrf"), active, flash: extra ?? flash(c) }, body));
+  const page = async (c: Context<Env>, title: string, active: string, body: H, extra?: { kind: "ok" | "bad" | "warn" | "info"; text: string } | null) =>
+    c.html(shell({ title, usage: can(c.get("user"), "documents.create") ? await remaining(ctx) : null, user: { email: c.get("user").label, name: c.get("user").name, role: c.get("user").role, theme: c.get("user").theme ?? "system", avatar: ctx.config.hosted ? avatarUrl(ctx.config, true, c.get("user").label, c.get("user").name) : null }, csrf: c.get("csrf"), active, flash: extra ?? flash(c) }, body));
 
   // Login cookie: renewed for another hour on every page visit. COOKIE_DOMAIN shares it with
   // subdomains (the hosted service uses .signed.md, so app.signed.md can log people in).

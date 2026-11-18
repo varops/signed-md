@@ -42,8 +42,30 @@ export interface LimitHit {
 }
 
 /** Where to upgrade. app.signed.md shows the right plans for this workspace and user. */
-export function upgradeUrl(ctx: Ctx): string {
-  return `${BILLING_URL}?reason=limit&workspace=${encodeURIComponent(new URL(ctx.config.publicUrl).host)}`;
+export function upgradeUrl(ctx: Ctx, reason: "limit" | "usage" = "limit"): string {
+  return `${BILLING_URL}?reason=${reason}&workspace=${encodeURIComponent(new URL(ctx.config.publicUrl).host)}`;
+}
+
+export interface Remaining {
+  kind: "monthly" | "total";
+  limit: number;
+  left: number;
+  /** For the counter's colour: plenty left, running low, or none left. */
+  level: "ok" | "low" | "out";
+  url: string;
+}
+
+/** Contracts left under the tightest limit, or null when there are no limits (self-hosted). */
+export async function remaining(ctx: Ctx): Promise<Remaining | null> {
+  const { monthlyLimit, totalLimit } = ctx.config;
+  if (monthlyLimit < 0 && totalLimit < 0) return null;
+  const usage = await getUsage(ctx.db);
+  const options: { kind: Remaining["kind"]; limit: number; left: number }[] = [];
+  if (totalLimit >= 0) options.push({ kind: "total", limit: totalLimit, left: Math.max(0, totalLimit - usage.total) });
+  if (monthlyLimit >= 0) options.push({ kind: "monthly", limit: monthlyLimit, left: Math.max(0, monthlyLimit - usage.month) });
+  const tightest = options.reduce((a, b) => (b.left < a.left ? b : a));
+  const level = tightest.left === 0 ? "out" : tightest.left <= 2 || tightest.left < tightest.limit * 0.2 ? "low" : "ok";
+  return { ...tightest, level, url: upgradeUrl(ctx, level === "out" ? "limit" : "usage") };
 }
 
 /** The limit this workspace has reached, if any. */

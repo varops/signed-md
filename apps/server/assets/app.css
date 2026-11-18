@@ -70,6 +70,12 @@ details > summary { cursor: pointer; color: var(--muted-foreground); }
 .nav a.active, .nav a:hover { color: var(--foreground) !important; background: var(--accent); }
 .whoami { color: var(--foreground) !important; white-space: nowrap; text-decoration: none !important; }
 @media (max-width: 700px) { .whoami { display: none; } }
+/* Contracts left under the plan's limit (hosted). */
+.usage-pill { white-space: nowrap; font-size: .8rem; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted-foreground) !important; text-decoration: none !important; }
+.usage-pill:hover { color: var(--foreground) !important; background: var(--accent); }
+.usage-pill[data-level="low"] { color: #b45309 !important; border-color: #f59e0b; background: rgb(245 158 11 / .1); }
+.usage-pill[data-level="out"] { color: var(--destructive) !important; border-color: var(--destructive); background: color-mix(in srgb, var(--destructive) 10%, transparent); }
+.dark .usage-pill[data-level="low"] { color: #fbbf24 !important; }
 /* Hosted account menu: avatar and name, opening a small menu. */
 .account-menu { position: relative; }
 .account-menu > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; padding: 4px 8px 4px 4px; border-radius: 999px; }

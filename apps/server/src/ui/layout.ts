@@ -12,6 +12,18 @@ export function setSourceUrl(url: string): void {
   sourceUrl = url;
 }
 
+let assetVersion = "";
+
+/** Set once at startup from a hash of the assets, so browsers fetch new CSS and JS after an upgrade. */
+export function setAssetVersion(v: string): void {
+  assetVersion = v;
+}
+
+/** Link to a bundled asset, versioned by its content. */
+export function asset(path: string): string {
+  return `/assets/${path}${assetVersion ? `?v=${assetVersion}` : ""}`;
+}
+
 let branding = true;
 
 /** Set once at startup from BRANDING (hosted service only). */
@@ -41,6 +53,8 @@ export function footer(): H {
 export interface ShellOptions {
   title: string;
   user?: { email: string; name: string; role: "owner" | "admin" | "member" | "viewer"; theme?: "system" | "light" | "dark"; avatar?: string | null } | null;
+  /** Contracts left under the plan's limit (hosted). Null hides the counter. */
+  usage?: { kind: "monthly" | "total"; limit: number; left: number; level: "ok" | "low" | "out"; url: string } | null;
   csrf?: string;
   active?: string;
   flash?: { kind: "ok" | "bad" | "warn" | "info"; text: string } | null;
@@ -63,9 +77,9 @@ export function shell(opts: ShellOptions, body: H): H {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${opts.title} · Signed.md</title>
-<script src="/assets/theme.js"></script>
-<link rel="stylesheet" href="/assets/vendor/basecoat.css">
-<link rel="stylesheet" href="/assets/app.css">
+<script src="${asset("theme.js")}"></script>
+<link rel="stylesheet" href="${asset("vendor/basecoat.css")}">
+<link rel="stylesheet" href="${asset("app.css")}">
 <link rel="icon" href="data:image/svg+xml,${raw(encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#1c1917"/><path d="M8 20c3-6 5-9 7-9s0 9 2 9 3-5 7-5" stroke="#fff" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>'))}">
 </head>
 <body>
@@ -73,6 +87,7 @@ ${opts.user
   ? html`<header class="topbar">
   <a class="brand" href="/documents">Signed<span>.md</span></a>
   <nav class="nav">${NAV.filter(([k, , , roles]) => roles.includes(opts.user!.role) && !(hosted && k === "outbox")).map(([k, href, label]) => html`<a href="${href}" class="${opts.active === k ? "active" : ""}">${label}</a>`)}</nav>
+  ${opts.usage ? usagePill(opts.usage) : ""}
   ${hosted
     ? accountMenu(opts.user, opts.csrf ?? "")
     : html`<a class="whoami small" href="/settings" title="${opts.user.email}">${opts.user.name} <span class="muted">· ${opts.user.role === "admin" ? "administrator" : opts.user.role}</span></a>
@@ -84,9 +99,16 @@ ${opts.flash ? alert(opts.flash.kind, opts.flash.text) : ""}
 ${body}
 </main>
 ${footer()}
-<script src="/assets/app.js" defer></script>
+<script src="${asset("app.js")}" defer></script>
 </body>
 </html>`;
+}
+
+/** Contracts left, linking to billing. Shown only when the plan has a limit. */
+function usagePill(u: NonNullable<ShellOptions["usage"]>): H {
+  const text = u.left === 0 ? "No contracts left" : `${u.left} of ${u.limit} left${u.kind === "monthly" ? " this month" : ""}`;
+  const title = u.kind === "monthly" ? `Your plan includes ${u.limit} contracts a month. Upgrade for more.` : `Your plan includes ${u.limit} contracts. Upgrade for more.`;
+  return html`<a class="usage-pill" data-level="${u.level}" href="${u.url}" title="${title}">${text}</a>`;
 }
 
 /** Hosted: the person's avatar and name, opening a menu with their account on app.signed.md and log out. */

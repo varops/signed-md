@@ -77,3 +77,41 @@ describe("TOTAL_LIMIT", async () => {
     await expect(createDocument(ctx, user, inline(2))).rejects.toThrow(/used all 10 contracts in its plan/);
   });
 });
+
+describe("contracts left", () => {
+  it("is hidden without limits, and follows the tightest limit", async () => {
+    const { remaining } = await import("../src/services/usage.ts");
+    const none = await testContext();
+    expect(await remaining(none.ctx)).toBeNull();
+    await none.ctx.close();
+
+    const { ctx } = await testContext({ TOTAL_LIMIT: "10", MONTHLY_LIMIT: "5" });
+    expect(await remaining(ctx)).toMatchObject({ kind: "monthly", limit: 5, left: 5, level: "ok" });
+    await ctx.db.insertInto("usage_counters").values({ period: "2020-01", sent: 7 }).execute();
+    expect(await remaining(ctx)).toMatchObject({ kind: "total", limit: 10, left: 3, level: "ok" });
+    await ctx.db.insertInto("usage_counters").values({ period: currentPeriod(), sent: 1 }).execute();
+    expect(await remaining(ctx)).toMatchObject({ kind: "total", left: 2, level: "low" });
+    await ctx.db.updateTable("usage_counters").set({ sent: 3 }).where("period", "=", currentPeriod()).execute();
+    const out = await remaining(ctx);
+    expect(out).toMatchObject({ kind: "total", left: 0, level: "out" });
+    expect(out!.url).toContain("reason=limit");
+    await ctx.close();
+  });
+
+  it("shows a pill in the top bar for people who can send", async () => {
+    const { ctx, user } = await testContext({ TOTAL_LIMIT: "10" });
+    await ctx.db.insertInto("usage_counters").values({ period: currentPeriod(), sent: 3 }).execute();
+    const app = createApp(ctx);
+    const page = await (await app.request("/documents", { headers: { cookie: `smd_session=${await createSession(ctx, user.id)}` } })).text();
+    expect(page).toContain('class="usage-pill" data-level="ok"');
+    expect(page).toContain(">7 of 10 left<");
+    expect(page).toContain("billing?reason=usage&amp;workspace=localhost%3A3999");
+
+    const { newId, now } = await import("@signed-md/db");
+    const vid = newId("usr");
+    await ctx.db.insertInto("users").values({ id: vid, account_id: user.accountId, email: "vic@x.example", name: "Vic", role: "viewer", password_hash: null, status: "active", created_at: now() } as never).execute();
+    const viewer = await (await app.request("/documents", { headers: { cookie: `smd_session=${await createSession(ctx, vid)}` } })).text();
+    expect(viewer).not.toContain("usage-pill");
+    await ctx.close();
+  });
+});
