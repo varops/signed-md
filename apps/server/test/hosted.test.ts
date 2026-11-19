@@ -33,7 +33,7 @@ describe("BRANDING", () => {
     setBranding(false);
     const plain = String(await footer());
     expect(plain).not.toContain("Powered by");
-    expect(plain).toContain("Source"); // the AGPL source link always stays
+    expect(plain).toContain(">Source</a>"); // self-hosted: the AGPL source link stays
     setBranding(true);
   });
 });
@@ -98,8 +98,12 @@ describe("HOSTED", async () => {
     const app = createApp(ctx);
     const cookie = `smd_session=${await createSession(ctx, owner.id)}`;
     const page = await (await app.request("/settings", { headers: { cookie } })).text();
-    expect(page).toContain("API keys");
+    expect(page).toContain("Your profile");
     expect(page).not.toContain("Signing key");
+    // API keys and webhooks live on the Agents page.
+    const agents = await (await app.request("/agentic", { headers: { cookie } })).text();
+    expect(agents).toContain("API keys");
+    expect(agents).toContain('action="/settings/webhook"');
     expect(page).not.toContain('href="/outbox"');
     expect((await app.request("/outbox", { headers: { cookie } })).status).toBe(404);
   });
@@ -180,21 +184,40 @@ describe("login with Google or Microsoft", () => {
   });
 });
 
+describe("public footer", () => {
+  it("shows Powered by with our logo, then the privacy policy when HOSTED or the source link otherwise", async () => {
+    const hosted = await testContext({ HOSTED: "true", SMTP_HOST: "smtp.host.example" });
+    const page = await (await createApp(hosted.ctx).request("/login")).text();
+    expect(page).toContain('class="foot-logo"');
+    expect(page).toContain('href="https://signed.md/privacy"');
+    expect(page).not.toContain(">Source</a>");
+    await hosted.ctx.close();
+    const plain = await testContext();
+    const own = await (await createApp(plain.ctx).request("/login")).text();
+    expect(own).toContain('class="foot-logo"');
+    expect(own).toContain(">Source</a>");
+    expect(own).not.toContain("signed.md/privacy");
+    await plain.ctx.close();
+  });
+});
+
 describe("account menu", () => {
-  it("shows avatar, name, Manage account and Log out when HOSTED, and the plain name otherwise", async () => {
+  it("shows the person in the sidebar, with Manage account when HOSTED and their settings otherwise", async () => {
     const hosted = await testContext({ HOSTED: "true", SMTP_HOST: "smtp.host.example" });
     const page = await (await createApp(hosted.ctx).request("/documents", { headers: { cookie: `smd_session=${await createSession(hosted.ctx, hosted.user.id)}` } })).text();
-    expect(page).toContain('class="account-menu"');
+    expect(page).toContain('class="user-menu"');
     expect(page).toContain('href="https://app.signed.md/account"');
     expect(page).toMatch(/action="\/logout"/);
     expect(page).toContain("unavatar.io/admin%40automaze.example");
-    expect(page).not.toContain('class="whoami');
+    expect(page).not.toContain(">Outbox<");
     await hosted.ctx.close();
 
     const plain = await testContext();
     const own = await (await createApp(plain.ctx).request("/documents", { headers: { cookie: `smd_session=${await createSession(plain.ctx, plain.user.id)}` } })).text();
-    expect(own).toContain('class="whoami');
-    expect(own).not.toContain("account-menu");
+    expect(own).toContain('class="user-menu"');
+    expect(own).toMatch(/action="\/logout"/);
+    expect(own).not.toContain("app.signed.md/account");
+    expect(own).toContain(">Outbox<");
     await plain.ctx.close();
   });
 });

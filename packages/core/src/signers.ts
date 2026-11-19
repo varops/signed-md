@@ -60,13 +60,17 @@ export function validateSigners(
       issues.push({ code: "SIGNER_INVALID", field: `${path}.email`, message: `Signer '${key || i}' needs a valid email address` });
       ok = false;
     }
-    if (typeof order !== "number" || !Number.isInteger(order) || order < 1) {
-      issues.push({ code: "SIGNER_INVALID", field: `${path}.order`, message: "Signing order must be a positive integer" });
+    if (typeof order !== "number" || !Number.isInteger(order) || order < 0) {
+      issues.push({ code: "SIGNER_INVALID", field: `${path}.order`, message: "Signing order must be 0 (any order) or a positive integer" });
       ok = false;
     }
     seen.add(key);
     if (ok) signers.push({ key, name, email, order: order as number });
   });
+
+  // Order 0 means "any order" (everyone signs at once). It is all or nothing: no mixing with 1, 2, ...
+  const mixed = mixedOrderIssue(signers);
+  if (mixed) issues.push(mixed);
 
   const used = new Map<string, string>();
   for (const f of fields) if (f.kind === "signer" && !used.has(f.signer!)) used.set(f.signer!, f.key);
@@ -91,6 +95,17 @@ export function validateSigners(
   }
 
   return { signers, issues };
+}
+
+/**
+ * Order 0 means "any order": everyone signs at once. It can't be mixed with numbered orders, so
+ * either every signer has 0 or none does. Returns the problem, or null when the orders are fine.
+ */
+export function mixedOrderIssue(signers: { order?: number }[]): Issue | null {
+  const orders = signers.map((s) => s.order ?? 1);
+  return orders.includes(0) && orders.some((o) => o !== 0)
+    ? { code: "SIGNER_INVALID", field: "signers.order", message: "Use order 0 (any order) for every signer, or a number for every signer. They can't be mixed." }
+    : null;
 }
 
 /** Group signers by order, ascending. Each group signs in parallel. */

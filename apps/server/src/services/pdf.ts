@@ -13,7 +13,7 @@ import type { SignatureValue, SignerFieldValue } from "./signing.ts";
 import { CONTRACT_FONTS, type ContractFont } from "./fonts.ts";
 
 const run = promisify(execFile);
-/** Bundled fonts (OFL): Source Serif 4 for the agreement, Inter for headings and the certificate. */
+/** Bundled fonts (OFL): STIX Two Text or Arimo (like Arial) for the agreement, Arimo for the certificate. */
 const FONT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "assets", "fonts");
 
 /** Escape text for Typst markup: every non-alphanumeric, non-space character gets a backslash. */
@@ -103,7 +103,8 @@ function node(n: Nodes, slots: FieldDef[], values: Map<string, SignerFieldValue>
     const cols = (n as unknown as ColumnsNode).children.map(
       (col) => `[\n${(col.children as RootContent[]).map((c) => node(c, slots, values, assets)).join("\n\n")}\n]`,
     );
-    return `#block(breakable: false, width: 100%, grid(columns: (${cols.map(() => "1fr").join(", ")},), column-gutter: 22pt, ${cols.join(", ")}))`;
+    // A bit more room above, so a signature row is set apart from the text before it.
+    return `#block(breakable: false, width: 100%, above: 2.2em, grid(columns: (${cols.map(() => "1fr").join(", ")},), column-gutter: 22pt, ${cols.join(", ")}))`;
   }
   switch (n.type) {
     case "root":
@@ -219,7 +220,7 @@ export function buildTypst(input: PdfInput): { source: string; assets: Asset[] }
       assets.push({ name, data: Buffer.from(sig.image.split(",")[1] ?? "", "base64") });
       return `#box(height: 1.1cm, image(${typstString(name)}, height: 1.1cm))`;
     }
-    return `#text(font: "Source Serif 4", style: "italic", size: 16pt)[${t(sig.text)}]`;
+    return `#text(font: "Nothing You Could Do", size: 18pt)[${t(sig.text)}]`;
   };
 
   const signerBlocks = input.signers
@@ -261,12 +262,12 @@ export function buildTypst(input: PdfInput): { source: string; assets: Asset[] }
 #let rule = rgb("#d6d3d1")
 #let wash = rgb("#f5f5f4")
 #set page(paper: "a4", margin: (x: 2.4cm, top: 2.4cm, bottom: 2.6cm), footer: context [
-  #set text(font: "Inter", size: 7pt, fill: muted)
+  #set text(font: "Arimo", size: 7pt, fill: muted)
   ${footer} #h(1fr) Page #counter(page).display() of #counter(page).final().first()
 ])
-#set text(font: ${typstString(CONTRACT_FONTS[input.font].pdf)}, size: ${input.font === "sans-serif" ? "10pt" : "10.5pt"}, fill: ink, lang: "en", hyphenate: false)
+#set text(font: ${typstString(CONTRACT_FONTS[input.font].pdf)}, size: ${input.font === "sans-serif" ? "10pt" : "11.25pt"}${input.font === "serif" ? ", tracking: -0.005em" : ""}, fill: ink, lang: "en", hyphenate: false)
 #set par(justify: false, leading: 0.72em, spacing: 1.15em)
-#show heading: set text(font: "Inter", weight: "semibold", fill: ink)
+#show heading: set text(weight: "bold", fill: ink)
 #show heading.where(level: 1): it => block(below: 16pt)[#text(size: 19pt, it.body)]
 #show heading.where(level: 2): it => block(above: 20pt, below: 9pt)[#text(size: 12.5pt, it.body)]
 #show heading.where(level: 3): it => block(above: 16pt, below: 7pt)[#text(size: 10.5pt, it.body)]
@@ -274,14 +275,14 @@ export function buildTypst(input: PdfInput): { source: string; assets: Asset[] }
 #set enum(indent: 4pt, body-indent: 8pt, spacing: 0.75em)
 #set table(stroke: 0.5pt + rule, inset: (x: 8pt, y: 7pt), fill: (_, y) => if y == 0 { wash })
 #show table: set par(justify: false)
-#show table.cell.where(y: 0): set text(font: "Inter", size: 9pt, weight: "semibold")
+#show table.cell.where(y: 0): set text(size: 9pt, weight: "bold")
 #show raw: set text(font: "DejaVu Sans Mono", size: 9pt)
 #show strong: set text(weight: "semibold")
 
 ${body}
 
 #pagebreak()
-#set text(font: "Inter", size: 8.5pt)
+#set text(font: "Arimo", size: 8.5pt)
 #set par(leading: 0.6em, spacing: 0.9em)
 #grid(columns: (1fr, auto), align: (left + bottom, right + bottom),
   text(size: 17pt, weight: "semibold")[Certificate of completion],

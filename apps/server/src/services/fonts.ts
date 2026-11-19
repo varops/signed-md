@@ -1,10 +1,11 @@
 /**
  * Contract font families. Accounts pick a default; each document can override it.
  * Change the faces here: the PDF uses `pdf` (bundled fonts in assets/fonts), the signing page uses `css`.
+ * Both are bundled under the OFL: STIX Two Text (serif, set 0.5% tighter) and Arimo (the same metrics as Arial).
  */
 export const CONTRACT_FONTS = {
-  serif: { label: "Serif", pdf: "Source Serif 4", css: "smd-font-serif" },
-  "sans-serif": { label: "Sans-serif", pdf: "Inter", css: "smd-font-sans" },
+  serif: { label: "Serif", pdf: "STIX Two Text", css: "smd-font-serif" },
+  "sans-serif": { label: "Sans-serif", pdf: "Arimo", css: "smd-font-sans" },
 } as const;
 
 export type ContractFont = keyof typeof CONTRACT_FONTS;

@@ -22,7 +22,7 @@ describe("editor preview", async () => {
     expect(out).toContain('<div class="smd-columns smd-columns-2">');
     expect(out).toContain("signature – a");
     expect(out).toContain('class="smd-field smd-field-value"');
-    expect(out).toMatch(/<article class="doc [^"]*">/);
+    expect(out).toMatch(/<article class="doc [^"]*"[^>]*>/);
     expect(out).not.toContain("<html");
     expect(out).not.toContain("Fix before saving");
   });

@@ -58,7 +58,9 @@ describe("contract font", async () => {
   it("renders the PDF body in the chosen family", async () => {
     const serif = await doc("serif");
     const sans = await doc("sans-serif");
-    expect(await pdfFonts(serif.id, `font${n - 1}@x.example`)).toContain("SourceSerif4");
-    expect(await pdfFonts(sans.id, `font${n}@x.example`)).not.toContain("SourceSerif4");
+    // Serif is STIX Two Text, sans-serif Arimo. The certificate page uses Arimo in both.
+    const serifFonts = await pdfFonts(serif.id, `font${n - 1}@x.example`);
+    expect(serifFonts).toContain("STIXTwoText");
+    expect(await pdfFonts(sans.id, `font${n}@x.example`)).not.toContain("STIXTwoText");
   }, 60_000);
 });

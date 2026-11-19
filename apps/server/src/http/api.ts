@@ -10,6 +10,7 @@ import * as docs from "../services/documents.ts";
 import { listArtifacts } from "../services/finalize.ts";
 import { requirePermission } from "../services/permissions.ts";
 import * as tpl from "../services/templates.ts";
+import * as folders from "../services/folders.ts";
 import { errorResponse, statusFor } from "./errors.ts";
 import { rateLimit } from "./ratelimit.ts";
 import * as S from "./schemas.ts";
@@ -87,9 +88,22 @@ export function createApi(ctx: Ctx) {
 
   app.openapi(
     createRoute({ method: "get", path: "/v1/templates", tags: ["Templates"], summary: "List templates", security,
-      request: { query: z.object({ archived: z.enum(["true", "false"]).optional() }) },
+      request: { query: z.object({
+        archived: z.enum(["true", "false"]).optional(),
+        folder_id: z.string().optional().openapi({ description: 'A folder id, or "none" for templates in no folder.' }),
+      }) },
       responses: { 200: ok(z.object({ data: z.array(S.TemplateSchema) })), ...common } }),
-    async (c) => c.json({ data: await tpl.listTemplates(ctx, { archived: c.req.valid("query").archived === "true" }) }, 200),
+    async (c) => {
+      const q = c.req.valid("query");
+      return c.json({ data: await tpl.listTemplates(ctx, { archived: q.archived === "true", ...(q.folder_id ? { folder: q.folder_id } : {}) }) }, 200);
+    },
+  );
+
+  app.openapi(
+    createRoute({ method: "post", path: "/v1/templates/{id}/move", tags: ["Templates"], summary: "File a template in a folder",
+      description: "Owners and administrators only. Pass null to take it out of its folder.", security,
+      request: { params: idParam, ...body(S.MoveSchema) }, responses: { 200: ok(S.TemplateSchema), 404: err("Not found"), ...common } }),
+    async (c) => c.json(await tpl.moveTemplate(ctx, c.get("actor"), c.req.valid("param").id, c.req.valid("json").folder_id), 200),
   );
 
   app.openapi(
@@ -150,11 +164,13 @@ export function createApi(ctx: Ctx) {
         q: z.string().max(200).optional().openapi({ description: "Search title, signer name, or email" }),
         limit: z.coerce.number().int().min(1).max(100).optional(),
         before: z.string().optional().openapi({ description: "Cursor: next_before from the previous page" }),
+        folder_id: z.string().optional().openapi({ description: 'A folder id, or "none" for documents in no folder.' }),
       }) },
       responses: { 200: ok(z.object({ data: z.array(S.DocumentSchema), next_before: z.string().nullable() })), ...common } }),
     async (c) => {
       const q = c.req.valid("query");
-      return c.json(await docs.listDocuments(ctx, c.get("actor"), { ...q, archived: q.archived === "true", mine: q.mine === "true" }), 200);
+      const { folder_id, ...rest } = q;
+      return c.json(await docs.listDocuments(ctx, c.get("actor"), { ...rest, archived: q.archived === "true", mine: q.mine === "true", ...(folder_id ? { folder: folder_id } : {}) }), 200);
     },
   );
 
@@ -228,6 +244,48 @@ export function createApi(ctx: Ctx) {
       async (c) => c.json(await docs.setDocumentArchived(ctx, c.get("actor"), c.req.valid("param").id, archived), 200),
     );
   }
+
+  app.openapi(
+    createRoute({ method: "post", path: "/v1/documents/{id}/move", tags: ["Documents"], summary: "File a document in a folder",
+      description: "Works in any status: folders only organise, and moving doesn't change the revision. Pass null to take it out of its folder.",
+      security, request: { params: idParam, ...body(S.MoveSchema) }, responses: { 200: ok(S.DocumentSchema), 404: err("Not found"), ...common } }),
+    async (c) => c.json(await docs.moveDocument(ctx, c.get("actor"), c.req.valid("param").id, c.req.valid("json").folder_id), 200),
+  );
+
+  // ---- Folders ----
+
+  app.openapi(
+    createRoute({ method: "get", path: "/v1/folders", tags: ["Folders"], summary: "List folders", security,
+      request: { query: z.object({ kind: z.enum(["template", "document"]) }) },
+      responses: { 200: ok(z.object({ data: z.array(S.FolderSchema) })), ...common } }),
+    async (c) => {
+      const q = c.req.valid("query");
+      return c.json({ data: await folders.listFolders(ctx, q.kind) }, 200);
+    },
+  );
+
+  app.openapi(
+    createRoute({ method: "post", path: "/v1/folders", tags: ["Folders"], summary: "Create a folder",
+      description: "Template folders need an owner or administrator. Document folders need permission to create documents.", security,
+      request: { ...body(S.FolderCreateSchema), headers: idemHeader }, responses: { 201: ok(S.FolderSchema, "Created"), ...common } }),
+    async (c) => {
+      const b = c.req.valid("json");
+      return c.json(await folders.createFolder(ctx, c.get("actor"), b.kind, b.name), 201);
+    },
+  );
+
+  app.openapi(
+    createRoute({ method: "patch", path: "/v1/folders/{id}", tags: ["Folders"], summary: "Rename a folder", security,
+      request: { params: idParam, ...body(S.FolderUpdateSchema) }, responses: { 200: ok(S.FolderSchema), 404: err("Not found"), ...common } }),
+    async (c) => c.json(await folders.renameFolder(ctx, c.get("actor"), c.req.valid("param").id, c.req.valid("json").name), 200),
+  );
+
+  app.openapi(
+    createRoute({ method: "delete", path: "/v1/folders/{id}", tags: ["Folders"], summary: "Delete a folder",
+      description: "Everything in the folder moves to the top level. No template or document is deleted.", security,
+      request: { params: idParam }, responses: { 200: ok(z.object({ folder: S.FolderSchema, moved: z.number().int().openapi({ description: "How many templates or documents moved to the top level" }) })), 404: err("Not found"), ...common } }),
+    async (c) => c.json(await folders.deleteFolder(ctx, c.get("actor"), c.req.valid("param").id), 200),
+  );
 
   app.openapi(
     createRoute({ method: "get", path: "/v1/documents/{id}/artifacts", tags: ["Documents"], summary: "Get completed artifacts",

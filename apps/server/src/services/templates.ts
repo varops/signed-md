@@ -3,12 +3,15 @@ import { newId, now } from "@signed-md/db";
 import { type Actor, actorRef, actorVia, type Ctx } from "../context.ts";
 import { recordAudit } from "./audit.ts";
 import { can, requirePermission } from "./permissions.ts";
+import { folderFor, folderNames } from "./folders.ts";
 import { sha256 } from "../crypto.ts";
 
 export interface TemplateInput {
   name: string;
   description?: string;
   source: string;
+  /** A template folder to file it in (new templates only). */
+  folder_id?: string | null;
 }
 
 export interface TemplateVersionView {
@@ -30,6 +33,7 @@ export interface TemplateView {
   /** Latest approved version, used by default for new documents. Null until a human approves one. */
   approved_version: number | null;
   archived: boolean;
+  folder: { id: string; name: string } | null;
   created_at: string;
   versions: TemplateVersionView[];
 }
@@ -60,6 +64,7 @@ export async function createTemplate(ctx: Ctx, actor: Actor, input: TemplateInpu
   const approve = input.approve === true && actor.kind !== "apikey" && can(actor, "templates.approve");
   const id = newId("tpl");
   const t = now();
+  const folderId = await folderFor(ctx, "template", input.folder_id);
   await ctx.db.transaction().execute(async (trx) => {
     await trx
       .insertInto("templates")
@@ -68,6 +73,7 @@ export async function createTemplate(ctx: Ctx, actor: Actor, input: TemplateInpu
         account_id: accountIdOf(actor),
         name,
         description: input.description?.trim() ?? "",
+        folder_id: folderId,
         current_version: 1,
         created_via: actorVia(actor),
         created_at: t,
@@ -198,14 +204,26 @@ export async function getTemplate(ctx: Ctx, templateId: string): Promise<Templat
     current_version: Number(tpl.current_version),
     approved_version: approved ? Number(approved.version) : null,
     archived: tpl.archived_at !== null,
+    folder: tpl.folder_id ? { id: tpl.folder_id, name: (await folderNames(ctx, [tpl.folder_id])).get(tpl.folder_id) ?? "" } : null,
     created_at: tpl.created_at,
     versions: versions.map((v) => ({ ...v, version: Number(v.version) })),
   };
 }
 
-export async function listTemplates(ctx: Ctx, opts: { archived?: boolean } = {}): Promise<TemplateView[]> {
+/** File a template in a folder, or take it out (null). Owners and administrators only. */
+export async function moveTemplate(ctx: Ctx, actor: Actor, templateId: string, folderId: string | null): Promise<TemplateView> {
+  requirePermission(actor, "templates.manage");
+  await getTemplate(ctx, templateId);
+  await ctx.db.updateTable("templates").set({ folder_id: await folderFor(ctx, "template", folderId) }).where("id", "=", templateId).execute();
+  return getTemplate(ctx, templateId);
+}
+
+/** `folder`: a folder id, or "none" for templates in no folder. */
+export async function listTemplates(ctx: Ctx, opts: { archived?: boolean; folder?: string } = {}): Promise<TemplateView[]> {
   let q = ctx.db.selectFrom("templates").select("id").orderBy("created_at", "desc");
   q = opts.archived ? q.where("archived_at", "is not", null) : q.where("archived_at", "is", null);
+  if (opts.folder === "none") q = q.where("folder_id", "is", null);
+  else if (opts.folder) q = q.where("folder_id", "=", opts.folder);
   const rows = await q.execute();
   return Promise.all(rows.map((r) => getTemplate(ctx, r.id)));
 }

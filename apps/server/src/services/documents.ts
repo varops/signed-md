@@ -10,6 +10,7 @@ import {
   transition,
   formatValue,
   type DocumentStatus,
+  mixedOrderIssue,
 } from "@signed-md/core";
 import { type Database, type DocumentTable, enqueueJob, newId, now, type SignerTable } from "@signed-md/db";
 import type { Kysely, Selectable, Transaction } from "kysely";
@@ -23,6 +24,7 @@ import { checkMessageVariables } from "./messagevars.ts";
 import { appendEvent } from "./events.ts";
 import { resolveVersionForDocument } from "./templates.ts";
 import { assertWebhookUrlShape } from "./webhooks.ts";
+import { folderFor, folderNames } from "./folders.ts";
 import { countSent, requireUnderLimit } from "./usage.ts";
 
 export type DocRow = Selectable<DocumentTable>;
@@ -51,6 +53,8 @@ export interface CreateDocumentInput {
   font?: string;
   auto_send?: boolean;
   approved_by?: string;
+  /** A document folder to file it in. Organises only: not part of the revision. */
+  folder_id?: string | null;
 }
 
 export interface UpdateDocumentInput {
@@ -145,6 +149,12 @@ function checkSignerShape(signers: SignerInput[]): void {
   }
 }
 
+/** Order 0 (any order) is for every signer or none. */
+function checkSigningOrder(signers: SignerInput[]): void {
+  const issue = mixedOrderIssue(signers);
+  if (issue) throw new SignedError("SIGNER_INVALID", issue.message, [issue]);
+}
+
 function titleFrom(source: string, fallback: string): string {
   const m = /^#\s+(.+)$/m.exec(source.replace(/^---\n[\s\S]*?\n---\n/, ""));
   return (m?.[1] ?? fallback).replace(/\{\{[^}]*\}\}/g, "").trim().slice(0, 200) || fallback;
@@ -195,6 +205,7 @@ export async function createDocument(ctx: Ctx, actor: Actor, input: CreateDocume
   }
   checkSettings(input, ctx);
   checkSignerShape(input.signers);
+  checkSigningOrder(input.signers);
 
   let source: string;
   let templateVersionId: string | null = null;
@@ -250,6 +261,7 @@ export async function createDocument(ctx: Ctx, actor: Actor, input: CreateDocume
     revoked_at: null,
     revoke_reason: null,
     archived_at: null,
+    folder_id: await folderFor(ctx, "document", input.folder_id),
   };
   const prepared = prepareFrom(base, input.signers);
   base.content = prepared.content;
@@ -303,6 +315,7 @@ export async function updateDocument(ctx: Ctx, actor: Actor, id: string, input: 
       }
     }
     if (input.remove_signers) signers = signers.filter((s) => !input.remove_signers!.includes(s.key));
+    checkSigningOrder(signers);
 
     const next: DocRow = {
       ...doc,
@@ -629,6 +642,15 @@ export async function resendToSigner(ctx: Ctx, actor: Actor, id: string, key: st
   return getDocument(ctx, actor, id);
 }
 
+/** File a document in a folder, or take it out (null). Allowed in any status: folders only organise. */
+export async function moveDocument(ctx: Ctx, actor: Actor, id: string, folderId: string | null): Promise<DocumentView> {
+  const doc = await loadDocument(ctx.db, id);
+  requireManageDocument(actor, doc);
+  const folder = await folderFor(ctx, "document", folderId);
+  await ctx.db.updateTable("documents").set({ folder_id: folder }).where("id", "=", id).execute();
+  return getDocument(ctx, actor, id);
+}
+
 export async function setDocumentArchived(ctx: Ctx, actor: Actor, id: string, archived: boolean): Promise<DocumentView> {
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, id);
@@ -654,6 +676,31 @@ export async function approveInlineDocument(ctx: Ctx, actor: Actor, id: string, 
       .where("id", "=", id)
       .execute();
     await appendEvent(trx, id, "document.inline_approved", actor, { revision });
+  });
+  return getDocument(ctx, actor, id);
+}
+
+/**
+ * UI only: turn a template draft into an inline draft, so its text can be edited. The approved
+ * template no longer protects the language, so the inline rules apply from here on (including
+ * owner approval when the account requires it). The template version stays as the starting point.
+ */
+export async function convertToInline(ctx: Ctx, actor: Actor, id: string): Promise<DocumentView> {
+  if (actor.kind !== "user") throw new SignedError("PERMISSION_DENIED", "Only a person can do this, in the web UI");
+  const account = await getAccount(ctx);
+  if (account.config.inline_documents === "disabled") throw new SignedError("INLINE_DISABLED", "Inline documents are disabled for this account. Change the template instead.");
+  requirePermission(actor, "documents.create");
+  await ctx.db.transaction().execute(async (trx) => {
+    const doc = await lockDocument(ctx, trx, id);
+    requireManageDocument(actor, doc);
+    if (doc.status !== "draft") throw new SignedError("DOCUMENT_NOT_DRAFT", "Only drafts can be edited. Revoke and create a new document instead.");
+    if (doc.source_kind === "inline") return;
+    await trx
+      .updateTable("documents")
+      .set({ source_kind: "inline", inline_approved_by: null, inline_approved_at: null, inline_approved_revision: null, updated_at: now() })
+      .where("id", "=", id)
+      .execute();
+    await appendEvent(trx, id, "document.converted_to_inline", actor, { template_version_id: doc.template_version_id, revision: doc.revision });
   });
   return getDocument(ctx, actor, id);
 }
@@ -698,6 +745,7 @@ export interface DocumentView {
   message: string | null;
   metadata: Record<string, unknown>;
   archived: boolean;
+  folder: { id: string; name: string } | null;
   created_at: string;
   updated_at: string;
   sent_at: string | null;
@@ -773,6 +821,7 @@ export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], 
     message: doc.signer_message,
     metadata: JSON.parse(doc.metadata) as Record<string, unknown>,
     archived: doc.archived_at !== null,
+    folder: doc.folder_id ? { id: doc.folder_id, name: (await folderNames(ctx, [doc.folder_id])).get(doc.folder_id) ?? "" } : null,
     created_at: doc.created_at,
     updated_at: doc.updated_at,
     sent_at: doc.sent_at,
@@ -792,6 +841,8 @@ export interface ListDocumentsOptions {
   q?: string;
   limit?: number;
   before?: string;
+  /** A folder id, or "none" for documents in no folder. */
+  folder?: string;
 }
 
 export async function listDocuments(ctx: Ctx, actor: Actor, opts: ListDocumentsOptions = {}): Promise<{ data: DocumentView[]; next_before: string | null }> {
@@ -799,6 +850,8 @@ export async function listDocuments(ctx: Ctx, actor: Actor, opts: ListDocumentsO
   let q = ctx.db.selectFrom("documents").selectAll().orderBy("created_at", "desc").orderBy("id", "desc").limit(limit + 1);
   q = opts.archived ? q.where("archived_at", "is not", null) : q.where("archived_at", "is", null);
   if (opts.status) q = q.where("status", "=", opts.status);
+  if (opts.folder === "none") q = q.where("folder_id", "is", null);
+  else if (opts.folder) q = q.where("folder_id", "=", opts.folder);
   if (opts.mine || !(can(actor, "documents.read_all") || can(actor, "documents.manage_all"))) q = q.where("owner_user_id", "=", userIdOf(actor) ?? "");
   if (opts.before) q = q.where("created_at", "<", opts.before);
   if (opts.q) {

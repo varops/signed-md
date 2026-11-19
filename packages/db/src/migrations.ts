@@ -294,6 +294,40 @@ const m006: Migration = {
   },
 };
 
+/** Folders for organising templates and documents. One level; archived, never deleted. */
+const m007: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("folders")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("account_id", "text", (c) => c.notNull())
+      .addColumn("kind", "text", (c) => c.notNull())
+      .addColumn("name", "text", (c) => c.notNull())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("archived_at", "text")
+      .execute();
+    await db.schema.createIndex("folders_kind").on("folders").columns(["account_id", "kind"]).execute();
+    await db.schema.alterTable("templates").addColumn("folder_id", "text").execute();
+    await db.schema.alterTable("documents").addColumn("folder_id", "text").execute();
+    await db.schema.createIndex("documents_folder").on("documents").column("folder_id").execute();
+  },
+};
+
+const m008: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("password_resets")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("user_id", "text", (c) => c.notNull())
+      .addColumn("token_hash", "text", (c) => c.notNull().unique())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("expires_at", "text", (c) => c.notNull())
+      .addColumn("used_at", "text")
+      .execute();
+    await db.schema.createIndex("password_resets_user").on("password_resets").column("user_id").execute();
+  },
+};
+
 export const migrations: Record<string, Migration> = {
   "001_initial": m001,
   "002_signer_message": m002,
@@ -301,6 +335,8 @@ export const migrations: Record<string, Migration> = {
   "004_document_font": m004,
   "005_user_theme": m005,
   "006_usage_counters": m006,
+  "007_folders": m007,
+  "008_password_resets": m008,
 };
 
 export const migrationProvider: MigrationProvider = {

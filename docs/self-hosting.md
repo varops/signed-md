@@ -131,6 +131,18 @@ node apps/server/src/cli.ts setup --account "Acme" --name "Ada Lovelace" --email
 node apps/server/src/cli.ts api-key --label "Sales agent" --user admin@acme.com
 ```
 
+## Forgotten passwords
+
+With email login on, the login page has a "Forgot your password?" link. People enter their email and get a link that works once and expires after an hour. The page looks the same whether or not the email has an account, and each person gets at most one email a minute. After a reset, they are logged in.
+
+Reset links are only emailed through SMTP. Without SMTP, emails go to the Outbox page, which administrators can read, so a reset link there could let one person take over another's account. Instead, the page tells people to ask whoever runs the server, who can make a link:
+
+```bash
+docker compose exec signed node apps/server/src/cli.ts reset-password someone@acme.com
+```
+
+Give the link to the person directly. It works once and expires after an hour.
+
 ## Sealed PDFs and timestamps
 
 Every completed PDF is PDF/A-2b and digitally sealed (PAdES), with a trusted timestamp. PDF readers show it as signed and flag any later change.

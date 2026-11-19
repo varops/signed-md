@@ -1,0 +1,15 @@
+{
+  "prefetch": [
+    {
+      "tag": "admin-pages",
+      "where": {
+        "and": [
+          { "href_matches": ["/documents{/*}?", "/templates{/*}?", "/team", "/activity", "/settings", "/settings/branding", "/outbox", "/agentic"] },
+          { "not": { "href_matches": ["/*\\?*(^|&)msg=*"] } },
+          { "not": { "selector_matches": "[download], [target], .no-prefetch" } }
+        ]
+      },
+      "eagerness": "moderate"
+    }
+  ]
+}

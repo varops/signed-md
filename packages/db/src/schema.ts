@@ -21,6 +21,31 @@ export interface Database {
   invitations: InvitationTable;
   audit_events: AuditEventTable;
   usage_counters: UsageCounterTable;
+  folders: FolderTable;
+  password_resets: PasswordResetTable;
+}
+
+/**
+ * A "forgot password" link. Only the SHA-256 of the token is stored. Each link works once and
+ * expires after an hour; asking for a new one cancels older ones (`used_at`).
+ */
+export interface PasswordResetTable {
+  id: string;
+  user_id: string;
+  token_hash: string;
+  created_at: string;
+  expires_at: string;
+  used_at: string | null;
+}
+
+/** A folder of templates or of documents. */
+export interface FolderTable {
+  id: string;
+  account_id: string;
+  kind: "template" | "document";
+  name: string;
+  created_at: string;
+  archived_at: string | null;
 }
 
 /** One row per calendar month (UTC). */
@@ -109,6 +134,7 @@ export interface TemplateTable {
   account_id: string;
   name: string;
   description: string;
+  folder_id: string | null;
   current_version: number;
   created_via: "ui" | "api" | "mcp";
   created_at: string;
@@ -133,6 +159,7 @@ export interface TemplateVersionTable {
 export interface DocumentTable {
   id: string;
   account_id: string;
+  folder_id: string | null;
   template_version_id: string | null;
   source_kind: "template" | "inline";
   /** Markdown source as created (template source or inline content). */

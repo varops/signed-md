@@ -1,164 +1,351 @@
 /*
- * Signed.md styles on top of Basecoat UI (assets/vendor/basecoat.css).
- * Basecoat provides the components: .btn, .card, .badge, .alert, .field, .input, .select,
- * .textarea, .table, .tabs, .dialog, .avatar, .empty. This file only adds page layout, the
- * agreement typography, the guided signing UI, and a few helpers. Colours come from Basecoat's
- * theme tokens, so light and dark mode follow it.
+ * Signed.md styles on top of Oat UI (assets/vendor/oat.css, oat.ink).
+ * Oat styles semantic HTML directly: buttons, inputs, tables, dialogs, cards (.card), badges
+ * (.badge), alerts (role="alert") and avatars (figure[data-variant="avatar"]). This file adds
+ * page layout, the agreement typography, the guided signing UI, and a few helpers.
+ * Colours follow the page's color-scheme, which the server sets from each person's theme.
  */
-
 /* ---- Fonts (bundled, OFL; the same faces as the PDF) ---- */
-@font-face { font-family: "Source Serif 4"; src: url("/assets/fonts/SourceSerif4-Regular.otf") format("opentype"); font-weight: 400; font-style: normal; font-display: swap; }
-@font-face { font-family: "Source Serif 4"; src: url("/assets/fonts/SourceSerif4-It.otf") format("opentype"); font-weight: 400; font-style: italic; font-display: swap; }
-@font-face { font-family: "Source Serif 4"; src: url("/assets/fonts/SourceSerif4-Semibold.otf") format("opentype"); font-weight: 600; font-display: swap; }
-@font-face { font-family: "Source Serif 4"; src: url("/assets/fonts/SourceSerif4-Bold.otf") format("opentype"); font-weight: 700; font-display: swap; }
-@font-face { font-family: "Inter"; src: url("/assets/fonts/Inter-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
-@font-face { font-family: "Inter"; src: url("/assets/fonts/Inter-Italic.ttf") format("truetype"); font-weight: 400; font-style: italic; font-display: swap; }
-@font-face { font-family: "Inter"; src: url("/assets/fonts/Inter-SemiBold.ttf") format("truetype"); font-weight: 600; font-display: swap; }
-@font-face { font-family: "Inter"; src: url("/assets/fonts/Inter-Bold.ttf") format("truetype"); font-weight: 700; font-display: swap; }
+@font-face { font-family: "Nothing You Could Do"; src: url("/assets/fonts/NothingYouCouldDo.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "STIX Two Text"; src: url("/assets/fonts/STIXTwoText-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "STIX Two Text"; src: url("/assets/fonts/STIXTwoText-Italic.ttf") format("truetype"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "STIX Two Text"; src: url("/assets/fonts/STIXTwoText-Bold.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "STIX Two Text"; src: url("/assets/fonts/STIXTwoText-BoldItalic.ttf") format("truetype"); font-weight: 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "Arimo"; src: url("/assets/fonts/Arimo-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Arimo"; src: url("/assets/fonts/Arimo-Italic.ttf") format("truetype"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Arimo"; src: url("/assets/fonts/Arimo-Bold.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Arimo"; src: url("/assets/fonts/Arimo-BoldItalic.ttf") format("truetype"); font-weight: 700; font-style: italic; font-display: swap; }
+@font-face { font-family: "IBM Plex Sans"; src: url("/assets/fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "IBM Plex Sans"; src: url("/assets/fonts/ibm-plex-sans-latin-400-italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "IBM Plex Sans"; src: url("/assets/fonts/ibm-plex-sans-latin-500-normal.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "IBM Plex Sans"; src: url("/assets/fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
 
-/* ---- Tokens: our names, Basecoat's values ---- */
+/* ---- Tokens ---- */
 :root {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Light, dark or system: the <meta name="color-scheme"> the server writes decides. */
+  color-scheme: light dark;
+  &:has(> head > meta[name="color-scheme"][content="dark"]) { color-scheme: dark; }
+  &:has(> head > meta[name="color-scheme"][content="light"]) { color-scheme: light; }
+
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Contract faces, the same as the PDF: STIX Two Text (set 0.5% tighter) and Arimo (like Arial). */
+  --font-doc-serif: "STIX Two Text", "Times New Roman", Times, serif;
+  --font-doc-sans: Arimo, Arial, "Helvetica Neue", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --bg: var(--background);
-  --panel: var(--card);
-  --text: var(--foreground);
-  --muted-text: var(--muted-foreground);
-  --line: var(--border);
-  --line-strong: var(--input);
-  --link: oklch(0.55 0.2 260);
-  --ok: oklch(0.6 0.15 150);
-  --warn: oklch(0.72 0.15 75);
-  --bad: var(--destructive);
-  --info: oklch(0.6 0.15 255);
+  --radius: var(--radius-large);
+  --link: light-dark(oklch(0.55 0.2 260), oklch(0.72 0.14 255));
+  --ok: var(--success);
+  --warn: light-dark(oklch(0.72 0.15 75), oklch(0.78 0.14 80));
+  --bad: var(--danger);
+  --info: light-dark(oklch(0.6 0.15 255), oklch(0.7 0.13 255));
   /* Guided signing: highlighted fields and the "Sign" tag. */
-  --go: #f5b301;
+  --go: #f6da1c; /* our yellow, the same as --brand */
   --go-text: #1c1917;
-  --field-bg: #fff7d6;
-  --field-line: #e8a400;
-}
-.dark {
-  --link: oklch(0.72 0.14 255);
-  --field-bg: #2a2306;
-  --field-line: #a87700;
+  --field-bg: light-dark(#fff7d6, #2a2306);
+  --field-line: light-dark(#e8a400, #a87700);
 }
 
-body { background: var(--background); color: var(--foreground); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
-a:not(.btn, [role="tab"]) { color: var(--link); }
-a:not(.btn, [role="tab"]):hover { text-decoration: underline; }
+body { font-family: var(--font-sans); }
+a:not(.button, [role="menuitem"]) { color: inherit; }
+a:not(.button, [role="menuitem"]):hover { text-decoration: underline; }
 code, pre, .mono { font-family: var(--mono); font-size: .86em; }
-pre { background: var(--muted); border-radius: var(--radius); padding: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+pre { background: var(--muted); border-radius: var(--radius-medium); padding: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
-/* ---- Helpers (the prebuilt Basecoat file has no Tailwind utilities) ---- */
+/* ---- Helpers ---- */
 .muted { color: var(--muted-foreground); }
 .small { font-size: .85rem; }
+.tiny { font-size: .75rem; }
 .nowrap { white-space: nowrap; }
 .w-full { width: 100%; }
-.hidden { display: none !important; }
-.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; width: auto; } /* Oat's .row is a 12-column grid at 100% width */
+.row-stretch { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; width: 100%; justify-content: space-between; }
 .spread { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
 .stack > * + * { margin-top: 12px; }
 form.inline { display: inline; }
 details > summary { cursor: pointer; color: var(--muted-foreground); }
+.sr-only { position: absolute; clip-path: inset(50%); overflow: hidden; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; white-space: nowrap; }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+legend { font-size: var(--text-7); font-weight: var(--font-medium); padding: 0; margin-bottom: 6px; }
 
-/* ---- Shell ---- */
-.topbar { display: flex; align-items: center; gap: 20px; padding: 0 20px; height: 56px; border-bottom: 1px solid var(--border); background: var(--background); position: sticky; top: 0; z-index: 5; }
-.brand { font-weight: 700; color: var(--foreground) !important; letter-spacing: -.01em; text-decoration: none !important; }
-.brand span { color: var(--muted-foreground); font-weight: 500; }
-.nav { display: flex; gap: 2px; flex: 1; overflow-x: auto; }
-.nav a { color: var(--muted-foreground) !important; padding: 6px 10px; border-radius: calc(var(--radius) - 2px); white-space: nowrap; font-size: .9rem; text-decoration: none !important; }
-.nav a.active, .nav a:hover { color: var(--foreground) !important; background: var(--accent); }
-.whoami { color: var(--foreground) !important; white-space: nowrap; text-decoration: none !important; }
-@media (max-width: 700px) { .whoami { display: none; } }
+/* ---- Page transitions ----
+   Moving between pages cross-fades instead of flashing, and the top bar stays put.
+   Browsers without cross-document view transitions just change pages as before. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition { navigation: auto; }
+  ::view-transition-group(root) { animation-duration: 150ms; }
+}
+.sidebar { view-transition-name: sidebar; }
+
+/* ---- Shell: a 250px sidebar on the left, the page on the right ---- */
+.app { --sidebar: 250px; display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); min-height: 100dvh; }
+.app[data-collapsed] { --sidebar: 64px; }
+/* Collapsed: an icon rail. The app icon expands it again. */
+.rail-logo { display: none; padding: 2px; border: 0; background: none; cursor: pointer; border-radius: var(--radius-medium); }
+.rail-logo img { display: block; width: 28px; height: 28px; }
+.app[data-collapsed] .rail-logo { display: block; }
+.app[data-collapsed] .sidebar { padding: 18px 10px 14px; }
+.app[data-collapsed] .sidebar-head { justify-content: center; padding: 2px 0; }
+.app[data-collapsed] :is(.sidebar-head .brand, .sidebar-toggle, .side-nav a span, .nav-label, .source-note, .usage-pill, .user-text, .user-menu > button > svg) { display: none; }
+.app[data-collapsed] .side-nav a { justify-content: center; padding: 9px; }
+.app[data-collapsed] .side-nav hr { margin-inline: 4px; }
+.app[data-collapsed] .user-menu > button { justify-content: center; padding: 6px 0; }
+.sidebar { position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; gap: 20px; padding: 18px 12px 14px; background: light-dark(#f9f9f9, #111113); overflow-y: auto; }
+.sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; }
+.side-nav { flex: 1; }
+.side-nav ul { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 1px; }
+.side-nav hr { margin: 0 8px 18px; }
+.nav-label { margin: 0 0 6px; padding: 0 10px; font-size: .7rem; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-foreground); }
+.side-nav a { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--radius-medium); color: var(--muted-foreground) !important; font-size: .9rem; text-decoration: none !important; }
+.side-nav a svg { width: 18px; height: 18px; flex: none; }
+.side-nav a:hover { color: var(--foreground) !important; background: var(--accent); }
+.side-nav a[aria-current="page"] { color: var(--foreground) !important; background: var(--accent); font-weight: 500; }
+.sidebar-foot { display: grid; gap: 10px; }
+.sidebar-foot .usage-pill { justify-self: start; margin-inline: 8px; }
+.user-menu > button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; justify-content: flex-start; text-align: start; }
+.user-menu > button > svg { width: 16px; height: 16px; margin-inline-start: auto; color: var(--muted-foreground); }
+.user-text { display: grid; min-width: 0; line-height: 1.25; }
+.user-text strong { font-weight: 500; font-size: .875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-note { margin: 0; padding: 0 8px; font-size: .7rem; color: var(--muted-foreground); }
+.source-note a { color: inherit !important; text-decoration: underline; }
+.app-main { position: relative; min-width: 0; }
+.sidebar-toggle { color: var(--muted-foreground); padding: 4px; }
+.sidebar-toggle svg { width: 18px; height: 18px; }
+/* Phones and small tablets: the sidebar becomes a bar on top, with the links scrolling sideways. */
+@media (max-width: 900px) {
+  .app, .app[data-collapsed] { grid-template-columns: minmax(0, 1fr); }
+  .app[data-collapsed] { --sidebar: 250px; }
+  .rail-logo, .app[data-collapsed] .rail-logo { display: none; }
+  .app[data-collapsed] .sidebar-head .brand { display: flex; }
+  .app[data-collapsed] :is(.side-nav a span) { display: inline; }
+  .sidebar { position: static; height: auto; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .side-nav { order: 3; flex-basis: 100%; display: flex; gap: 2px; overflow-x: auto; }
+  .side-nav ul { display: flex; margin: 0; }
+  .side-nav hr, .nav-label, .source-note, .user-text, .user-menu > button > svg { display: none; }
+  .sidebar-foot { margin-inline-start: auto; display: flex; align-items: center; }
+  .sidebar-toggle { display: none; }
+}
+.brand { display: flex; flex-shrink: 0; }
+.brand img { display: block; height: 28px; width: auto; }
+/* One logo per colour scheme, following the person's theme (or the device when it's "system"). */
+.brand .logo-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not(:has(> head > meta[name="color-scheme"][content="light"])) .brand .logo-light { display: none; }
+  :root:not(:has(> head > meta[name="color-scheme"][content="light"])) .brand .logo-dark { display: block; }
+}
+:root:has(> head > meta[name="color-scheme"][content="dark"]) .brand .logo-light { display: none; }
+:root:has(> head > meta[name="color-scheme"][content="dark"]) .brand .logo-dark { display: block; }
+.page-tabs a { color: var(--muted-foreground) !important; padding: 6px 10px; border-radius: var(--radius-medium); white-space: nowrap; font-size: .9rem; text-decoration: none !important; }
+/* Sub-navigation that looks like tabs; the current page is marked with aria-current. */
+.page-tabs { display: inline-flex; gap: 4px; padding: 4px; background: var(--muted); border-radius: var(--radius-medium); }
+.page-tabs a { font-size: var(--text-7); font-weight: var(--font-medium); padding: 6px 12px; }
+.page-tabs a[aria-current="page"] { background: var(--background); color: var(--foreground) !important; box-shadow: var(--shadow-small); }
 /* Contracts left under the plan's limit (hosted). */
 .usage-pill { white-space: nowrap; font-size: .8rem; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted-foreground) !important; text-decoration: none !important; }
 .usage-pill:hover { color: var(--foreground) !important; background: var(--accent); }
-.usage-pill[data-level="low"] { color: #b45309 !important; border-color: #f59e0b; background: rgb(245 158 11 / .1); }
-.usage-pill[data-level="out"] { color: var(--destructive) !important; border-color: var(--destructive); background: color-mix(in srgb, var(--destructive) 10%, transparent); }
-.dark .usage-pill[data-level="low"] { color: #fbbf24 !important; }
-/* Hosted account menu: avatar and name, opening a small menu. */
-.account-menu { position: relative; }
-.account-menu > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; padding: 4px 8px 4px 4px; border-radius: 999px; }
-.account-menu > summary::-webkit-details-marker { display: none; }
-.account-menu > summary:hover, .account-menu[open] > summary { background: var(--accent); }
-.account-pop { position: absolute; right: 0; top: calc(100% + 8px); width: 280px; background: var(--popover, var(--background)); color: var(--popover-foreground, var(--foreground)); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 10px 30px rgb(0 0 0 / .12); overflow: hidden; z-index: 20; }
+.usage-pill[data-level="low"] { color: var(--warning) !important; border-color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, transparent); }
+.usage-pill[data-level="out"] { color: var(--danger) !important; border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+/* The account menu in the sidebar (Oat dropdown). */
+.account-pop { min-width: 280px; padding: 0; }
 .account-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
-.account-head strong { display: block; }
-.account-head .small { overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
-.account-pop a, .account-pop button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; color: var(--muted-foreground) !important; background: none; border: 0; border-bottom: 1px solid var(--border); font: inherit; text-align: left; cursor: pointer; text-decoration: none !important; }
-.account-pop form { margin: 0; }
-.account-pop form button { border-bottom: 0; }
-.account-pop a:hover, .account-pop button:hover { background: var(--accent); color: var(--foreground) !important; }
+.account-head p { display: grid; margin: 0; min-width: 0; }
+.account-head .small { overflow: hidden; text-overflow: ellipsis; }
+.account-pop [role="menuitem"] { display: flex; align-items: center; justify-content: flex-start; gap: 12px; width: 100%; padding: 12px 16px; border-radius: 0; color: var(--muted-foreground) !important; font: inherit; font-size: var(--text-7); text-decoration: none !important; }
+.account-pop [role="menuitem"]:hover, .account-pop [role="menuitem"]:focus-visible { background: var(--accent); color: var(--foreground) !important; }
 .account-pop svg { width: 18px; height: 18px; }
-@media (max-width: 700px) { .account-name { display: none; } }
 
 .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 20px 60px; }
+.app .wrap { padding: 28px 40px 60px; }
+.app .wrap:not(.full) { padding-top: 60px; }
+/* Wide screens: pad the right by the sidebar's width, so the column sits in the middle of the window. */
+/* 100px less than the sidebar: the visual centre sits a little right of the absolute one. */
+@media (min-width: 1920px) { .app:not([data-collapsed]) .wrap:not(.full) { max-width: calc(1120px + var(--sidebar) - 100px); padding-right: calc(40px + var(--sidebar) - 100px); } }
+/* Editors and document pages use the whole width. */
+.app .wrap.full { max-width: none; padding: 20px 24px 24px; }
+@media (max-width: 900px) { .app .wrap, .app .wrap.full { padding: 20px 16px 48px; } }
 .narrow { max-width: 460px; }
+/* Public pages: log in, set up, join, password reset. */
+.auth { margin: 56px auto; }
+.auth > .brand { margin-bottom: 28px; }
+.auth > .brand img { height: 36px; }
+.auth h1 { font-size: var(--text-3, 1.5rem); }
+.forgot { margin: 12px 0 0; text-align: center; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
-.page-head h1 { font-size: 1.6rem; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
-h1 { font-size: 1.6rem; font-weight: 600; letter-spacing: -.02em; }
+h1, .page-head h1 { font-size: 1.6rem; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; margin: 0; }
 .wrap > * + *, .grid > div > * + *, aside > * + * { margin-top: 18px; }
 .grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
 .grid > * + * { margin-top: 0 !important; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-.page-tabs { margin-bottom: 4px; }
-.site-foot { text-align: center; color: var(--muted-foreground); font-size: .8rem; padding: 0 20px 28px; }
+.site-foot { text-align: center; color: var(--muted-foreground); font-size: .75rem; line-height: 1.6; padding: 0 20px 28px; }
+.site-foot .foot-powered { margin: 0 auto 4px; width: fit-content; gap: 6px; }
+.site-foot .foot-logo { display: inline-flex; text-decoration: none !important; }
+.site-foot .foot-logo img { height: 24px; width: auto; }
+.foot-logo .logo-dark { display: none; }
+@media (prefers-color-scheme: dark) { .foot-logo .logo-light { display: none; } .foot-logo .logo-dark { display: inline; } }
 .site-foot a { color: var(--muted-foreground) !important; text-decoration: underline; }
 
-/* Card content spacing (Basecoat pads header and section; we space what's inside). */
-.card > section > * + * { margin-top: 12px; }
-/* Cards and forms stack with consistent gaps, wherever they sit. */
-.card + .card, .card + form.inline, form.inline + .card, .tabs + .card, .alert + .card, .card + .alert { margin-top: 18px; }
-form .field + .field, form .field + .check, form .check + .field, form .field + .btn, form .check + .btn, form .field + .row, form .row + .field, form p + .field, .field > p + * { margin-top: 16px; }
-.field > p.small { margin-top: 6px; }
-.card h2 { font-size: 1rem; font-weight: 600; }
-.card h3 { font-size: .95rem; font-weight: 600; margin-top: 16px; }
+/* ---- Cards ---- */
+.card { border-radius: var(--radius); padding: 20px 22px; }
+.card > * + * { margin-top: 12px; }
+.card > header { display: grid; gap: 4px; }
+.card > header + * { margin-top: 16px; }
+.card h2 { font-size: 1rem; font-weight: 600; margin: 0; }
+.card h3 { font-size: .95rem; font-weight: 600; margin: 16px 0 0; }
+.card > header p { color: var(--muted-foreground); font-size: var(--text-7); margin: 0; }
+.card.table { padding: 4px 8px; }
+.card + .card, .card + form.inline, form.inline + .card, .page-tabs + .card, .note + .card, .card + .note { margin-top: 18px; }
+form [data-field] { margin-bottom: 0; }
+form [data-field] + [data-field], form [data-field] + .check, form .check + [data-field], form [data-field] + button, form .check + button, form fieldset + button, form [data-field] + .row, form .row + [data-field], form p + [data-field], form [data-field] + fieldset, form fieldset + [data-field], form fieldset + p { margin-top: 16px; }
+
+/* Folders */
+.card svg.inline, td svg, .move-form svg { width: 14px; height: 14px; vertical-align: -2px; }
+.page-head h1 svg { width: 22px; height: 22px; vertical-align: -3px; color: var(--folder); }
+
+/* Folders: cards above the top-level list. Actions show on hover or focus, and always on touch screens. */
+:root { --folder: rgb(246, 218, 28); --brand: rgb(246 218 28); }
+/* The page's main action (Send for signature, Save text) in the brand yellow, with dark text on it. */
+:is(button, .button).main-action { background-color: var(--brand); border-color: var(--brand); color: #1c1917; }
+:is(button, .button).main-action:hover { background-color: color-mix(in srgb, var(--brand), #000 8%); }
+.crumbs ol { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0 0 4px; padding: 0; font-size: var(--text-7); }
+.crumbs li + li::before { content: "/"; margin-right: 6px; color: var(--muted-foreground); }
+.crumbs a { color: var(--muted-foreground); }
+.crumbs a[aria-current="page"] { color: var(--foreground); text-decoration: none; }
+.folders { margin-bottom: 12px; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.section-head h2 { margin: 0; font-size: var(--text-8, .75rem); font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-foreground); }
+.section-head h2 span { margin-left: 4px; }
+.section-head button svg { width: 14px; height: 14px; }
+.folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.folder-card { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .04); transition: border-color 150ms ease-out, box-shadow 150ms ease-out; }
+.folder-card > svg { width: 30px; height: 30px; color: var(--folder); fill: currentColor; stroke: none; }
+.folder-card hgroup { min-width: 0; margin: 0; }
+.folder-card h3 { margin: 0; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.folder-card hgroup p { margin: 2px 0 0; color: var(--muted-foreground); }
+.folder-card a.card-link { color: inherit; text-decoration: none; }
+.folder-card a.card-link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.folder-card a.card-link:focus-visible { outline: none; }
+.folder-card:has(a.card-link:focus-visible) { outline: 2px solid var(--ring, CanvasText); outline-offset: 2px; }
+.folder-card:has(a.card-link:hover) { border-color: color-mix(in oklab, var(--foreground) 30%, var(--border)); box-shadow: 0 2px 8px rgb(0 0 0 / .08); }
+.folder-card :is(button, input, form) { position: relative; z-index: 1; }
+.folder-actions { display: flex; gap: 2px; opacity: 0; transition: opacity 150ms ease-out; }
+.folder-card:is(:hover, :focus-within) .folder-actions { opacity: 1; }
+@media (hover: none) { .folder-actions { opacity: 1; } }
+.folder-actions button.icon { padding: 6px; color: var(--muted-foreground); }
+.folder-actions button.icon:hover { color: var(--foreground); }
+.folder-actions button.icon:last-child:hover { color: var(--danger); }
+.folder-actions svg { width: 16px; height: 16px; }
+.folder-rename:not([hidden]) { grid-column: 2 / -1; display: flex; align-items: center; gap: 6px; margin: 0; }
+.folder-rename input { flex: 1; min-width: 0; margin: 0; padding-block: 4px; }
+.folder-rename button.icon { padding: 6px; }
+.folder-rename svg { width: 16px; height: 16px; }
+.folder-card:has(.folder-rename:not([hidden])) :is(hgroup, .folder-actions) { display: none; }
+.move-form { gap: 6px; margin: 6px 0 0; flex-wrap: nowrap; }
+.move-form select { width: auto; max-width: 200px; margin: 0; padding-block: 4px; }
+dd .move-form { margin: 0; }
+
+/* Import a Word or PDF file */
+.import-form { gap: 8px; margin: 0; }
+.import-form input[type="file"] { width: auto; max-width: 260px; margin: 0; font-size: var(--text-7); }
+
+/* ---- Notes: role="status" messages styled like Oat's alerts ---- */
+[role="status"].note { position: relative; display: flex; gap: var(--space-3); padding: var(--space-4) var(--space-6); background-color: var(--background); border: 1px solid var(--border); border-left: var(--space-2) solid var(--border); border-radius: var(--radius-medium); font-size: var(--text-7); }
+.note[data-variant] { border-width: 0 0 0 var(--space-2); border-left-color: var(--_variant-color); background-color: light-dark(color-mix(in srgb, var(--_variant-color) 8%, transparent), color-mix(in srgb, var(--_variant-color) 20%, transparent)); }
+.note[data-variant="warning"] { color: inherit; }
+.note > svg { flex: none; width: 18px; height: 18px; margin-top: 1px; }
+.note[data-variant="warning"] > svg { color: var(--warning); }
+.note > div > * + * { margin-top: 8px; }
+.note ul { margin: 6px 0 0; padding-left: 1.2em; }
+
+/* Empty states */
+.empty { display: grid; justify-items: center; gap: 6px; text-align: center; padding: 40px 16px; color: var(--muted-foreground); }
+.empty > svg { width: 28px; height: 28px; }
+.empty h3 { color: var(--foreground); font-size: 1rem; margin: 4px 0 0; }
+.empty p { margin: 0; font-size: var(--text-7); }
 
 /* Key-value lists */
-dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; }
 dl.kv dt { color: var(--muted-foreground); }
 dl.kv dd { margin: 0; word-break: break-word; }
 
-/* Status badges: Basecoat outline badge plus a coloured dot */
+/* Status badges: outline badge plus a coloured dot */
+.badge { gap: 6px; }
 .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: var(--muted-foreground); }
 .dot[data-tone="ok"] { background: var(--ok); }
 .dot[data-tone="info"] { background: var(--info); }
 .dot[data-tone="warn"] { background: var(--warn); }
-.dot[data-tone="bad"] { background: var(--destructive); }
-.alert[data-tone="warn"] > svg { color: var(--warn); }
+.dot[data-tone="bad"] { background: var(--danger); }
+
+/* Avatars: initials underneath, the picture on top when there is one. */
+figure[data-variant="avatar"]:not([role="group"]) { position: relative; flex: none; margin: 0; }
+figure[data-variant="avatar"] > abbr { text-decoration: none; font-size: .8em; }
+figure[data-variant="avatar"] > img { position: absolute; inset: 0; }
 
 /* Forms */
 .check { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; }
 .check input { margin-top: 3px; }
 .inline-fields { display: grid; grid-template-columns: 1fr 1fr 90px; gap: 10px; }
+.inline-fields > [data-field] { margin: 0 !important; }
 @media (max-width: 600px) { .inline-fields { grid-template-columns: 1fr !important; } }
-.textarea.code { font-family: var(--mono); font-size: .86rem; min-height: 380px; line-height: 1.5; }
-.editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-.editor .textarea.code { height: 640px; resize: vertical; }
-.editor-preview { height: 640px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--muted); padding: 12px; }
-.editor-preview .doc { margin: 0; padding: 24px 26px; font-size: .95em; }
-.editor-preview .alert { margin-bottom: 12px; }
-@media (max-width: 1100px) { .editor { grid-template-columns: minmax(0, 1fr); } .editor .textarea.code, .editor-preview { height: 440px; } }
-.signer-row { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
-.font-choice { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; font-weight: 500; cursor: pointer; }
+textarea.code { font-family: var(--mono); font-size: .86rem; min-height: 380px; line-height: 1.5; }
+.editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: end; }
+.editor textarea.code, .editor .ot-host { height: 680px; }
+.editor textarea.code { resize: vertical; }
+.ot-host { border: 1px solid var(--input); border-radius: var(--radius-medium); overflow: hidden; margin-top: var(--space-1); }
+.ot-host:focus-within { border-color: var(--ring); box-shadow: 0 0 0 3px rgb(from var(--ring) r g b / 0.25); }
+/* Our syntax inside the editor, without colour: placeholders and column markers on a soft grey. */
+.smd-ot-field, .smd-ot-columns { background: var(--muted); border-radius: 3px; }
+.smd-ot-columns { color: var(--muted-foreground); }
+.editor-preview { height: 680px; overflow: auto; border-radius: var(--radius-medium); background: light-dark(#e7e5e4, #18181b); padding: 16px; }
+.editor-preview .note { margin-bottom: 12px; }
+@media (max-width: 1100px) { .editor { grid-template-columns: minmax(0, 1fr); } .editor textarea.code, .editor .ot-host, .editor-preview { height: 460px; } }
+
+/* A page like the PDF: white A4 (PDFs are always white), its margins and type sizes, scaled to the
+   page's width. 1pt of the PDF is 1/595 of the page width; it never goes below 1.2px for reading. */
+.doc.page { color-scheme: light; container-type: inline-size; background: #fff; color: #1c1917; border: 0; border-radius: 2px; box-shadow: 0 1px 3px rgb(0 0 0 / .15), 0 8px 24px rgb(0 0 0 / .08); max-width: 794px; margin-inline: auto; padding: 0; }
+.doc.page > .page-body { --pt: max(100cqw / 595, 1.2px); padding: calc(68 * 100cqw / 595) calc(68 * 100cqw / 595) calc(74 * 100cqw / 595); font-size: calc(11.25 * var(--pt)); line-height: 1.55; }
+.doc.page.smd-font-sans > .page-body { font-size: calc(10 * var(--pt)); }
+.doc.page h1 { font-size: calc(19 * var(--pt)); margin: 0 0 calc(16 * var(--pt)); }
+.doc.page h2 { font-size: calc(12.5 * var(--pt)); margin: calc(20 * var(--pt)) 0 calc(9 * var(--pt)); }
+.doc.page h3 { font-size: calc(11.25 * var(--pt)); margin: calc(16 * var(--pt)) 0 calc(7 * var(--pt)); }
+.doc.page p { margin: 0 0 1.15em; }
+.doc.page th { background: #f5f5f4; }
+.doc.page th, .doc.page td, .doc.page hr { border-color: #d6d3d1; }
+.doc.page .smd-field { color: #57534e; border-color: #a8a29e; }
+.doc.page .smd-field-value { color: #a16207; border-color: #d97706; }
+.signer-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.signer-row { border: 1px solid var(--border); border-radius: var(--radius-medium); padding: 14px; }
+.signer-row legend { font-weight: 600; }
+.signer-row [data-field] + .inline-fields { margin-top: 10px; }
+.font-choice { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); padding: 10px 14px; font-weight: 500; cursor: pointer; }
 .font-choice:has(input:checked) { border-color: var(--foreground); box-shadow: 0 0 0 1px var(--foreground); }
 .font-sample { font-size: 1.5rem; }
-.smd-font-serif .font-sample { font-family: "Source Serif 4", Georgia, serif; }
-.smd-font-sans .font-sample { font-family: "Inter", sans-serif; }
-.logo-preview { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: inline-block; }
+.smd-font-serif .font-sample { font-family: var(--font-doc-serif); }
+.smd-font-sans .font-sample { font-family: var(--font-doc-sans); }
+.logo-preview { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-medium); padding: 16px; display: inline-block; }
 .logo-preview img { max-height: 60px; max-width: 260px; display: block; }
-.email-frame { width: 100%; height: 820px; border: 1px solid var(--border); border-radius: var(--radius); background: #f2f1ef; margin-top: 10px; }
+.email-frame { width: 100%; height: 820px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: #f2f1ef; margin-top: 10px; }
 
 /* Activity and evidence timelines */
-.timeline { list-style: none; margin: 0; padding: 0; }
-.timeline li { padding: 6px 0 6px 14px; border-left: 2px solid var(--border); font-size: .88rem; }
+/* Each entry: a small round icon on a thin line, then one line of text and the time. */
+.timeline { list-style: none; margin: 0; padding: 0; font-size: var(--text-7); line-height: 1.45; }
+.timeline li { position: relative; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 12px; padding-bottom: 14px; }
+.timeline li:not(:last-child)::before { content: ""; position: absolute; left: 12.5px; top: 28px; bottom: 2px; width: 1px; background: var(--border); }
+.timeline li:last-child { padding-bottom: 0; }
+.tl-icon { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--border); background: var(--muted); color: var(--muted-foreground); }
+.tl-icon svg { width: 13px; height: 13px; }
+.tl-icon[data-tone="success"] { color: var(--success); background: color-mix(in oklab, var(--success) 12%, transparent); border-color: color-mix(in oklab, var(--success) 30%, transparent); }
+.tl-icon[data-tone="danger"] { color: var(--danger); background: color-mix(in oklab, var(--danger) 12%, transparent); border-color: color-mix(in oklab, var(--danger) 30%, transparent); }
+.tl-icon[data-tone="warning"] { color: var(--warning); background: color-mix(in oklab, var(--warning) 14%, transparent); border-color: color-mix(in oklab, var(--warning) 30%, transparent); }
+.timeline li > div { padding-top: 3px; overflow-wrap: anywhere; }
+.tl-actor { font-weight: var(--font-medium, 500); }
+.timeline time { display: block; font-size: var(--text-8, .75rem); color: var(--muted-foreground); margin-top: 1px; }
 
 /* ---- The agreement (rendered Markdown) ---- */
-.doc { font-family: "Source Serif 4", Charter, Georgia, serif; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 40px 48px; font-size: 16.5px; line-height: 1.65; color: var(--card-foreground); }
+.doc { font-family: var(--font-doc-serif); background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 40px 48px; font-size: 16.5px; line-height: 1.65; color: var(--card-foreground); }
 @media (max-width: 700px) { .doc { padding: 22px 18px; } }
-.doc.smd-font-serif { font-family: "Source Serif 4", Charter, Georgia, serif; }
-.doc.smd-font-sans { font-family: "Inter", sans-serif; font-size: 15.5px; }
-.doc h1, .doc h2, .doc h3 { font-family: "Inter", sans-serif; font-weight: 600; line-height: 1.25; letter-spacing: -.01em; }
+.doc.smd-font-serif { font-family: var(--font-doc-serif); }
+.doc.smd-font-sans { font-family: var(--font-doc-sans); font-size: 15.5px; }
+.doc h1, .doc h2, .doc h3 { font-weight: 700; line-height: 1.25; letter-spacing: -.01em; }
 .doc h1 { font-size: 1.6em; margin: 0 0 .7em; }
 .doc h2 { font-size: 1.2em; margin: 1.4em 0 .5em; }
 .doc h3 { font-size: 1.05em; margin: 1.2em 0 .4em; }
@@ -172,49 +359,55 @@ dl.kv dd { margin: 0; word-break: break-word; }
 .doc hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
 .doc table { border-collapse: collapse; margin: 1em 0; width: 100%; }
 .doc th, .doc td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
-.doc th { background: var(--muted); font-family: "Inter", sans-serif; font-size: .85em; font-weight: 600; }
+.doc th { background: var(--muted); font-size: .85em; font-weight: 700; }
 .doc blockquote { border-left: 3px solid var(--border); margin: 1em 0; padding-left: 14px; color: var(--muted-foreground); }
-.smd-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 2em; margin: 1em 0; }
+.smd-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 2em; margin: 2.2em 0 1em; } /* more room above, as in the PDF */
 .smd-columns-1 { grid-template-columns: minmax(0, 1fr); }
 .smd-columns-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .smd-column > :first-child { margin-top: 0; }
 .smd-column > :last-child { margin-bottom: 0; }
 @media (max-width: 640px) { .smd-columns { grid-template-columns: minmax(0, 1fr); gap: 1.25em 0; } }
-.smd-field, .smd-slot { display: inline-block; padding: 1px 8px; border-radius: 5px; font-family: "Inter", sans-serif; font-size: .82em; border: 1px dashed var(--input); color: var(--muted-foreground); }
+.smd-field, .smd-slot { display: inline-block; padding: 1px 8px; border-radius: 5px; font-family: var(--font-doc-sans); font-size: .82em; border: 1px dashed var(--input); color: var(--muted-foreground); }
 .smd-field-value { border-style: solid; border-color: var(--warn); color: var(--warn); }
 .smd-slot-mine { border: 1px solid var(--link); color: var(--link); }
 .smd-signature { height: 56px; vertical-align: middle; border-bottom: 1px solid var(--input); }
-.smd-signature-typed { font-family: "Source Serif 4", Georgia, serif; font-style: italic; font-size: 1.5em; border-bottom: 1px solid var(--input); padding: 0 6px; }
+.smd-signature-typed { font-family: "Nothing You Could Do", cursive; font-size: 1.6em; border-bottom: 1px solid var(--input); padding: 0 6px; }
 .smd-value { font-weight: 600; }
 
 /* ---- Public signing pages ---- */
-.sign-head { background: var(--background); border-bottom: 1px solid var(--border); padding: 14px 20px; }
-.sign-head .inner { max-width: 860px; margin: 0 auto; display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+.sign-head { background: var(--background); border-bottom: 1px solid var(--border); padding: 14px max(20px, calc((100% - 860px) / 2)); display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
 .brand-logo { max-height: 32px; max-width: 200px; display: block; }
-.sign-logo { margin: 4px 0 16px; }
-.sign-logo .brand-logo { max-height: 40px; }
+.brand-logo.sign-logo { margin: 4px 0 16px; max-height: 40px; }
 .sign-wrap { max-width: 860px; margin: 0 auto; padding: 24px 20px 80px; }
 .sign-wrap > * + * { margin-top: 16px; }
-.intro-card { max-width: 560px; margin: 32px auto 16px !important; }
+.intro-card { max-width: 560px; margin: 56px auto 16px !important; }
 .intro-card h1 { margin: 4px 0 0; }
-.intro-icon { width: 48px; height: 48px; border-radius: 12px; background: var(--field-bg); color: var(--field-line); display: grid; place-items: center; font-size: 26px; }
-.disclosure { background: var(--muted); border-radius: var(--radius); padding: 12px 14px; font-size: .9rem; }
+.intro-icon { display: block; width: 48px; height: 48px; border-radius: 10px; }
+.disclosure { display: block; background: var(--muted); border-radius: var(--radius-medium); padding: 12px 14px; font-size: .9rem; }
+.disclosure details { margin-top: 8px; }
+.check.consent { margin: 14px 0 18px; }
 .disclosure p { margin: 6px 0 0; color: var(--muted-foreground); }
-.disclosure-full { white-space: pre-wrap; font: .85rem/1.55 var(--font-sans); background: var(--card); margin-top: 8px; max-height: 320px; overflow: auto; }
+.disclosure-full { white-space: pre-wrap; font: .85rem/1.55 var(--font-sans); background: var(--card); margin: 0; max-height: 320px; overflow: auto; }
 .other-actions { max-width: 560px; margin: 0 auto 40px; }
 .other-actions > summary { font-size: .9rem; }
 .other-actions .card { margin-top: 10px; }
+.other-actions .card > * + * { margin-top: 10px; }
 
-.btn.btn-go { background: var(--go); color: var(--go-text); }
-.btn.btn-go:hover { filter: brightness(.96); }
-.guide-bar { position: sticky; top: 0; z-index: 10; background: var(--background); border-bottom: 1px solid var(--border); }
-.guide-bar .inner { max-width: 860px; margin: 0 auto; padding: 10px 20px; display: flex; gap: 12px; align-items: center; justify-content: space-between; }
-.guide-info { display: flex; flex-direction: column; min-width: 0; }
+button.btn-go, .button.btn-go { background: var(--go); color: var(--go-text); border-color: transparent; }
+button.btn-go:hover:not(:disabled) { background: var(--go); filter: brightness(.96); }
+.guide-bar { position: sticky; top: 0; z-index: 10; background: var(--background); border-bottom: 1px solid var(--border); padding: 10px 24px; display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.guide-bar .row { gap: 8px; flex-wrap: nowrap; }
+.guide-info { display: flex; flex-direction: column; min-width: 0; margin: 0; }
 .guide-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-#guide-finish:not(.ready), .finish-row .btn:not(.ready) { opacity: .55; }
-.finish-row { display: flex; justify-content: flex-end; }
+/* The main signing button: Start, Next, then Finish, which "breathes" once everything is filled in. */
+#guide-back { color: var(--muted-foreground); }
+#guide-back[hidden] { display: none; } /* Oat makes buttons inline-flex, which would override [hidden] */
+#guide-next.breathe { animation: breathe 1.8s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { box-shadow: 0 0 0 0 rgb(246 218 28 / .55); } 50% { box-shadow: 0 0 0 7px rgb(246 218 28 / 0); } }
+@media (prefers-reduced-motion: reduce) { #guide-next.breathe { animation: none; } }
+.finish-row { display: flex; justify-content: flex-end; margin: 0; }
 .guide-hint { margin: 0; }
-@media (max-width: 600px) { .guide-bar .inner { padding: 8px 12px; } .guide-hint { display: none; } }
+@media (max-width: 600px) { .guide-bar { padding: 8px 12px; } .guide-hint { display: none; } }
 
 /* Inline fields inside the agreement */
 .doc.signing .smd-input { font: inherit; font-family: var(--font-sans); font-size: .9em; padding: 2px 8px; margin: 0 2px; border: 1.5px dashed var(--field-line); background: var(--field-bg); border-radius: 5px; color: var(--foreground); width: auto; max-width: 100%; vertical-align: baseline; }
@@ -237,13 +430,343 @@ dl.kv dd { margin: 0; word-break: break-word; }
 body.js .smd-sign-fallback { display: none; }
 .smd-mirror { font-weight: 600; }
 
-/* "Adopt your signature" (Basecoat dialog) */
-.dialog > .adopt { width: min(560px, calc(100vw - 24px)); }
-.dialog-close { position: absolute; top: 14px; right: 14px; }
+/* "Adopt your signature" (native modal dialog) */
+dialog#adopt { width: min(560px, calc(100vw - 24px)); }
+dialog:modal { overscroll-behavior: contain; }
+dialog::backdrop { overflow: hidden; overscroll-behavior: contain; }
+.adopt-body { padding: var(--space-4) var(--space-6); }
+.adopt-body > * + * { margin-top: 10px; }
+dialog#adopt > footer { display: flex; justify-content: flex-end; gap: 8px; padding: 0 var(--space-6) var(--space-6); }
+dialog#adopt > footer form { margin: 0; }
+.dialog-close { position: absolute; top: 12px; right: 12px; margin: 0; }
 .dialog-close svg { width: 18px; height: 18px; }
 .sig-modes { display: flex; gap: 6px; margin-bottom: 12px; }
-.sig-pad { border: 1px solid var(--input); border-radius: var(--radius); background: #fff; width: 100%; height: 160px; touch-action: none; display: block; }
-.typed-preview { font-family: "Source Serif 4", Georgia, serif; font-style: italic; font-size: 2rem; min-height: 1.5em; border-bottom: 1px solid var(--input); padding: 6px 2px; margin: 10px 0; }
+.sig-pad { border: 1px solid var(--input); border-radius: var(--radius-medium); background: #fff; width: 100%; height: 160px; touch-action: none; display: block; }
+.typed-preview { font-family: "Nothing You Could Do", cursive; font-size: 2.2rem; min-height: 1.5em; border-bottom: 1px solid var(--input); padding: 6px 2px; margin: 10px 0; }
 .typed-preview.initials { font-size: 2.4rem; }
 .shake { animation: shake .35s; }
 @keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+dialog > form > header h2 { font-size: var(--text-4); }
+
+/* "New" split button: the main action, plus a chevron that opens a menu. */
+.split-button { display: inline-flex; }
+.split-button > .button { border-start-end-radius: 0; border-end-end-radius: 0; }
+.split-button > ot-dropdown > button { border-start-start-radius: 0; border-end-start-radius: 0; border-inline-start: 1px solid color-mix(in oklab, var(--primary-foreground) 25%, transparent); padding-inline: 8px; }
+.new-menu { padding: 4px; min-width: 9rem; }
+.new-menu [role="menuitem"] { gap: 8px; align-items: center; padding: 6px 10px; font-size: var(--text-7); font-weight: 400; color: var(--foreground) !important; text-decoration: none !important; border-radius: var(--radius-small); }
+.new-menu [role="menuitem"] svg { width: 16px; height: 16px; }
+/* Line the menu up with the right edge of the whole button. Oat places it from the left with inline styles. */
+@supports (anchor-name: --a) {
+  .split-button { anchor-name: --new-button; }
+  .new-menu { position-anchor: --new-button; inset: auto !important; top: anchor(bottom) !important; right: anchor(right) !important; margin-top: 4px; }
+}
+
+/* A disclosure that reads as a link ("What each role can do"): no box, the chevron shows on hover or focus. */
+details.link-details { margin: 0; border: 0; border-radius: 0; }
+details.link-details > summary { width: fit-content; padding: 8px 4px 0; border: 0; }
+details.link-details > summary:hover { background-color: transparent; }
+details.link-details > summary::after { opacity: 0; transition: opacity 150ms, transform var(--transition); }
+details.link-details > summary:is(:hover, :focus-visible)::after, details.link-details[open] > summary::after { opacity: 1; }
+details.link-details > table { margin: 12px 0 0; }
+
+/* Team list: a tiny role icon before the role. */
+.role-cell { display: inline-flex; align-items: center; gap: 6px; }
+.role-icon { display: inline-flex; color: var(--muted-foreground); }
+.role-icon svg { width: 14px; height: 14px; }
+.role-icon[data-role="owner"] { color: var(--folder); }
+
+/* A button that looks like plain text (the role on the Team page). */
+.link-button { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: inherit; cursor: pointer; }
+.link-button:hover { background: none; text-decoration: underline; text-underline-offset: 3px; }
+.link-button > svg:last-child { width: 14px; height: 14px; opacity: .6; }
+.role-choices { display: grid; gap: 8px; margin: 0 0 12px; padding: 0; border: 0; }
+.role-choices label { display: flex; align-items: start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-medium); cursor: pointer; }
+.role-choices label:has(:checked) { border-color: var(--foreground); }
+.role-choices input { margin-top: 3px; }
+.role-choices label > span { display: grid; gap: 2px; }
+.role-choices strong { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+td > dialog { text-align: start; font-size: 1rem; font-weight: normal; white-space: normal; }
+
+/* App tables (not tables inside a contract): small text, and tiny uppercase headings. */
+table:not(.doc table) { font-size: .85rem; }
+th:not(.doc th) { font-size: .75rem; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+/* A list row that starts with an icon (templates). */
+.item-cell { display: flex; align-items: start; gap: 10px; }
+a.item-cell:hover { text-decoration: none; }
+a.item-cell:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+.item-cell > svg { flex: none; width: 24px; height: 24px; margin-top: 2px; color: var(--muted-foreground); stroke-width: 1.2; }
+
+/* Folder cell: the name, with a chevron on hover that opens "move to". */
+.folder-move > button > svg:last-child { opacity: 0; transition: opacity 150ms; }
+.folder-move > button:is(:hover, :focus-visible, [aria-expanded="true"]) > svg:last-child { opacity: .6; }
+.move-menu { max-height: 320px; overflow-y: auto; }
+.move-menu [role="menuitem"] > span { flex: 1; text-align: start; }
+.move-menu [role="menuitem"] > svg { color: var(--muted-foreground); }
+.move-menu [role="menuitem"][aria-current] { font-weight: 500; }
+.move-menu { padding: 4px; min-width: 12rem; }
+.move-menu [role="menuitem"] { gap: 8px; align-items: center; padding: 6px 10px; font-size: .825rem; border-radius: var(--radius-small); }
+.move-menu [role="menuitem"] svg { width: 16px; height: 16px; }
+
+/* Signer avatars in the Documents list: smaller, with "Name (email)" on hover. */
+figure.signers > figure[data-variant="avatar"] { --sz: 2rem; font-size: .7rem; cursor: help; margin-inline-end: -8px; }
+figure.signers > figure[data-variant="avatar"]:last-child { margin-inline-end: 0; }
+
+/* The preview as A4 pages (210 x 297). With JavaScript, app.js moves blocks onto as many pages as
+   they need; without it there is one page, at least A4 tall. Breaks are close to the PDF, not exact. */
+.pages { display: grid; gap: 16px; }
+.doc.page { aspect-ratio: 210 / 297; width: 100%; }
+.pages.paged .doc.page { overflow: hidden; }
+.pages.paged .page-body { box-sizing: border-box; height: 100%; }
+.page-body > :first-child { margin-top: 0; }
+.form-actions { margin-top: 20px; }
+
+/* New and edit document: the editor or pages on the left, the form as a side panel on the right. */
+.doc-form > .grid { grid-template-columns: minmax(0, 1fr) 380px; }
+.doc-form aside .card { margin: 0; }
+.doc-form aside .inline-fields { grid-template-columns: 1fr 1fr; }
+.doc-form aside .signer-row .inline-fields { grid-template-columns: 1fr 72px; }
+.doc-form aside .signer-row .inline-fields > :first-child { grid-column: 1 / -1; }
+.doc-form .editor textarea.code, .doc-form .editor .ot-host, .doc-form .editor-preview { height: 560px; }
+.doc-form-preview { height: auto !important; max-height: calc(100vh - 180px); position: sticky; top: 16px; }
+@media (max-width: 900px) { .doc-form > .grid { grid-template-columns: 1fr; } }
+
+/* Full-width editors: the editor and the preview fill the window's height. */
+.wrap.full .editor { align-items: stretch; }
+.wrap.full .editor textarea.code, .wrap.full .editor .ot-host, .wrap.full .editor-preview { height: max(460px, calc(100dvh - 300px)); }
+/* Name, description and folder on one row above the editor. */
+.meta-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; align-items: end; }
+.meta-fields > [data-field] { margin: 0; }
+
+/* ---- Document page: pages on a canvas, a side panel on the right ---- */
+.wrap.full:has(> .workspace) { padding: 0; }
+.wrap.full:has(> .workspace) > .note { position: fixed; z-index: 6; top: 12px; left: 50%; translate: -50% 0; width: min(560px, calc(100% - 32px)); margin: 0; box-shadow: var(--shadow-medium); }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 380px; height: 100dvh; margin-top: 0 !important; }
+.canvas { overflow: auto; padding: 18px 32px 48px; background: light-dark(#eeedeb, #1c1c1f); }
+.canvas > .pages { max-width: 794px; margin-inline: auto; }
+.canvas > .note { margin: 0 0 20px; }
+.doc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 0 0 18px; }
+.doc-head h1 { font-size: 1.35rem; margin: 0 0 4px; }
+.doc-head .button svg, .doc-head button svg { width: 15px; height: 15px; }
+.text-form .editor { align-items: stretch; }
+.text-form .editor textarea.code, .text-form .editor .ot-host, .text-form .editor-preview { height: max(420px, calc(100dvh - 210px)); }
+.doc-panel { display: flex; flex-direction: column; min-height: 0; overflow: auto; border-left: 1px solid var(--border); background: var(--background); }
+.panel-block { padding: 18px 18px 16px; border-bottom: 1px solid var(--border); }
+.panel-block h2 { font-size: 1rem; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+.panel-block .link-details { margin-bottom: 10px; }
+.panel-block .link-details > summary { padding: 0 0 6px; }
+.doc-panel ot-tabs { display: block; padding: 6px 18px 18px; }
+/* Panel tabs: the same segmented look as the page tabs (All documents / Mine). */
+.doc-panel [role="tablist"] { position: sticky; top: 8px; z-index: 1; display: flex; margin: 4px 0 6px; padding: 4px; gap: 4px; background: var(--muted); border-radius: var(--radius-medium); }
+.doc-panel [role="tab"] { flex: 1; padding: 6px 10px; font-size: var(--text-7); color: var(--muted-foreground); }
+.doc-panel [role="tab"]:hover { color: var(--foreground); }
+.doc-panel [role="tab"][aria-selected="true"] { color: var(--foreground); background: var(--background); box-shadow: var(--shadow-small); }
+.draft-form { display: flex; flex-direction: column; flex: 1; }
+.draft-form ot-tabs { flex: 1; }
+.panel-save { position: sticky; bottom: 0; padding: 12px 18px; border-top: 1px solid var(--border); background: var(--background); }
+.panel-sub { font-size: .75rem; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); margin: 22px 0 10px; }
+.doc-panel .inline-fields { grid-template-columns: 1fr 1fr; }
+.doc-panel .signer-row .inline-fields { grid-template-columns: 1fr 72px; }
+.doc-panel .signer-row .inline-fields > :first-child { grid-column: 1 / -1; }
+.doc-panel .signer-item + .signer-item { margin-top: 14px; }
+@media (max-width: 900px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .canvas { padding: 16px; overflow: visible; }
+  .doc-panel { border-left: 0; border-top: 1px solid var(--border); overflow: visible; }
+}
+
+/* Editing a draft's text: a plain editor with a bar above and below, and the preview on grey. */
+.workspace.editing { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.edit-pane { display: flex; flex-direction: column; min-height: 0; background: var(--background); border-right: 1px solid var(--border); }
+.edit-pane > .doc-head { max-width: none; margin: 0; padding: 16px 24px 14px; border-bottom: 1px solid var(--border); }
+.edit-pane > .note { margin: 12px 24px; }
+.edit-pane .text-form { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.edit-pane .text-form > textarea.code { flex: 1; border: 0; border-radius: 0; resize: none; padding: 24px; min-height: 0; }
+.edit-pane .ot-host { flex: 1; min-height: 0; height: auto; margin: 0; border: 0; border-radius: 0; }
+.edit-pane .ot-host:focus-within { box-shadow: none; }
+.edit-bar { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-top: 1px solid var(--border); }
+.preview-pane { overflow: auto; padding: 20px 24px; background: light-dark(#eeedeb, #1c1c1f); }
+@media (max-width: 900px) { .workspace.editing { grid-template-columns: minmax(0, 1fr); } .edit-pane .ot-host { height: 60dvh; flex: none; } .edit-pane > .doc-head, .edit-bar { padding-left: 16px; } }
+
+/* Zoom on the pages: a floating control at the bottom right of the PDF side. */
+.zoomable { --zoom: 1; }
+.zoomable .pages { width: calc(min(100%, 794px) * var(--zoom)); max-width: none; margin-inline: auto; }
+/* The page fills its zoomed column (it is capped at 794px otherwise); wider than the view, it scrolls. */
+.zoomable .doc.page { max-width: none; }
+.zoomable:has(.pages) { overflow-x: auto; }
+.zoom-controls { position: sticky; bottom: 16px; z-index: 2; display: flex; align-items: center; gap: 2px; width: fit-content; margin: 12px 0 0 auto; padding: 3px; border: 1px solid var(--border); border-radius: 999px; background: var(--background); box-shadow: var(--shadow-medium); }
+.zoom-controls button { border-radius: 999px; padding: 6px; }
+.zoom-controls svg { width: 16px; height: 16px; }
+.zoom-controls output { min-width: 3.2em; text-align: center; font-size: .75rem; font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
+
+/* Click-to-copy values (endpoints, commands). */
+.copy-value { position: relative; display: inline; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-family: var(--mono); font-size: .86em; text-align: start; cursor: copy; }
+.copy-value:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
+.copy-value.block { display: block; width: 100%; padding: 12px; border-radius: var(--radius-medium); background: var(--muted); white-space: pre-wrap; word-break: break-word; }
+.copy-value.block:hover { text-decoration: none; background: color-mix(in srgb, var(--muted), var(--foreground) 6%); }
+.copy-value.copied::after { content: "Copied"; position: absolute; top: 50%; translate: 8px -50%; left: 100%; padding: 1px 6px; border-radius: 4px; background: var(--foreground); color: var(--background); font-family: var(--font-sans); font-size: .7rem; white-space: nowrap; }
+.copy-value.block.copied::after { left: auto; right: 10px; top: 10px; translate: none; }
+/* A link that looks like one, in blue. */
+a.text-link { color: var(--link) !important; text-decoration: underline; text-underline-offset: 3px; }
+/* Secrets stay blurred until hovered or focused. */
+.secret { filter: blur(5px); transition: filter .15s; cursor: default; }
+.secret:hover, .secret:focus-visible { filter: none; }
+
+/* The Agents link sits on its own at the top of the sidebar. */
+.side-nav ul.featured { margin-bottom: 18px; }
+
+/* Branding: the settings in a narrower column on the left, the email preview on the right. */
+.branding-grid { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.branding-grid > * + * { margin-top: 0 !important; }
+.branding-settings > * + * { margin-top: 18px; }
+.branding-preview { position: sticky; top: 20px; }
+.branding-preview .email-frame { height: calc(100dvh - 180px); min-height: 480px; }
+@media (max-width: 1000px) { .branding-grid { grid-template-columns: minmax(0, 1fr); } .branding-preview { position: static; } }
+/* Square controls: the colour swatch and checkboxes. */
+.color-swatch { width: 38px; height: 38px; aspect-ratio: 1; padding: 2px; flex: none; }
+.check input[type="checkbox"] { width: 18px; height: 18px; aspect-ratio: 1; flex: none; }
+
+/* Template editor: name and description above the editor, help at the end of the bar. */
+.edit-pane .meta-fields { padding: 14px 24px; border-bottom: 1px solid var(--border); }
+.edit-pane .doc-head .import-form { flex-wrap: nowrap; justify-content: flex-end; flex: none; }
+.edit-pane .doc-head .import-form input[type="file"] { max-width: 220px; }
+.edit-bar .help-button { margin-inline-start: auto; color: var(--muted-foreground); }
+
+/* The template's name is the page title, edited in place. */
+.title-block { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.title-input { width: 100%; margin: 0; padding: 2px 6px; margin-left: -6px; border: 1px solid transparent; border-radius: var(--radius-medium); background: none; font: inherit; font-size: 1.35rem; font-weight: 600; letter-spacing: -.01em; color: var(--foreground); box-shadow: none; }
+.title-input:hover { border-color: var(--border); }
+.title-input:focus { border-color: var(--ring); outline: none; box-shadow: 0 0 0 3px rgb(from var(--ring) r g b / .2); }
+.title-block select { width: auto; margin: 0; padding: 2px 28px 2px 8px; font-size: inherit; height: auto; }
+.meta-fields.single { grid-template-columns: minmax(0, 1fr); }
+
+/* A drawer on the right, over the preview, that leaves the editor usable (a manual popover). */
+.drawer[popover] { position: fixed; inset: 0 0 0 auto; width: min(400px, 100vw); height: 100dvh; max-height: none; margin: 0; padding: 18px 22px; overflow: auto; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: var(--background); color: var(--foreground); box-shadow: var(--shadow-large); translate: 100% 0; transition: translate .2s ease, display .2s allow-discrete, overlay .2s allow-discrete; }
+.drawer[popover]:popover-open { translate: 0 0; }
+@starting-style { .drawer[popover]:popover-open { translate: 100% 0; } }
+.drawer > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.drawer > header h2 { font-size: 1rem; margin: 0; }
+.drawer p { margin: 0 0 12px; }
+@media (prefers-reduced-motion: reduce) { .drawer[popover] { transition: none; } }
+
+/* Import: the file picker the same height as the Import button. */
+.import-form { align-items: center; }
+.import-form input[type="file"] { height: 32px; padding: 0 8px 0 0; line-height: 30px; font-size: var(--text-7); }
+.import-form input[type="file"]::file-selector-button { height: 100%; margin: 0 8px 0 0; padding: 0 12px; }
+.import-form button { height: 32px; }
+
+/* Import: the button is the label; the file input is hidden but still focusable. */
+.import-form[data-auto-import] input[type="file"] { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; opacity: 0; }
+.import-form .import-label { cursor: pointer; margin: 0; height: 32px; display: inline-flex; align-items: center; padding: 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-medium); background: transparent; color: var(--foreground); font-size: var(--text-8); font-weight: var(--font-medium); white-space: nowrap; transition: background-color var(--transition-fast); }
+.import-form .import-label:hover { background: var(--accent); }
+.import-form:has(input[type="file"]:focus-visible) .import-label { outline: 2px solid var(--ring); outline-offset: 2px; }
+.import-form[aria-busy="true"] .import-label { opacity: .6; pointer-events: none; }
+
+.source-pre { font-size: .75rem; max-height: none; }
+
+/* Template fields: grouped, each with its type and rules. */
+.field-list { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 2px; }
+.field-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 8px 10px; border-radius: var(--radius-medium); }
+.field-list li:nth-child(odd) { background: color-mix(in srgb, var(--muted) 60%, transparent); }
+.field-list .field-name { font-size: .85rem; font-weight: 500; overflow-wrap: anywhere; }
+.field-list .field-type { font-size: .72rem; color: var(--muted-foreground); font-family: var(--mono); align-self: center; }
+.field-list .field-key, .field-list .field-rules { grid-column: 1 / -1; font-size: .72rem; color: var(--muted-foreground); }
+.field-list .field-key { font-family: var(--mono); }
+.doc-panel ot-tabs .panel-sub:first-child { margin-top: 8px; }
+
+/* "For agents" on the template page: the ID and an example prompt to copy. */
+.agent-strip .panel-sub { margin-top: 8px; }
+.copy-value.block.prompt { font-family: var(--font-sans); font-size: .85rem; line-height: 1.6; white-space: pre-line; }
+
+/* STIX Two Text is set 0.5% tighter, as in the PDF. */
+.doc, .smd-font-serif .font-sample { letter-spacing: -0.005em; }
+.smd-signature-typed, .typed-preview { letter-spacing: normal; }
+.doc.smd-font-sans { letter-spacing: normal; }
+
+/* Side panel forms: space between rows. */
+.doc-panel [role="tabpanel"] [data-field], .doc-panel [role="tabpanel"] .inline-fields { margin: 0 0 14px; }
+.doc-panel [role="tabpanel"] .inline-fields > [data-field] { margin: 0 !important; }
+
+/* The document/template header stays at the top of the canvas while the pages scroll. */
+.canvas > .doc-head { position: sticky; top: -18px; z-index: 3; margin: -18px -32px 18px; padding: 18px 32px 14px; background: light-dark(#eeedeb, #1c1c1f); border-bottom: 1px solid var(--border); }
+@media (max-width: 900px) { .canvas > .doc-head { position: static; margin: 0 0 16px; padding: 0; border: 0; } }
+
+/* A signer's key in its heading ("Signer A (#1)"). */
+.signer-row legend { display: flex; align-items: center; gap: 6px; }
+.signer-key { padding: 1px 7px; border-radius: var(--radius-small); background: var(--muted); font-size: .85em; font-weight: 600; }
+
+/* The company's logo on the signing intro and message cards: a light tile, so dark logos show in dark mode. */
+.intro-logo { display: inline-flex; align-items: center; max-width: 100%; padding: 10px 14px; border-radius: 12px; background: #fff; border: 1px solid light-dark(var(--border), transparent); }
+.intro-logo img { display: block; max-height: 40px; max-width: 200px; width: auto; }
+.message-card { text-align: center; }
+.message-card .intro-logo { margin: 0 auto 14px; }
+.intro-card > .intro-logo, .intro-card > .intro-icon { margin-bottom: 16px; }
+
+/* Signing: the document as a white A4 page (like the PDF), on a grey canvas, in light colours. */
+body.signing-body { background: light-dark(#eeedeb, #1c1c1f); }
+.signing-body .sign-wrap { max-width: 860px; }
+.doc.page.signing { --field-bg: #fff7d6; --field-line: #c99700; --input: #d6d3d1; }
+.doc.page.signing .smd-input { color: #1c1917; }
+.doc.page.signing .smd-slot-other { color: #57534e; border-color: #a8a29e; }
+
+/* Signing: the page, with a timeline of signers beside it ("You are here", "Next"). */
+.signing-body .sign-wrap { max-width: 1160px; }
+.sign-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 28px; align-items: start; }
+.sign-main > * + * { margin-top: 16px; }
+.sign-aside { position: sticky; top: 84px; display: grid; gap: 12px; }
+.sign-aside .progress-card { margin: 0; padding: 16px; }
+.sign-aside .other-actions { margin: 0 !important; max-width: none; }
+.due-line { margin: -6px 0 12px; color: var(--danger) !important; }
+.sign-aside .progress-card h2 { font-size: .75rem; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; color: var(--muted-foreground); margin: 0 0 12px; }
+.signer-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; position: relative; }
+.signer-timeline li { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; }
+.signer-timeline li + li::before { content: ""; position: absolute; left: 15px; top: -14px; height: 14px; border-left: 2px solid var(--border); }
+.signer-timeline strong { display: block; font-size: .875rem; font-weight: 500; overflow-wrap: anywhere; }
+.signer-timeline .tl-state { display: block; font-size: .75rem; color: var(--muted-foreground); }
+.signer-timeline li[data-state="you"] figure { box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--go); }
+.signer-timeline li[data-state="you"] .tl-state { color: var(--foreground); font-weight: 500; }
+.signer-timeline li[data-state="signed"] .tl-state { color: var(--success); }
+.signer-timeline li[data-state="declined"] .tl-state { color: var(--danger); }
+.signer-timeline li[data-state="later"] { opacity: .7; }
+@media (max-width: 960px) { .sign-layout { grid-template-columns: minmax(0, 1fr); } .sign-aside { position: static; order: -1; } }
+.signer-timeline strong .muted { font-weight: 400; }
+
+/* Progress steps that aren't people: a small round icon in place of the avatar. */
+.step-dot { display: grid; place-items: center; width: 32px; height: 32px; margin-top: 2px; border-radius: 999px; background: var(--muted); color: var(--muted-foreground); }
+.step-dot svg { width: 15px; height: 15px; }
+.signer-timeline li[data-state="done"] .tl-state { color: var(--muted-foreground); }
+
+/* The signing header: full width, the company's logo (or our signing icon) at the far left. */
+.guide-logo { flex: none; display: block; max-height: 40px; max-width: 200px; width: auto; }
+.guide-icon { width: 38px; height: 38px; border-radius: 8px; }
+.guide-bar .guide-info { margin-right: auto; }
+@media (max-width: 600px) { .guide-logo { max-width: 96px; max-height: 26px; } .guide-icon { width: 26px; } }
+
+/* Signing: the "Powered by" footer sits in the right pane, under Other actions. */
+.sign-aside .site-foot { padding: 4px 0 0; text-align: start; }
+.sign-aside .site-foot .foot-powered { margin: 0 0 4px; }
+
+/* Page numbers on the paginated previews, where the PDF puts them (bottom right, small and grey). */
+.pages.paged .doc.page { position: relative; }
+.page-number { position: absolute; right: calc(68 * 100cqw / 595); bottom: calc(30 * 100cqw / 595); font: calc(7 * max(100cqw / 595, 1px)) var(--font-doc-sans); color: #78716c; letter-spacing: normal; }
+
+/* Drawing a signature: a line to sign on, and Clear inside the drawing area. Neither is part of the image. */
+.sig-pad-wrap { position: relative; }
+.sig-pad-wrap .sig-line { position: absolute; left: 24px; right: 24px; bottom: 34%; border-bottom: 1.5px solid #a8a29e; pointer-events: none; }
+.sig-pad-wrap .sig-line::before { content: "×"; position: absolute; left: -2px; bottom: 2px; font: 600 18px/1 var(--font-sans); color: #a8a29e; }
+.sig-pad-wrap #adopt-clear { position: absolute; top: 8px; right: 8px; color: #57534e; background: rgb(255 255 255 / .85); }
+
+/* The hint above the page lines up with the page's left edge. */
+.sign-main > .guide-hint { max-width: 794px; margin-inline: auto; }
+
+/* The hint gets its own row, so the Progress panel starts level with the top of the page. */
+@media (min-width: 961px) {
+  .sign-layout { gap: 16px 28px; }
+  .sign-main { display: contents; }
+  .sign-main > .guide-hint { grid-column: 1; grid-row: 1; margin: 0 auto; width: 100%; }
+  .sign-main > .doc { grid-column: 1; grid-row: 2; margin-top: 0 !important; }
+  .sign-layout > .sign-aside { grid-column: 2; grid-row: 2; }
+}
+
+/* Status blocks in the side panel: the heading and its action on one line. */
+.panel-block.row-stretch > h2 { margin: 0; }
+.panel-block.row-stretch > .stack { flex-basis: 100%; }

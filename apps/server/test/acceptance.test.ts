@@ -199,10 +199,10 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     await shot("11-branding");
 
     // Create an API key for the agent.
-    await page.goto(`${base}/settings`);
+    await page.goto(`${base}/agentic`);
     await page.fill("input[name=label]", "Sales agent");
     await page.click("button:has-text('Create API key')");
-    const apiKey = (await page.locator(".alert pre").textContent())!.trim();
+    const apiKey = (await page.locator(".note pre").textContent())!.trim();
     expect(apiKey).toMatch(/^smd_/);
 
     // Configure the webhook (REST).
@@ -289,7 +289,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     await page.goto(`${base}/outbox`);
     const emailFrame = page.frameLocator("iframe.email-frame").first();
     await emailFrame.locator("text=Hi Jane, here is the agreement we discussed on Friday.").waitFor();
-    expect(await emailFrame.locator("img[src^='data:image/png']").count()).toBe(1); // logo, inline
+    expect(await emailFrame.locator("img[src^='data:image/png']").count()).toBe(2); // the account logo and the Signed.md footer logo, inline
     expect(await emailFrame.locator("a:has-text('REVIEW DOCUMENT')").count()).toBe(1);
     // Avatars: the sender in the banner, and each signer, via the avatar base URL.
     expect(await emailFrame.locator("img[alt='Jane Doe']").count()).toBeGreaterThan(0);
@@ -309,7 +309,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     await signer.fill("input[name='f:client.full_name']", "Jane Doe");
     await signer.fill("input[name='f:client.date']", "2026-11-02");
     // Sign inline: the Sign tag opens "Adopt your signature". Draw it.
-    await signer.click("[data-field='client.signature'] .smd-sign-tag");
+    await signer.click("[data-smd-field='client.signature'] .smd-sign-tag");
     await signer.click("#adopt .sig-modes button[data-mode=drawn]");
     const canvas = signer.locator("#adopt-pad");
     const box = (await canvas.boundingBox())!;
@@ -319,9 +319,9 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     await signer.mouse.up();
     await shot("07-adopt-signature", signer);
     await signer.click("#adopt-ok");
-    await signer.waitForSelector("[data-field='client.signature'].smd-done img");
+    await signer.waitForSelector("[data-smd-field='client.signature'].smd-done img");
     await shot("08-signing-filled", signer);
-    await signer.click("#guide-finish");
+    await signer.click("#guide-next"); // now reads "Finish"
     await signer.waitForSelector("h1:has-text('done')");
 
     // The provider countersigns (order 2) with a typed signature, after the client.
@@ -329,10 +329,10 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     await provider.goto(await linkFor("ran@automaze.example"));
     await provider.check("input[name=consent]");
     await provider.click("button:has-text('Continue')");
-    await provider.click("[data-field='provider.signature'] .smd-sign-tag");
+    await provider.click("[data-smd-field='provider.signature'] .smd-sign-tag");
     expect(await provider.inputValue("#adopt-text")).toBe("Ran Aroussi"); // prefilled from the signer's name
     await provider.click("#adopt-ok");
-    await provider.click("#guide-finish");
+    await provider.click("#guide-next");
     await provider.waitForSelector("h1:has-text('done')");
 
     // 10. Receive webhooks: awaiting_last_signer, signed, finalized. All signed with HMAC.
@@ -397,7 +397,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     await member.click("button:has-text('Join Automaze')");
     await member.waitForURL(/\/documents/);
     expect(await member.locator(`a[href='/documents/${docId}']`).count()).toBe(0); // members see only their own documents
-    expect(await member.locator("nav.nav a[href='/team']").count()).toBe(0);
+    expect(await member.locator("nav.side-nav a[href='/team']").count()).toBe(0);
     expect((await member.goto(`${base}/documents/${docId}`))!.status()).toBe(404);
     expect((await member.goto(`${base}/team`))!.status()).toBe(403);
     // A member's template waits for an owner.

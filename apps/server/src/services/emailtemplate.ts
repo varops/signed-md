@@ -11,6 +11,8 @@ export function esc(s: string): string {
 }
 
 export const LOGO_CID = "logo@signed.md";
+/** The small Signed.md logo above the footer line, attached inline while branding is on. */
+export const BRAND_CID = "brand@signed.md";
 
 export interface Person {
   name: string;
@@ -83,7 +85,7 @@ export function bannerTheme(color: string) {
     bg,
     text: light ? "#1c1917" : "#ffffff",
     circle: shade(bg, light ? -0.1 : 0.12),
-    buttonBg: light ? "#1c1917" : "#f5b301",
+    buttonBg: light ? "#1c1917" : "#f6da1c",
     buttonText: light ? "#ffffff" : "#1c1917",
   };
 }
@@ -159,7 +161,7 @@ export function renderEmail(p: EmailParts): { html: string; text: string } {
     </td></tr>
     <tr><td style="padding:28px 36px 6px">${from}${message}${paragraphs}${details}</td></tr>
     ${security}
-    <tr><td style="padding:26px 36px 30px"><p style="margin:0;font:12px/1.5 ${FONT};color:#a8a29e">${byline}If you weren't expecting this email, you can ignore it.</p></td></tr>
+    <tr><td style="padding:26px 36px 30px">${p.branding === false ? "" : `<a href="${PRODUCT_URL}" style="display:inline-block;margin:0 0 10px"><img src="cid:${BRAND_CID}" alt="Signed.md" width="60" height="24" style="display:block;width:60px;height:24px;border:0"></a>`}<p style="margin:0;font:12px/1.5 ${FONT};color:#a8a29e">${byline}If you weren't expecting this email, you can ignore it.</p></td></tr>
   </table>
 </td></tr></table>
 </body></html>`;

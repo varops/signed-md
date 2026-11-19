@@ -134,6 +134,13 @@ export interface SignerView {
   disclosure: string;
   progress: { signed: number; total: number };
   expires_at: string | null;
+  /** When the document was sent, for the first step of the timeline. */
+  sent_at: string | null;
+  /**
+   * Everyone who signs, in signing order, for the timeline beside the document. Names and status
+   * only: other signers' email addresses never reach this page.
+   */
+  timeline: { key: string; name: string; order: number; state: "signed" | "declined" | "you" | "now" | "next" | "later" }[];
 }
 
 function isExpired(doc: DocRow): boolean {
@@ -161,6 +168,26 @@ export async function openSigningPage(ctx: Ctx, token: string, meta: RequestMeta
     });
   }
   return { state: "sign", view: await buildSignerView(ctx, doc, signer) };
+}
+
+/** Who has signed, who signs now (including you), who is next, and who comes later. */
+function signerTimeline(signers: SignerRow[], me: string): SignerView["timeline"] {
+  const open = signers.filter((s) => s.status !== "signed" && s.status !== "declined");
+  const orders = [...new Set(open.map((s) => Number(s.signing_order)))].sort((a, b) => a - b);
+  const [now, next] = orders;
+  return [...signers]
+    .sort((a, b) => Number(a.signing_order) - Number(b.signing_order))
+    .map((s) => {
+      const order = Number(s.signing_order);
+      const state =
+        s.status === "signed" ? "signed"
+        : s.status === "declined" ? "declined"
+        : s.key === me ? "you"
+        : order === now ? "now"
+        : order === next ? "next"
+        : "later";
+      return { key: s.key, name: s.name || s.key, order, state };
+    });
 }
 
 async function buildSignerView(ctx: Ctx, doc: DocRow, signer: SignerRow): Promise<SignerView> {
@@ -198,6 +225,8 @@ async function buildSignerView(ctx: Ctx, doc: DocRow, signer: SignerRow): Promis
     disclosure: await disclosureFor(ctx, doc),
     progress: { signed: signers.filter((s) => s.status === "signed").length, total: signers.length },
     expires_at: doc.expires_at,
+    sent_at: doc.sent_at,
+    timeline: signerTimeline(signers, signer.key),
   };
 }
 

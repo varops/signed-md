@@ -77,19 +77,31 @@ POST   /v1/templates/{id}/versions
 GET    /v1/templates/{id}/versions/{version}
 POST   /v1/templates/{id}/archive
 POST   /v1/templates/{id}/unarchive
+POST   /v1/templates/{id}/move
 ```
 
 Templates are never edited in place. `POST /versions` creates a new version.
 
 Templates and versions created through the API start as `pending_approval`. There is no approve endpoint. A human approves templates in the web UI. Template representations include the approval status of each version.
 
-### Imports (v1.2)
+### Imports
+
+People import Word, OpenDocument, RTF and PDF files in the web UI (New template, New document). The file is converted to Markdown on the server and opens in the editor, unsaved. There is no import endpoint: agents convert files themselves before calling `POST /v1/templates`, as the agent skill explains. A REST import endpoint with suggested placeholders may follow.
+
+### Folders
 
 ```http
-POST   /v1/imports
+GET    /v1/folders?kind=template|document
+POST   /v1/folders
+PATCH  /v1/folders/{id}
+DELETE /v1/folders/{id}
 ```
 
-Uploads a PDF or .docx file. Returns Markdown with suggested placeholders and creates a `pending_approval` template.
+Folders organise templates and documents, one level deep. Template folders and document folders are separate lists. Folders are not a permission boundary: members still see only their own documents, in any folder. `PATCH` with `{"name": "…"}` renames a folder. `DELETE` removes the folder and moves everything in it to the top level: no template or document is deleted. The response says how many items moved.
+
+Template folders are managed by owners and administrators. Document folders can be created by anyone who can create documents.
+
+File something with `folder_id` on `POST /v1/documents` or `POST /v1/templates`, or move it later with `POST /v1/documents/{id}/move` or `POST /v1/templates/{id}/move` (`{"folder_id": "fld_…"}`, or `null` to take it out). Moving works in any status and never changes a document's revision. Filter lists with `?folder_id=fld_…`, or `?folder_id=none` for items in no folder. Representations include `folder: { id, name }` or `null`.
 
 ### Documents
 
@@ -105,6 +117,7 @@ POST   /v1/documents/{id}/revoke
 POST   /v1/documents/{id}/signers/{key}/resend
 POST   /v1/documents/{id}/archive
 POST   /v1/documents/{id}/unarchive
+POST   /v1/documents/{id}/move
 GET    /v1/documents/{id}/artifacts
 ```
 
@@ -171,7 +184,7 @@ Content-Type: application/json
 
 - `values` holds template values. Keys are written without the `$` prefix.
 - `font` is `"serif"` or `"sans-serif"`, for the PDF and the signing page. Without it, the account default (Settings → Branding) is used. It is part of the revision.
-- `signers` lists every signer. Each `key` must match the signer keys used in the template. Signers with the same `order` sign in parallel; the next group is notified when the current group is done.
+- `signers` lists every signer. Each `key` must match the signer keys used in the template. Signers with the same `order` sign in parallel; the next group is notified when the current group is done. Order `0` means any order (everyone signs at once). Use it for every signer or none: a mix of `0` and numbers is refused.
 - Currency values are decimal strings.
 
 A successful response returns the document ID, status, revision, validation state, and relevant links.
@@ -350,6 +363,9 @@ The v1.0 MCP server exposes:
 | `signed_list_documents` | Search and list documents |
 | `signed_revoke_document` | Revoke a sent document |
 | `signed_archive_document` | Archive or unarchive a document |
+| `signed_list_folders` | List template or document folders |
+| `signed_create_folder` | Create a folder, when the user asks |
+| `signed_move` | File a document or template in a folder, or take it out |
 | `signed_get_artifacts` | Retrieve completion artifacts |
 
 Agents can create templates and versions, but cannot approve them. Approval happens only in the web UI. Only approved versions can be used for documents.

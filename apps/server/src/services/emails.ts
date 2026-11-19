@@ -1,19 +1,23 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { SignedError } from "@signed-md/core";
 import type { Ctx } from "../context.ts";
 import { unseal } from "../crypto.ts";
 import { getAccount } from "./accounts.ts";
 import { readLogo } from "./branding.ts";
 import { loadDocument, loadSigners } from "./documents.ts";
-import { type EmailParts, LOGO_CID, type Person, renderEmail } from "./emailtemplate.ts";
+import { BRAND_CID, type EmailParts, LOGO_CID, type Person, renderEmail } from "./emailtemplate.ts";
 import { emailAvatar, initialsOf } from "./avatars.ts";
 import { downloadLink, slug } from "./finalize.ts";
 import type { MailAttachment, MailMessage } from "./mail.ts";
 import { personalizeMessage } from "./messagevars.ts";
 
 export interface EmailJob {
-  kind: "signing_request" | "reminder" | "last_signer" | "revoked" | "declined" | "expired" | "completed" | "completed_sender" | "invitation";
+  kind: "signing_request" | "reminder" | "last_signer" | "revoked" | "declined" | "expired" | "completed" | "completed_sender" | "invitation" | "password_reset";
   document_id?: string;
   invitation_id?: string;
+  reset_id?: string;
   signer_id?: string;
   link?: string;
 }
@@ -28,10 +32,16 @@ function longDate(iso: string | null, tz: string): string {
   return new Intl.DateTimeFormat("en-GB", { dateStyle: "long", timeZone: tz }).format(new Date(iso));
 }
 
+/** The small Signed.md logo for the footer, while "Powered by Signed.md" is on. */
+const BRAND_PNG = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "assets", "email-footer-logo.png"));
+export function brandAttachment(ctx: Ctx): MailAttachment[] {
+  return ctx.config.branding ? [{ filename: "signed-md.png", content: BRAND_PNG, contentType: "image/png", cid: BRAND_CID }] : [];
+}
+
 async function emailAssets(ctx: Ctx) {
   const account = await getAccount(ctx);
   const logo = await readLogo(ctx);
-  const inline: MailAttachment[] = logo ? [{ filename: `logo.${logo.contentType === "image/png" ? "png" : "jpg"}`, content: logo.data, contentType: logo.contentType, cid: LOGO_CID }] : [];
+  const inline: MailAttachment[] = [...(logo ? [{ filename: `logo.${logo.contentType === "image/png" ? "png" : "jpg"}`, content: logo.data, contentType: logo.contentType, cid: LOGO_CID }] : []), ...brandAttachment(ctx)];
   return { account, logo, inline };
 }
 
@@ -57,9 +67,38 @@ async function sendInvitation(ctx: Ctx, job: EmailJob): Promise<void> {
   await ctx.mailer.send({ to: inv.email, subject: `Join ${account.name} on Signed.md`, html, text, ...(inviter ? { replyTo: inviter.email } : {}), attachments: inline });
 }
 
+async function sendPasswordReset(ctx: Ctx, job: EmailJob): Promise<void> {
+  const reset = await ctx.db
+    .selectFrom("password_resets")
+    .innerJoin("users", "users.id", "password_resets.user_id")
+    .select(["password_resets.used_at", "password_resets.expires_at", "users.email", "users.name"])
+    .where("password_resets.id", "=", job.reset_id!)
+    .executeTakeFirst();
+  // Don't send a link that has already been used, replaced or has run out.
+  if (!reset || reset.used_at || reset.expires_at < new Date().toISOString() || !job.link) return;
+  const { account, logo, inline } = await emailAssets(ctx);
+  const { html, text } = renderEmail({
+    account: account.name,
+    branding: ctx.config.branding,
+    hasLogo: logo !== null,
+    bannerColor: account.config.branding.banner_color,
+    icon: "bell",
+    headline: "Reset your Signed.md password",
+    button: { label: "Choose a new password", url: unseal(ctx.keys.serverSecret, job.link) },
+    paragraphs: [
+      `Someone asked to reset the password for ${reset.email} at ${account.name}. If it was you, use the button to choose a new one.`,
+      "The link works once and expires in 1 hour.",
+      "If you didn't ask for this, you can ignore this email. Your password stays the same.",
+    ],
+    security: true,
+  });
+  await ctx.mailer.send({ to: reset.email, subject: "Reset your Signed.md password", html, text, attachments: inline });
+}
+
 /** Build and send the messages for one email job. */
 export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
   if (job.kind === "invitation") return sendInvitation(ctx, job);
+  if (job.kind === "password_reset") return sendPasswordReset(ctx, job);
   const account = await getAccount(ctx);
   const doc = await loadDocument(ctx.db, job.document_id!);
   const signers = await loadSigners(ctx.db, doc.id);
@@ -75,7 +114,7 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
   const senderEmail = owner?.email ?? admins[0];
   const senderName = owner ? owner.name || owner.email.split("@")[0]! : account.name;
   const logo = await readLogo(ctx);
-  const inline: MailAttachment[] = logo ? [{ filename: `logo.${logo.contentType === "image/png" ? "png" : "jpg"}`, content: logo.data, contentType: logo.contentType, cid: LOGO_CID }] : [];
+  const inline: MailAttachment[] = [...(logo ? [{ filename: `logo.${logo.contentType === "image/png" ? "png" : "jpg"}`, content: logo.data, contentType: logo.contentType, cid: LOGO_CID }] : []), ...brandAttachment(ctx)];
   const docUrl = `${ctx.config.publicUrl}/documents/${doc.id}`;
   const messages: MailMessage[] = [];
 

@@ -1,6 +1,6 @@
 import type { FieldDef } from "@signed-md/core";
 import { html } from "hono/html";
-import type { H } from "./layout.ts";
+import { field, type H } from "./layout.ts";
 
 export type FormBody = Record<string, string | File | (string | File)[]>;
 
@@ -21,7 +21,7 @@ export function parseSigners(body: FormBody): { key: string; name: string; email
   }
   return [...rows.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([, r]) => ({ key: r.key ?? "", name: r.name ?? "", email: r.email ?? "", order: Number(r.order || 1) || 1 }))
+    .map(([, r]) => ({ key: r.key ?? "", name: r.name ?? "", email: r.email ?? "", order: r.order === undefined || r.order === "" || !Number.isFinite(Number(r.order)) ? 1 : Number(r.order) }))
     .filter((r) => r.key || r.name || r.email);
 }
 
@@ -39,8 +39,10 @@ export function parseValues(body: FormBody, fields: FieldDef[]): Record<string, 
 
 export function valueInput(f: FieldDef, current: unknown): H {
   const name = `v:${f.name}`;
+  const id = `v-${f.name}`;
   const label = f.rules.label ?? f.name!;
   const hint = [
+    f.type,
     f.type === "currency" ? f.param : null,
     f.rules.minimum !== undefined ? `min ${f.rules.minimum}` : null,
     f.rules.maximum !== undefined ? `max ${f.rules.maximum}` : null,
@@ -48,31 +50,37 @@ export function valueInput(f: FieldDef, current: unknown): H {
     f.rules.default !== undefined ? `default ${String(f.rules.default)}` : null,
   ].filter(Boolean).join(" · ");
   const v = current === undefined || current === null ? "" : String(current);
+  const described = html`aria-describedby="${id}-hint"`;
+  if (f.type === "checkbox") {
+    return html`<div data-field><label><input type="checkbox" name="${name}" id="${id}" ${described} ${current === true || current === "on" ? "checked" : ""}> ${label}</label><small data-hint id="${id}-hint">${hint}</small></div>`;
+  }
   let input: H;
-  if (f.type === "longtext") input = html`<textarea class="textarea" name="${name}" id="${name}">${v}</textarea>`;
-  else if (f.type === "date") input = html`<input class="input" type="date" name="${name}" id="${name}" value="${v}">`;
-  else if (f.type === "checkbox") input = html`<label class="check"><input class="input" type="checkbox" name="${name}" ${current === true || current === "on" ? "checked" : ""}> Yes</label>`;
+  if (f.type === "longtext") input = html`<textarea name="${name}" id="${id}" ${described}>${v}</textarea>`;
+  else if (f.type === "date") input = html`<input type="date" name="${name}" id="${id}" value="${v}" ${described}>`;
   else if (f.type === "choice" || Array.isArray(f.rules.allowed_values)) {
     const opts = (f.rules.options ?? f.rules.allowed_values ?? []).map(String);
-    input = html`<select class="select" name="${name}" id="${name}"><option value="">Choose…</option>${opts.map((o) => html`<option ${o === v ? "selected" : ""}>${o}</option>`)}</select>`;
-  } else input = html`<input class="input" type="text" name="${name}" id="${name}" value="${v}" ${f.type === "number" || f.type === "currency" ? html`inputmode="decimal"` : ""}>`;
-  return html`<div class="field"><label for="${name}">${label} <span class="muted">${f.type}${hint ? ` · ${hint}` : ""}</span></label>${input}</div>`;
+    input = html`<select name="${name}" id="${id}" ${described}><option value="">Choose…</option>${opts.map((o) => html`<option ${o === v ? "selected" : ""}>${o}</option>`)}</select>`;
+  } else input = html`<input type="text" name="${name}" id="${id}" value="${v}" ${described} ${f.type === "number" || f.type === "currency" ? html`inputmode="decimal"` : ""}>`;
+  return field(id, label, input, hint);
 }
 
 export function signerRows(signers: { key: string; name: string; email: string; order: number }[], fixedKeys: boolean): H {
   const rows = signers.length ? signers : [{ key: "", name: "", email: "", order: 1 }];
-  return html`<div id="signers" class="stack">
+  return html`<ol id="signers" class="signer-list" aria-describedby="signers-hint">
     ${rows.map(
-      (s, i) => html`<div class="signer-row">
-        <div class="row" style="margin-bottom:8px"><label style="margin:0">Signer key</label>
-          <input class="input" type="text" name="signers[${i}][key]" value="${s.key}" ${fixedKeys && s.key ? "readonly" : ""} style="max-width:180px" placeholder="client"></div>
+      (s, i) => html`<li class="signer-row"><fieldset>
+        ${fixedKeys && s.key
+          ? // The template sets the key, so it is a heading here, not a field.
+            html`<legend>Signer <code class="signer-key">${s.key}</code> <span class="muted">(#${i + 1})</span></legend><input type="hidden" name="signers[${i}][key]" value="${s.key}">`
+          : html`<legend>Signer ${i + 1}</legend>
+        ${field(`signer-${i}-key`, "Signer key", html`<input type="text" id="signer-${i}-key" name="signers[${i}][key]" value="${s.key}" placeholder="client" autocapitalize="none" autocorrect="off" spellcheck="false">`)}`}
         <div class="inline-fields">
-          <div><label>Name</label><input class="input" type="text" name="signers[${i}][name]" value="${s.name}" placeholder="Jane Doe"></div>
-          <div><label>Email</label><input class="input" type="email" name="signers[${i}][email]" value="${s.email}" placeholder="jane@example.com"></div>
-          <div><label>Order</label><input class="input" type="number" min="1" name="signers[${i}][order]" value="${s.order}"></div>
+          ${field(`signer-${i}-name`, "Name", html`<input type="text" id="signer-${i}-name" name="signers[${i}][name]" value="${s.name}" placeholder="Jane Doe" autocomplete="off">`)}
+          ${field(`signer-${i}-email`, "Email", html`<input type="email" id="signer-${i}-email" name="signers[${i}][email]" value="${s.email}" placeholder="jane@example.com" autocomplete="off" autocapitalize="none" spellcheck="false">`)}
+          ${field(`signer-${i}-order`, "Order", html`<input type="number" min="0" id="signer-${i}-order" name="signers[${i}][order]" value="${s.order}" data-signer-order>`)}
         </div>
-      </div>`,
+      </fieldset></li>`,
     )}
-  </div>
-  <p class="small muted" style="margin-top:8px">Signers with the same order sign at the same time. Lower orders sign first.</p>`;
+  </ol>
+  <p class="small muted" id="signers-hint">Signers with the same order sign at the same time. Lower orders sign first. 0 means any order (everyone signs at once), for every signer or none.</p>`;
 }

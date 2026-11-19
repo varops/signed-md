@@ -66,6 +66,11 @@ describe("end-to-end signing flow (services)", async () => {
     const page = await openSigningPage(ctx, clientToken, meta);
     expect(page.state).toBe("sign");
     if (page.state === "sign") expect(page.view.fields.map((f) => f.key)).toEqual(["client.start_date", "client.signature"]);
+    // The timeline beside the document: you sign now, the provider is next. Names only, no emails.
+    if (page.state === "sign") {
+      expect(page.view.timeline.map((t) => [t.name, t.state])).toEqual([["Jane Doe", "you"], ["Sam Lee", "next"]]);
+      expect(JSON.stringify(page.view.timeline)).not.toContain("sam@automaze.example");
+    }
     await expect(submitSignature(ctx, clientToken, { consent: false, fields: {} }, meta)).rejects.toMatchObject({ code: "FIELD_REQUIRED" });
     await expect(submitSignature(ctx, clientToken, { consent: true, fields: { "client.start_date": "2026-13-01" } }, meta)).rejects.toMatchObject({ code: "FIELD_INVALID" });
     const r1 = await submitSignature(ctx, clientToken, { consent: true, fields: { "client.start_date": "2026-12-01", "client.signature": { kind: "drawn", image: PNG } } }, meta);
@@ -180,10 +185,17 @@ describe("email banner and avatars", async () => {
   const { avatarUrl } = await import("../src/services/avatars.ts");
 
   it("picks readable text and button colours for the banner", () => {
-    expect(bannerTheme("#1c1917")).toMatchObject({ text: "#ffffff", buttonBg: "#f5b301" });
+    expect(bannerTheme("#1c1917")).toMatchObject({ text: "#ffffff", buttonBg: "#f6da1c" });
     expect(bannerTheme("#ffffff")).toMatchObject({ text: "#1c1917", buttonBg: "#1c1917" });
     expect(bannerTheme("#f5b301")).toMatchObject({ text: "#1c1917", buttonBg: "#1c1917" }); // yellow banner: no yellow button
     expect(bannerTheme("not-a-colour").bg).toBe("#1c1917");
+  });
+
+  it("puts the small Signed.md logo above the footer line only while branding is on", () => {
+    const on = renderEmail({ account: "Acme", hasLogo: false, icon: "document", headline: "x" });
+    expect(on.html).toMatch(/<img src="cid:brand@signed\.md"[^>]*>.*Sent by Acme with/s);
+    const off = renderEmail({ account: "Acme", branding: false, hasLogo: false, icon: "document", headline: "x" });
+    expect(off.html).not.toContain("cid:brand@signed.md");
   });
 
   it("shows avatars only when turned on, with initials otherwise", async () => {
@@ -192,7 +204,7 @@ describe("email banner and avatars", async () => {
     expect(avatarUrl(ctx.config, true, "Jane@Acme.example", "Jane Doe")).toMatch(/^https:\/\/avatars\.example-cdn\.net\/jane%40acme\.example\?fallback=https%3A%2F%2Fui-avatars\.com%2Fapi%2F%3Fname%3DJane%2BDoe%26size%3D128%26background%3D[0-9A-F]{6}%26color%3D[0-9a-fA-F]{3,6}$/);
     const off = renderEmail({ account: "Acme", hasLogo: false, icon: "document", headline: "x", person: { name: "Acme", avatar: null, initials: "AC" } }).html;
     expect(off).toContain(">AC</div>");
-    expect(off).not.toContain("<img");
+    expect(off.replace(/<img src="cid:brand@signed\.md"[^>]*>/, "")).not.toContain("<img"); // only the Signed.md footer logo
     await expect(setBannerAndAvatars(ctx, SYS, { banner_color: "blue", avatars: true })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
     await ctx.close();
   });

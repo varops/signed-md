@@ -5,12 +5,16 @@
   if (!form) return;
   document.body.classList.add("js");
 
-  var fields = Array.prototype.slice.call(form.querySelectorAll("[data-field]"));
+  var fields = Array.prototype.slice.call(form.querySelectorAll("[data-smd-field]"));
   var required = fields.filter(function (f) { return f.hasAttribute("data-required"); });
+  // One main button walks through the fields: Start, then Next, then Finish once everything is
+  // filled in. Back returns to the previous field. Without JavaScript it is a plain Finish button.
   var nextBtn = document.getElementById("guide-next");
+  var backBtn = document.getElementById("guide-back");
   var progress = document.getElementById("guide-progress");
-  var finishBtns = form.querySelectorAll("button[type=submit]");
+  var finishBtns = [nextBtn];
   var started = false;
+  var cursor = -1;
 
   // ---- Field state ----
   function isDone(f) {
@@ -24,14 +28,17 @@
       var done = isDone(f);
       f.classList.toggle("smd-done", done);
       if (f.hasAttribute("data-required") && !done) left++;
-      var key = f.getAttribute("data-field");
+      var key = f.getAttribute("data-smd-field");
       document.querySelectorAll('[data-mirror="' + CSS.escape(key) + '"]').forEach(function (m) { m.textContent = f.value || "…"; });
     });
     var total = required.length;
     progress.textContent = left === 0 ? "All required fields are done" : (total - left) + " of " + total + " required fields done";
-    finishBtns.forEach(function (b) { b.classList.toggle("ready", left === 0); b.classList.toggle("btn-go", left === 0); });
-    nextBtn.classList.toggle("hidden", left === 0);
-    nextBtn.textContent = started ? "Next" : "Start";
+    // "Start" only while nothing is filled in and the signer hasn't begun; then "Next"; then "Finish".
+    var filled = fields.some(isDone);
+    if (filled) started = true;
+    nextBtn.textContent = left === 0 ? "Finish" : started ? "Next" : "Start";
+    nextBtn.classList.toggle("breathe", left === 0);
+    if (backBtn) backBtn.hidden = !started || left === 0 || cursor <= 0;
     if (left === 0) fields.forEach(function (x) { x.classList.remove("smd-current"); });
     return left;
   }
@@ -41,8 +48,7 @@
     f.addEventListener("focus", function () { started = true; refresh(); });
   });
 
-  // ---- Start / Next ----
-  var cursor = -1;
+  // ---- Start / Next / Back ----
   function focusField(f) {
     fields.forEach(function (x) { x.classList.remove("smd-current"); });
     f.classList.add("smd-current");
@@ -50,14 +56,22 @@
     if (f.classList.contains("smd-sign")) f.querySelector(".smd-sign-tag").focus({ preventScroll: true });
     else f.focus({ preventScroll: true });
   }
-  nextBtn.addEventListener("click", function () {
+  nextBtn.addEventListener("click", function (e) {
     started = true;
-    if (refresh() === 0) { form.requestSubmit ? form.requestSubmit() : form.submit(); return; }
+    if (refresh() === 0) return; // Finish: let the form submit
+    e.preventDefault();
     var order = required.length ? required : fields;
     for (var i = 1; i <= order.length; i++) {
       var f = order[(cursor + i) % order.length];
       if (!isDone(f)) { cursor = order.indexOf(f); focusField(f); refresh(); return; }
     }
+  });
+  if (backBtn) backBtn.addEventListener("click", function () {
+    var order = required.length ? required : fields;
+    if (cursor <= 0) return;
+    cursor -= 1;
+    focusField(order[cursor]);
+    refresh();
   });
 
   form.addEventListener("submit", function (e) {
@@ -87,10 +101,10 @@
     tabs.forEach(function (t) {
       var on = t.getAttribute("data-mode") === m;
       t.setAttribute("aria-pressed", on ? "true" : "false");
-      if (on) t.removeAttribute("data-variant"); else t.setAttribute("data-variant", "outline");
+      t.classList.toggle("outline", !on);
     });
-    dialog.querySelector('[data-pane="typed"]').classList.toggle("hidden", m !== "typed");
-    dialog.querySelector('[data-pane="drawn"]').classList.toggle("hidden", m !== "drawn");
+    dialog.querySelector('[data-pane="typed"]').hidden = m !== "typed";
+    dialog.querySelector('[data-pane="drawn"]').hidden = m !== "drawn";
     if (m === "drawn") sizePad();
   }
   function sizePad() {
@@ -102,7 +116,7 @@
     pad.clear();
   }
   if (window.SignaturePad && canvas) pad = new window.SignaturePad(canvas, { penColor: "#0f172a", backgroundColor: "rgba(255,255,255,0)" });
-  else tabs[1].classList.add("hidden");
+  else tabs[1].hidden = true;
   tabs.forEach(function (t) { t.addEventListener("click", function () { setMode(t.getAttribute("data-mode")); }); });
   document.getElementById("adopt-clear").addEventListener("click", function (e) { e.preventDefault(); if (pad) pad.clear(); });
   textInput.addEventListener("input", function () { preview.textContent = textInput.value; });
@@ -172,11 +186,24 @@
         setTimeout(function () { if (refresh() > 0) nextBtn.click(); }, 150);
       } else open(box);
     });
-    // Click an applied signature to change it.
-    box.querySelector(".smd-sign-value").addEventListener("click", function () { open(box); });
+    // Click (or Enter/Space on) an applied signature to change it.
+    var shown = box.querySelector(".smd-sign-value");
+    shown.addEventListener("click", function () { open(box); });
+    shown.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(box); } });
   });
 
   var err = document.getElementById("sign-error");
-  if (err) started = true;
+  if (err) { started = true; err.focus(); }
+
+  // Light dismiss for browsers without <dialog closedby> (Safari): close on a press and release outside.
+  if (!("closedBy" in HTMLDialogElement.prototype)) {
+    var outside = function (e) {
+      var r = dialog.getBoundingClientRect();
+      return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    };
+    var pressedOutside = false;
+    dialog.addEventListener("pointerdown", function (e) { pressedOutside = outside(e); });
+    dialog.addEventListener("pointerup", function (e) { if (pressedOutside && outside(e)) dialog.close(); });
+  }
   refresh();
 })();

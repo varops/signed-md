@@ -9,7 +9,7 @@ Signed.md sends Markdown agreements for electronic signature and returns a verif
 
 ## Setup
 
-You need the Signed.md URL and an API key (Settings → API keys in the Signed.md web UI). The key acts as the person who created it, with their role: a member's key sees and sends only that member's documents, and a viewer's key can only read. Documents you send come from that person. Never print the API key in your output.
+You need the Signed.md URL and an API key (Agents → API keys in the Signed.md web UI). The key acts as the person who created it, with their role: a member's key sees and sends only that member's documents, and a viewer's key can only read. Documents you send come from that person. Never print the API key in your output.
 
 **MCP (preferred):**
 
@@ -96,11 +96,31 @@ Signature: {{provider.signature:signature}}
 <!-- /columns -->
 ```
 
+### Starting from a Word or PDF contract
+
+When the user gives you an existing contract (.docx, .doc, .odt, .rtf or .pdf), convert it to Markdown first, then send it as a template or an inline document:
+
+1. Convert it locally, for example with `npx @firecrawl/anydoc contract.docx > contract.md` (the same converter Signed.md uses), or with your own tools. Don't upload the file to an online converter without the user's permission: contracts are confidential.
+2. Keep the wording exactly as it is. Fix only conversion artefacts, such as broken line wraps, stray page numbers, headers and footers. Never rephrase, add or drop terms.
+3. Replace the blanks with placeholders: values the sender fills in become `{{$name:type}}`, and what each party fills in becomes `{{signer.field:type}}`, such as `{{client.signature:signature}}` and `{{client.date:date}}`. Put the parties' signature blocks side by side with columns.
+4. Escape any literal double braces in the text as `\{{`.
+5. Show the user what you changed (placeholders added, artefacts removed) before creating the template. A person still approves it in the web UI.
+
+People can also upload a Word or PDF file themselves in the web UI (New template, or New document), which converts it the same way.
+
 ## Changing or cancelling
 
 - Drafts can be edited. Sent documents cannot.
 - To fix a sent document (for example, a wrong email), **confirm with the user**, then `signed_revoke_document`, then create a corrected document.
 - `signed_archive_document` hides a document from lists. Nothing is ever deleted.
+
+## Folders
+
+Templates and documents can sit in folders (one level; template and document folders are separate). Folders only organise: they never change who can see a document or its revision.
+
+- `signed_list_folders` with `kind: "document"` or `"template"` lists them. Pass `folder_id` to `signed_create_document` or `signed_create_template` to file something when you create it, or use `signed_move` later (`folder_id: null` takes it out).
+- `signed_list_documents` and `signed_list_templates` take `folder_id` too (`"none"` for items in no folder).
+- If the user names a folder that doesn't exist, ask before creating it with `signed_create_folder`.
 - REST `POST /v1/documents/{id}/signers/{key}/resend` sends a fresh link to a signer who lost theirs.
 
 ## Webhooks

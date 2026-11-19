@@ -8,6 +8,7 @@ import { apiKeyActor } from "../services/auth.ts";
 import * as docs from "../services/documents.ts";
 import { listArtifacts } from "../services/finalize.ts";
 import * as tpl from "../services/templates.ts";
+import * as folders from "../services/folders.ts";
 import { errorBody } from "./errors.ts";
 
 const INSTRUCTIONS = `Signed.md sends agreements for electronic signature. You supply the intelligence; Signed.md executes deterministically.
@@ -28,7 +29,7 @@ const signerShape = z.object({
   key: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*$/).describe("Signer key used in placeholders, e.g. 'client' for {{client.signature:signature}}"),
   name: z.string().min(1),
   email: z.email(),
-  order: z.number().int().min(1).optional().describe("Same order = sign in parallel. Lower signs first. Default 1."),
+  order: z.number().int().min(0).optional().describe("Same order = sign in parallel. Lower signs first. Default 1. 0 = any order (everyone at once); use it for every signer or none."),
 });
 
 type ToolResult = { content: { type: "text"; text: string }[]; structuredContent?: Record<string, unknown>; isError?: boolean };
@@ -51,8 +52,11 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
 
   server.registerTool(
     "signed_list_templates",
-    { description: "List templates with their approval status. Use approved templates for agreements.", inputSchema: { archived: z.boolean().optional() } },
-    ({ archived }) => run(async () => ({ data: await tpl.listTemplates(ctx, { archived: archived === true }) })),
+    {
+      description: "List templates with their approval status. Use approved templates for agreements.",
+      inputSchema: { archived: z.boolean().optional(), folder_id: z.string().optional().describe('Only this folder, or "none" for templates in no folder') },
+    },
+    ({ archived, folder_id }) => run(async () => ({ data: await tpl.listTemplates(ctx, { archived: archived === true, ...(folder_id ? { folder: folder_id } : {}) }) })),
   );
 
   server.registerTool(
@@ -73,13 +77,19 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
     "signed_create_template",
     {
       description: "Create a template, or a new version of an existing one. It starts as pending_approval: tell the user a person must approve it in the Signed.md web UI.",
-      inputSchema: { name: z.string(), source: z.string().describe("Markdown with {{$value:type}} and {{signer.field:type}} placeholders"), description: z.string().optional(), template_id: z.string().optional().describe("Set to add a new version") },
+      inputSchema: {
+        name: z.string(),
+        source: z.string().describe("Markdown with {{$value:type}} and {{signer.field:type}} placeholders"),
+        description: z.string().optional(),
+        template_id: z.string().optional().describe("Set to add a new version"),
+        folder_id: z.string().optional().describe("A template folder for a new template (signed_list_folders)"),
+      },
     },
-    ({ name, source, description, template_id }) =>
+    ({ name, source, description, template_id, folder_id }) =>
       run(() =>
         template_id
           ? tpl.addTemplateVersion(ctx, actor, template_id, { source, name, ...(description !== undefined ? { description } : {}) })
-          : tpl.createTemplate(ctx, actor, { name, source, ...(description !== undefined ? { description } : {}) }),
+          : tpl.createTemplate(ctx, actor, { name, source, ...(description !== undefined ? { description } : {}), ...(folder_id ? { folder_id } : {}) }),
       ),
   );
 
@@ -99,6 +109,7 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
         metadata: z.record(z.string(), z.unknown()).optional(),
         webhook_url: z.string().optional(),
         font: z.enum(["serif", "sans-serif"]).optional().describe("Contract font family. Defaults to the account's setting."),
+        folder_id: z.string().optional().describe("A document folder to file it in (signed_list_folders)"),
       },
     },
     (input) => run(() => docs.createDocument(ctx, actor, input as docs.CreateDocumentInput)),
@@ -167,10 +178,16 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
     "signed_list_documents",
     {
       description: "List or search documents.",
-      inputSchema: { status: z.string().optional(), q: z.string().optional().describe("Search title, signer name or email"), archived: z.boolean().optional(), limit: z.number().int().min(1).max(100).optional() },
+      inputSchema: {
+        status: z.string().optional(),
+        q: z.string().optional().describe("Search title, signer name or email"),
+        archived: z.boolean().optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+        folder_id: z.string().optional().describe('Only this folder, or "none" for documents in no folder'),
+      },
     },
-    ({ status, q, archived, limit }) =>
-      run(() => docs.listDocuments(ctx, actor, { ...(status ? { status } : {}), ...(q ? { q } : {}), archived: archived === true, ...(limit ? { limit } : {}) })),
+    ({ status, q, archived, limit, folder_id }) =>
+      run(() => docs.listDocuments(ctx, actor, { ...(status ? { status } : {}), ...(q ? { q } : {}), archived: archived === true, ...(limit ? { limit } : {}), ...(folder_id ? { folder: folder_id } : {}) })),
   );
 
   server.registerTool(
@@ -183,6 +200,31 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
     "signed_archive_document",
     { description: "Archive (hide) or unarchive a document. Does not change its status. Nothing is ever deleted.", inputSchema: { document_id: z.string(), archived: z.boolean().default(true) } },
     ({ document_id, archived }) => run(() => docs.setDocumentArchived(ctx, actor, document_id, archived)),
+  );
+
+  server.registerTool(
+    "signed_list_folders",
+    { description: "List the folders that organise templates or documents.", inputSchema: { kind: z.enum(["template", "document"]) } },
+    ({ kind }) => run(async () => ({ data: await folders.listFolders(ctx, kind) })),
+  );
+
+  server.registerTool(
+    "signed_create_folder",
+    { description: "Create a folder for templates or documents. Only when the user asks for one.", inputSchema: { kind: z.enum(["template", "document"]), name: z.string() } },
+    ({ kind, name }) => run(() => folders.createFolder(ctx, actor, kind, name)),
+  );
+
+  server.registerTool(
+    "signed_move",
+    {
+      description: "File a document or a template in a folder, or take it out (folder_id null). Folders only organise: moving a document doesn't change its revision or status.",
+      inputSchema: { document_id: z.string().optional(), template_id: z.string().optional(), folder_id: z.string().nullable() },
+    },
+    ({ document_id, template_id, folder_id }) =>
+      run(() => {
+        if (!!document_id === !!template_id) throw new SignedError("INVALID_REQUEST", "Pass either document_id or template_id");
+        return document_id ? docs.moveDocument(ctx, actor, document_id, folder_id) : tpl.moveTemplate(ctx, actor, template_id!, folder_id);
+      }),
   );
 
   server.registerTool(

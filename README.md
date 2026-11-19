@@ -48,7 +48,7 @@ claude mcp add --transport http signed-md http://localhost:3000/mcp --header "Au
 docker compose up -d
 ```
 
-Open the URL, create the administrator, add a template, and create an API key in **Settings**. See [self-hosting](docs/self-hosting.md) for configuration, HTTPS, PostgreSQL, and backups.
+Open the URL, create the administrator, add a template, and create an API key on the **Agents** page. See [self-hosting](docs/self-hosting.md) for configuration, HTTPS, PostgreSQL, and backups.
 
 ## How it works
 
@@ -86,7 +86,7 @@ The lifecycle:
 draft → preview (revision) → person approves → send → sign → signed → finalized
 ```
 
-Signers with the same `order` sign at the same time. The next group gets its link when the current group is done.
+Signers with the same `order` sign at the same time. The next group gets its link when the current group is done. Order `0` means any order (everyone signs at once). Use it for every signer or none: a mix of `0` and numbers is refused.
 
 ## For agents and developers
 

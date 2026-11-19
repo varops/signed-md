@@ -15,7 +15,7 @@ export const SignerInputSchema = z
     key: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]*$/).max(64).openapi({ example: "client", description: "Matches the signer key used in placeholders, e.g. {{client.signature:signature}}" }),
     name: z.string().trim().min(1).max(200).openapi({ example: "Jane Doe" }),
     email: z.email().max(320).openapi({ example: "jane@acme.example" }),
-    order: z.number().int().min(1).max(1000).optional().openapi({ example: 1, description: "Signers with the same order sign in parallel. Lower orders sign first. Default 1." }),
+    order: z.number().int().min(0).max(1000).optional().openapi({ example: 1, description: "Signers with the same order sign in parallel. Lower orders sign first. Default 1. 0 means any order (everyone signs at once); use it for every signer or none." }),
   })
   .openapi("SignerInput");
 
@@ -40,6 +40,7 @@ export const CreateDocumentSchema = z
     font: z.enum(["serif", "sans-serif"]).optional().openapi({ description: "Contract font family. Defaults to the account's setting (Settings → Branding)." }),
     auto_send: z.boolean().optional().openapi({ description: "Send immediately if valid. Only for workflows where sending was already authorised." }),
     approved_by: z.string().max(500).optional().openapi({ description: "Recorded with auto_send." }),
+    folder_id: z.string().nullable().optional().openapi({ description: "A document folder to file it in (GET /v1/folders?kind=document)." }),
   })
   .openapi("CreateDocument");
 
@@ -110,6 +111,7 @@ export const DocumentSchema = z
     message: z.string().nullable(),
     metadata: z.record(z.string(), z.unknown()),
     archived: z.boolean(),
+    folder: z.object({ id: z.string(), name: z.string() }).nullable().openapi({ description: "The folder it is filed in. Folders only organise; they don't affect permissions or the revision." }),
     created_at: z.string(),
     updated_at: z.string(),
     sent_at: z.string().nullable(),
@@ -144,6 +146,7 @@ export const TemplateCreateSchema = z
     name: z.string().trim().min(1).max(200),
     description: z.string().max(2000).optional(),
     source: z.string().min(1).max(500_000).openapi({ description: "Markdown with placeholders and optional front matter." }),
+    folder_id: z.string().nullable().optional().openapi({ description: "A template folder to file it in (GET /v1/folders?kind=template)." }),
   })
   .openapi("CreateTemplate");
 
@@ -182,6 +185,7 @@ export const TemplateSchema = z
     current_version: z.number(),
     approved_version: z.number().nullable().openapi({ description: "Used by default for new documents. Null until a person approves a version in the web UI." }),
     archived: z.boolean(),
+    folder: z.object({ id: z.string(), name: z.string() }).nullable().openapi({ description: "The folder it is filed in. Folders only organise; they don't affect permissions or the revision." }),
     created_at: z.string(),
     versions: z.array(TemplateVersionSchema),
   })
@@ -198,6 +202,19 @@ export const TemplateVersionDetailSchema = TemplateVersionSchema.extend({
   source: z.string(),
   fields: z.array(FieldDefSchema),
 }).openapi("TemplateVersionDetail");
+
+export const FolderSchema = z
+  .object({ id: z.string(), kind: z.enum(["template", "document"]), name: z.string(), created_at: z.string() })
+  .openapi("Folder");
+export const FolderCreateSchema = z
+  .object({ kind: z.enum(["template", "document"]), name: z.string().trim().min(1).max(80) })
+  .openapi("CreateFolder");
+export const FolderUpdateSchema = z
+  .object({ name: z.string().trim().min(1).max(80) })
+  .openapi("UpdateFolder");
+export const MoveSchema = z
+  .object({ folder_id: z.string().nullable().openapi({ description: "The folder to file it in, or null for no folder." }) })
+  .openapi("Move");
 
 export const ArtifactSchema = z
   .object({

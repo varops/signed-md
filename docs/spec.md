@@ -190,7 +190,7 @@ Template versions are immutable once created. Approval changes only the approval
 - Metadata
 - Webhook URL override
 - Owner user ID (the sender)
-- Font family: `serif` or `sans-serif`, saved from the account default at creation unless given. The faces are set in `services/fonts.ts` (now Source Serif 4 and Inter).
+- Font family: `serif` or `sans-serif`, saved from the account default at creation unless given. The faces are set in `services/fonts.ts`: STIX Two Text (serif, set 0.5% tighter) and Arimo (sans-serif, the same metrics as Arial), both bundled under the OFL.
 - Message to signers
 - Source: `template` or `inline`
 - Inline approval (user and timestamp), when the account requires it
@@ -214,7 +214,7 @@ Template versions are immutable once created. Approval changes only the approval
 - Status: `pending`, `notified`, `viewed`, `signed`, `declined`
 - Decline reason
 
-There is no separate party table. Signers with the same `order` sign in parallel.
+There is no separate party table. Signers with the same `order` sign in parallel. Order `0` means any order (everyone signs at once). Use it for every signer or none: a mix of `0` and numbers is refused.
 
 ### Field
 
@@ -398,6 +398,8 @@ The account setting `inline_documents` is `allowed` (default), `needs_approval`,
 
 - `needs_approval`: sending fails with `DOCUMENT_NOT_APPROVED` until a user approves the exact revision in the UI.
 - `disabled`: creating a document with `content` fails with `INLINE_DISABLED`.
+
+In the web UI, a person who manages a template draft can choose "Edit text". After a warning, the draft becomes an inline document (`source: inline`) and its text can change. The template version stays as its starting point, the event `document.converted_to_inline` is recorded, and the inline rules above apply from then on. There is no API or MCP path for this, and it is not offered when inline documents are disabled.
 
 ## 8. Signing security
 
@@ -658,7 +660,7 @@ Prefer straightforward, testable modules with explicit boundaries.
 | Auth | argon2id (`@node-rs/argon2`), signed login cookies (HMAC, one-hour sliding expiry), hashed prefixed API keys; single sign-on through an external service that writes the login cookie | Standard and simple; no OAuth code in the product |
 | Email | Nodemailer (SMTP) | |
 | Import (v1.2) | Firecrawl `pdf-inspector` (PDF) and `AnyDoc` (.docx and other formats), via Node bindings | Open source (MIT), fully local, fast; local OCR for scanned PDFs, on by default (model bundled in the image) |
-| UI | Server-rendered HTML (Hono `html` templates) with [Basecoat UI](https://basecoatui.com) components (shadcn/ui style, prebuilt CSS served locally), a small `app.css` for layout and the signing UI, a little vanilla JS; `signature_pad` on the signing page | No front-end build, works without JavaScript except drawn signatures, fast on phones |
+| UI | Server-rendered HTML (Hono `html` templates) with [Oat UI](https://oat.ink) (semantic HTML, about 10 KB of CSS and JS, served locally), a small `app.css` for layout and the signing UI, a little vanilla JS; `signature_pad` on the signing page | No front-end build, works without JavaScript except drawn signatures, fast on phones |
 | Verifier | `signed-md verify agreement.zip`, also compiled to a single binary | Offline verification with no install |
 | Tests | Vitest; Playwright for the end-to-end signing flow | Playwright runs the acceptance test |
 | Container | `node:24-slim` with Typst, one volume at `/data` | About 480 MB unpacked, most of it the Node base image |

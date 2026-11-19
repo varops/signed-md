@@ -36,6 +36,7 @@ const DOC_TYPES: Record<string, string> = {
   "document.archived": "archived",
   "document.unarchived": "unarchived",
   "document.inline_approved": "approved the inline document",
+  "document.converted_to_inline": "turned a template draft into an inline document to edit its text",
   "signer.viewed": "opened",
   "signer.signed": "signed",
   "signer.declined": "declined",
@@ -61,6 +62,10 @@ const AUDIT_TYPES: Record<string, (d: Record<string, unknown>) => string> = {
   "template.approved": (d) => `approved version ${d.version} of “${d.name}”`,
   "template.archived": (d) => `archived template “${d.name}”`,
   "template.unarchived": (d) => `unarchived template “${d.name}”`,
+  "password.reset": () => "reset their password with an emailed link",
+  "folder.created": (d) => `created the ${d.kind} folder “${d.name}”`,
+  "folder.renamed": (d) => `renamed the ${d.kind} folder “${d.from}” to “${d.name}”`,
+  "folder.deleted": (d) => `deleted the ${d.kind} folder “${d.name}”${d.moved ? ` (${d.moved} moved to the top level)` : ""}`,
 };
 
 /** Recent team and document activity, newest first. */

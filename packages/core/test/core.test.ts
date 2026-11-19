@@ -3,6 +3,7 @@ import {
   canonicalJson,
   checkColumns,
   computeRevision,
+  mixedOrderIssue,
   parseTemplate,
   prepareDocument,
   renderHtml,
@@ -142,7 +143,7 @@ describe("prepareDocument", () => {
       signers: [
         { key: "client", name: "Jane", email: "jane@acme.example" },
         { key: "client", name: "Dup", email: "x@y.z" },
-        { key: "witness", name: "W", email: "bad", order: 0 },
+        { key: "witness", name: "W", email: "bad", order: -1 },
       ],
     });
     const codes = d.issues.map((i) => `${i.code}:${i.field}`);
@@ -151,6 +152,16 @@ describe("prepareDocument", () => {
     expect(codes).toContain("SIGNER_INVALID:signers[2].order");
     expect(codes).toContain("SIGNER_MISSING:provider.signature");
     expect(d.valid).toBe(false);
+  });
+
+  it("allows order 0 (any order) for everyone, but not mixed with numbered orders", () => {
+    const all0 = prepareDocument({ source: TEMPLATE, values, signers: SIGNERS.map((s) => ({ ...s, order: 0 })) });
+    expect(all0.issues.filter((i) => i.field?.includes("order"))).toEqual([]);
+    expect(signingGroups(all0.signers)).toHaveLength(1);
+    const mixed = prepareDocument({ source: TEMPLATE, values, signers: [SIGNERS[0]!, { ...SIGNERS[1]!, order: 0 }] });
+    expect(mixed.issues.map((i) => `${i.code}:${i.field}`)).toContain("SIGNER_INVALID:signers.order");
+    expect(mixedOrderIssue([{ order: 2 }, { order: 1 }])).toBeNull();
+    expect(mixedOrderIssue([{ order: 0 }, {}])).not.toBeNull(); // no order means 1
   });
 
   it("changes revision on any edit, and only then", () => {

@@ -18,67 +18,109 @@ import {
   submitSignature,
 } from "../services/signing.ts";
 import { type FormBody, str } from "./forms.ts";
-import { asset, footer, type H, icon } from "./layout.ts";
+import { alert, asset, avatarFigure, field, footer, type H, head, icon } from "./layout.ts";
 import { CONTRACT_FONTS } from "../services/fonts.ts";
 
-function publicShell(title: string, account: string | null, body: H, opts: { scripts?: boolean; bodyClass?: string } = {}): H {
-  return html`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex"><meta name="referrer" content="no-referrer">
-<title>${title}</title><script src="${asset("theme.js")}"></script><link rel="stylesheet" href="${asset("vendor/basecoat.css")}"><link rel="stylesheet" href="${asset("app.css")}"></head><body class="${opts.bodyClass ?? ""}">
+/** Signing pages follow the signer's device for light and dark. */
+function publicShell(title: string, account: string | null, body: H, opts: { scripts?: boolean; bodyClass?: string; footer?: boolean } = {}): H {
+  return html`<!doctype html><html lang="en"><head>${head(title)}
+<meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"></head><body class="${opts.bodyClass ?? ""}">
 ${body}
-${footer()}
+${opts.footer === false ? "" : footer()}
 ${opts.scripts ? html`<script src="${asset("signature_pad.js")}"></script><script src="${asset("sign.js")}"></script>` : ""}
 </body></html>`;
 }
 
 let logoVersion: string | null = null;
 
-function brandBar(account: string | null): H {
-  const name = account ?? "Signed.md";
-  return html`<header class="sign-head"><div class="inner">${logoVersion ? html`<img class="brand-logo" src="/branding/logo?v=${logoVersion}" alt="${name}">` : html`<strong>${name}</strong>`}<span class="small muted">Secured by Signed.md</span></div></header>`;
+/**
+ * The company's logo at the top of the card, on a light tile so a dark logo still shows in dark
+ * mode. Without a logo, the intro shows the Signed.md signing icon instead (message pages show nothing).
+ */
+function companyLogo(account: string | null, fallback: H | string = ""): H | string {
+  return logoVersion
+    ? html`<div class="intro-logo"><img src="/branding/logo?v=${logoVersion}" alt="${account ?? "Company logo"}"></div>`
+    : fallback;
 }
 
 function message(title: string, text: string, extra?: H): H {
-  return publicShell(title, null, html`${brandBar(null)}<main class="sign-wrap"><div  style="text-align:center" class="card intro-card"><section><h1>${title}</h1><p class="muted">${text}</p>${extra ?? ""}</section></div></main>`);
+  return publicShell(title, null, html`<main class="sign-wrap"><section class="card intro-card message-card" aria-labelledby="message-title">${companyLogo(null)}<h1 id="message-title">${title}</h1><p class="muted">${text}</p>${extra ?? ""}</section></main>`);
 }
 
 function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).map((p) => p[0]!.toUpperCase()).join("").slice(0, 4);
 }
 
+/**
+ * Beside the document: the document's progress. It was sent, each signer in order (with "You are
+ * here" and "Next"), then the signed copy goes to everyone. The due date sits above.
+ */
+function progressPanel(view: SignerView, token: string): H {
+  const label = { signed: "Signed", declined: "Declined", you: "You are here", now: "Signing now", next: "Next", later: "After that" } as const;
+  const day = (iso: string) => new Date(iso).toUTCString().replace(/ \d\d:\d\d:\d\d GMT/, "");
+  const anyOrder = view.timeline.length > 1 && view.timeline.every((s) => s.order === view.timeline[0]!.order);
+  return html`<aside class="sign-aside" aria-label="Progress and other actions">
+    <section class="card progress-card" aria-labelledby="progress-title">
+      <h2 id="progress-title">Progress</h2>
+      ${view.expires_at ? html`<p class="small muted due-line">To be finalized by ${day(view.expires_at)}</p>` : ""}
+      <ol class="signer-timeline">
+        <li data-state="done"><span class="step-dot" aria-hidden="true">${icon("send")}</span>
+          <div><strong>Document sent</strong>${view.sent_at ? html`<span class="tl-state">${day(view.sent_at)}</span>` : ""}</div></li>
+        ${view.timeline.map((s) => html`<li data-state="${s.state}" ${s.state === "you" ? html`aria-current="step"` : ""}>
+          ${avatarFigure(s.name, null, "small")}
+          <div><strong>${s.name}${s.state === "you" ? html` <span class="muted">(you)</span>` : ""}</strong><span class="tl-state">${label[s.state]}</span></div>
+        </li>`)}
+        <li data-state="later"><span class="step-dot" aria-hidden="true">${icon("package")}</span>
+          <div><strong>Finalized</strong><span class="tl-state">The signed copy is emailed to everyone</span></div></li>
+      </ol>
+      ${anyOrder ? html`<p class="tiny muted" style="margin:12px 0 0">Everyone signs at the same time, in any order.</p>` : ""}
+    </section>
+    ${declineBlock(token)}
+    ${footer()}
+  </aside>`;
+}
+
 function declineBlock(token: string): H {
+  // The fields belong to a form placed outside the signing form (forms can't be nested), so this
+  // block can sit anywhere, including beside the document inside the signing form.
   return html`<details class="other-actions"><summary>Other actions</summary>
-    <form method="post" action="/s/${token}/decline"  style="margin-top:10px" class="card"><section>
-      <h3>Decline to sign</h3>
-      <p class="small muted">The sender will be told. You can add a reason.</p>
-      <div class="field"><textarea class="textarea" name="reason" style="min-height:80px" placeholder="Reason (optional)"></textarea></div>
-      <button class="btn" data-variant="destructive">Decline</button></section></form></details>`;
+    <div role="group" aria-labelledby="decline-title" aria-describedby="decline-note">
+      <h5 id="decline-title">Decline to sign</h5>
+      <p class="small muted" id="decline-note">The sender will be told. You can add a reason.</p>
+      ${field("decline-reason", html`Reason <span class="muted">· optional</span>`, html`<textarea id="decline-reason" name="reason" form="decline-form" style="min-height:80px"></textarea>`)}
+      <button type="submit" form="decline-form" data-variant="danger">Decline</button></div></details>`;
+}
+
+/** The form that "Decline" submits, outside every other form. */
+function declineForm(token: string): H {
+  return html`<form method="post" action="/s/${token}/decline" id="decline-form" hidden></form>`;
 }
 
 // ---- Step 1: "Let's start" ----
 
 function introPage(token: string, view: SignerView, error: string | null): H {
   const due = view.expires_at ? new Date(view.expires_at).toUTCString().replace(/ \d\d:\d\d:\d\d GMT/, "") : null;
-  return publicShell(view.title, view.account_name, html`${brandBar(view.account_name)}
+  return publicShell(view.title, view.account_name, html`
     <main class="sign-wrap">
-      <div  class="card intro-card"><section>
-        <div class="intro-icon" aria-hidden="true">✍︎</div>
+      <section class="card intro-card" aria-labelledby="intro-title">
+        ${companyLogo(view.account_name, html`<img class="intro-icon" src="${asset("sign-icon.svg")}" alt="" width="48" height="48">`)}
         <p class="muted" style="margin-bottom:4px">${view.sender_name ? `${view.sender_name} at ${view.account_name}` : view.account_name} sent you a document to review and sign</p>
-        <h1>${view.title}</h1>
+        <h1 id="intro-title">${view.title}</h1>
         <dl class="kv small" style="margin:14px 0 20px"><dt>For</dt><dd>${view.signer.name} (${view.signer.email})</dd>
           <dt>Fields</dt><dd>${view.fields.length} to complete</dd>
           ${view.progress.total > 1 ? html`<dt>Signers</dt><dd>${view.progress.signed} of ${view.progress.total} have signed</dd>` : ""}
           ${due ? html`<dt>Due</dt><dd>${due}</dd>` : ""}</dl>
-        ${error ? html`<div class="alert" data-variant="destructive">${icon("bad")}<section>${error}</section></div>` : ""}
-        <form method="post" action="/s/${token}/start">
-          <div class="disclosure"><strong>Electronic record and signature disclosure</strong><p>${view.consent_text}</p>
-            <details style="margin-top:8px"><summary>Read the full disclosure</summary><pre class="disclosure-full">${view.disclosure}</pre></details></div>
-          <label class="check" style="margin:14px 0 18px"><input class="input" type="checkbox" name="consent" required> <span>I agree to use electronic records and signatures.</span></label>
-          <button class="btn btn-go w-full">Continue</button>
+        ${error ? alert("bad", error) : ""}
+        <form method="post" action="/s/${token}/start" aria-label="Agree to sign electronically">
+          <aside class="disclosure" aria-labelledby="disclosure-title"><strong id="disclosure-title">Electronic record and signature disclosure</strong><p>${view.consent_text}</p>
+            <details><summary>Read the full disclosure</summary><pre class="disclosure-full">${view.disclosure}</pre></details></aside>
+          <label class="check consent"><input type="checkbox" name="consent" required aria-describedby="disclosure-title"> <span>I agree to use electronic records and signatures.</span></label>
+          <button type="submit" class="btn-go w-full">Continue</button>
         </form>
-      </section></div>
+      </section>
       ${declineBlock(token)}
-    </main>`);
+    </main>
+    ${declineForm(token)}`);
 }
 
 // ---- Step 2: the document with inline fields ----
@@ -92,7 +134,8 @@ function inlineField(def: FieldDef, prior: FormBody | null, firstSeen: Set<strin
   const name = `f:${def.key}`;
   const label = def.rules.label ?? fieldLabel(def);
   const required = def.rules.required !== false;
-  const common = { dataField: def.key, dataType: def.type, ...(required ? { dataRequired: "1" } : {}), title: label, ariaLabel: label };
+  // data-smd-field, not data-field: Oat styles [data-field] as a form-field wrapper.
+  const common = { dataSmdField: def.key, dataType: def.type, ...(required ? { dataRequired: "1", ariaRequired: "true" } : {}), title: label, ariaLabel: label };
 
   // A field used more than once in the text is edited at its first position; later copies mirror it.
   if (firstSeen.has(def.key)) return el("span", { className: ["smd-mirror"], dataMirror: def.key }, [text(def.type === "signature" || def.type === "initials" ? "" : "…")]);
@@ -107,12 +150,12 @@ function inlineField(def: FieldDef, prior: FormBody | null, firstSeen: Set<strin
       const typed = prior ? str(prior, `${name}:text`) : "";
       const done = (kind === "drawn" && image) || (kind === "typed" && typed);
       return el("span", { className: ["smd-sign", done ? "smd-done" : ""], ...common, dataSign: def.type }, [
-        el("button", { type: "button", className: ["smd-sign-tag"] }, [text(def.type === "initials" ? "Initial" : "Sign")]),
-        el("span", { className: ["smd-sign-value"] }, done ? [kind === "drawn" ? el("img", { src: image, alt: label }) : el("span", { className: ["smd-signature-typed"] }, [text(typed)])] : []),
+        el("button", { type: "button", className: ["smd-sign-tag"], ariaLabel: `${def.type === "initials" ? "Initial" : "Sign"}: ${label}`, ariaHaspopup: "dialog" }, [text(def.type === "initials" ? "Initial" : "Sign")]),
+        el("span", { className: ["smd-sign-value"], role: "button", tabIndex: 0, ariaLabel: `Change ${label}` }, done ? [kind === "drawn" ? el("img", { src: image, alt: label }) : el("span", { className: ["smd-signature-typed"] }, [text(typed)])] : []),
         el("input", { type: "hidden", name: `${name}:kind`, value: kind || "typed" }),
         el("input", { type: "hidden", name: `${name}:image`, value: image }),
         // Without JavaScript the signer types their name here.
-        el("input", { type: "text", className: ["smd-sign-fallback"], name: `${name}:text`, value: typed, placeholder: def.type === "initials" ? "Type initials" : "Type full name" }),
+        el("input", { type: "text", className: ["smd-sign-fallback"], name: `${name}:text`, value: typed, placeholder: def.type === "initials" ? "Type initials" : "Type full name", ariaLabel: label, autoComplete: "name" }),
       ]);
     }
     case "date":
@@ -148,54 +191,58 @@ function signingPage(token: string, view: SignerView, error: SignedError | null,
       const done = view.completed[def.key];
       if (done !== undefined) return renderCompletedValue(def, done);
       if (def.signer === view.signer.key) return inlineField(def, prior, firstSeen);
-      return el("span", { className: ["smd-slot", "smd-slot-other"] }, [text(`${def.rules.label ?? fieldLabel(def)} – ${view.names[def.signer!] ?? def.signer}`)]);
+      return el("span", { className: ["smd-slot", "smd-slot-other"], role: "note" }, [text(`${def.rules.label ?? fieldLabel(def)} – ${view.names[def.signer!] ?? def.signer}`)]);
     },
   });
   const required = view.fields.filter((f) => f.required).length;
   return publicShell(view.title, view.account_name, html`
-    <form method="post" action="/s/${token}" id="sign-form" novalidate>
-      <div class="guide-bar"><div class="inner">
-        <div class="guide-info"><strong class="guide-title">${view.title}</strong><span class="small muted" id="guide-progress">${required} required field${required === 1 ? "" : "s"}</span></div>
-        <div class="row" style="gap:8px">
-          <button type="button" class="btn btn-go" id="guide-next">Start</button>
-          <button type="submit" class="btn" id="guide-finish">Finish</button>
+    <form method="post" action="/s/${token}" id="sign-form" novalidate aria-label="Sign ${view.title}">
+      <div class="guide-bar" role="toolbar" aria-label="Signing progress">
+        ${logoVersion
+          ? html`<img class="guide-logo" src="/branding/logo?v=${logoVersion}" alt="${view.account_name}">`
+          : html`<img class="guide-logo guide-icon" src="${asset("sign-icon.svg")}" alt="" width="32" height="32">`}
+        <p class="guide-info"><strong class="guide-title">${view.title}</strong><span class="small muted" id="guide-progress" role="status" aria-live="polite">${required} required field${required === 1 ? "" : "s"}</span></p>
+        <div class="row">
+          <button type="button" class="ghost" id="guide-back" hidden>Back</button>
+          <button type="submit" class="btn-go" id="guide-next">Finish</button>
         </div>
-      </div></div>
+      </div>
       <main class="sign-wrap">
-        ${logoVersion ? html`<div class="sign-logo"><img class="brand-logo" src="/branding/logo?v=${logoVersion}" alt="${view.account_name}"></div>` : ""}
-        ${error ? html`<div class="alert" data-variant="destructive" id="sign-error">${icon("bad")}<section>${error.message}${error.issues.length ? html`<ul>${error.issues.map((i) => html`<li>${i.message}</li>`)}</ul>` : ""}</section></div>` : ""}
-        <p class="small muted guide-hint">Fill in the highlighted fields in the document. Use <strong>Next</strong> to jump between them, then <strong>Finish</strong>.</p>
-        <article class="doc signing ${CONTRACT_FONTS[view.font].css}">${raw(docHtml)}</article>
-        <div class="finish-row"><button type="submit" class="btn">Finish</button></div>
+        ${error ? html`<div role="alert" class="note" data-variant="error" id="sign-error" tabindex="-1">${icon("bad")}<div>${error.message}${error.issues.length ? html`<ul>${error.issues.map((i) => html`<li>${i.message}</li>`)}</ul>` : ""}</div></div>` : ""}
+        <div class="sign-layout">
+          <div class="sign-main">
+          <p class="small muted guide-hint">Fill in the highlighted fields in the document. Use <strong>Next</strong> to jump between them, then <strong>Finish</strong>.</p>
+            <article class="doc page signing ${CONTRACT_FONTS[view.font].css}" aria-label="${view.title}"><div class="page-body">${raw(docHtml)}</div></article>
+          </div>
+          ${progressPanel(view, token)}
+        </div>
       </main>
     </form>
-    <main class="sign-wrap" style="padding-top:0">${declineBlock(token)}</main>
+    ${declineForm(token)}
 
-    <dialog id="adopt" class="dialog" aria-labelledby="adopt-title" data-name="${view.signer.name}" data-initials="${initials(view.signer.name)}">
-      <div class="adopt">
-        <header>
-          <h2 id="adopt-title">Adopt your signature</h2>
-          <p>Confirm your name and choose how your signature looks.</p>
-        </header>
-        <section>
-          <div class="sig-modes" role="group" aria-label="Signature style">
-            <button type="button" class="btn" data-size="sm" data-mode="typed" aria-pressed="true">Type</button>
-            <button type="button" class="btn" data-variant="outline" data-size="sm" data-mode="drawn" aria-pressed="false">Draw</button>
-          </div>
-          <div data-pane="typed">
-            <div class="field"><label for="adopt-text" id="adopt-text-label">Full name</label><input class="input" type="text" id="adopt-text" autocomplete="name"></div>
-            <div class="typed-preview" id="adopt-preview"></div>
-          </div>
-          <div data-pane="drawn" class="hidden"><canvas class="sig-pad" id="adopt-pad" aria-label="Draw here"></canvas><a href="#" id="adopt-clear" class="small">Clear</a></div>
-          <p class="small muted">By selecting Adopt and sign, I agree that this is my electronic signature for this document.</p>
-        </section>
-        <footer>
-          <form method="dialog"><button value="cancel" class="btn" data-variant="outline">Cancel</button></form>
-          <button type="button" class="btn btn-go" id="adopt-ok">Adopt and sign</button>
-        </footer>
-        <form method="dialog"><button value="cancel" aria-label="Close" class="dialog-close">${icon("close")}</button></form>
+    <dialog id="adopt" closedby="any" aria-labelledby="adopt-title" aria-describedby="adopt-legal" data-name="${view.signer.name}" data-initials="${initials(view.signer.name)}">
+      <header>
+        <h2 id="adopt-title">Adopt your signature</h2>
+        <p>Confirm your name and choose how your signature looks.</p>
+      </header>
+      <div class="adopt-body">
+        <div class="sig-modes" role="group" aria-label="Signature style">
+          <button type="button" class="small" data-mode="typed" aria-pressed="true">Type</button>
+          <button type="button" class="outline small" data-mode="drawn" aria-pressed="false">Draw</button>
+        </div>
+        <div data-pane="typed">
+          ${field("adopt-text", html`<span id="adopt-text-label">Full name</span>`, html`<input type="text" id="adopt-text" autocomplete="name" autofocus>`)}
+          <p class="typed-preview" id="adopt-preview" aria-hidden="true"></p>
+        </div>
+        <div data-pane="drawn" hidden><div class="sig-pad-wrap"><canvas class="sig-pad" id="adopt-pad" role="img" aria-label="Draw your signature here, on the line"></canvas><span class="sig-line" aria-hidden="true"></span><button type="button" class="ghost small" id="adopt-clear">Clear</button></div></div>
+        <p class="small muted" id="adopt-legal">By selecting Adopt and sign, I agree that this is my electronic signature for this document.</p>
       </div>
-    </dialog>`, { scripts: true, bodyClass: "signing-body" });
+      <footer>
+        <form method="dialog"><button value="cancel" class="outline">Cancel</button></form>
+        <button type="button" class="btn-go" id="adopt-ok">Adopt and sign</button>
+      </footer>
+      <form method="dialog" class="dialog-close"><button value="cancel" class="ghost small icon" aria-label="Close">${icon("close")}</button></form>
+    </dialog>`, { scripts: true, bodyClass: "signing-body", footer: false });
 }
 
 function collectFields(view: SignerView, b: FormBody): Record<string, unknown> {
@@ -247,7 +294,7 @@ export function createSigningRoutes(ctx: Ctx) {
         if (state.document_status === "finalized") {
           const s = await ctx.db.selectFrom("signers").select("document_id").where("token_hash", "=", sha256(token)).executeTakeFirst();
           const pdf = s ? await ctx.db.selectFrom("artifacts").select("id").where("document_id", "=", s.document_id).where("type", "=", "pdf").executeTakeFirst() : undefined;
-          if (pdf) extra = html`<a class="btn" href="${downloadLink(ctx, pdf.id, 600).url}">Download signed PDF</a>`;
+          if (pdf) extra = html`<a class="button" href="${downloadLink(ctx, pdf.id, 600).url}">Download signed PDF</a>`;
         }
         const msg = state.document_status === "finalized" || state.document_status === "signed"
           ? `Everyone has signed “${state.title}”. A copy has been emailed to you.`

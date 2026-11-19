@@ -17,7 +17,7 @@ import { readLogo } from "./services/branding.ts";
 import { certificatePem, pdfIdentity } from "./services/pdfsign.ts";
 import { checkDownloadSignature, readArtifact } from "./services/finalize.ts";
 import { createAdmin } from "./ui/admin.ts";
-import { setAssetVersion, setBranding, setHosted, setSourceUrl, shell } from "./ui/layout.ts";
+import { asset, logo, setAssetVersion, setBranding, setHosted, setSourceUrl, shell } from "./ui/layout.ts";
 import { sha256 } from "./crypto.ts";
 import { createSigningRoutes } from "./ui/signing.ts";
 
@@ -26,16 +26,26 @@ const require = createRequire(import.meta.url);
 
 function loadAssets(): Record<string, { body: string; type: string }> {
   const dir = join(here, "..", "assets");
+  const brand = join(here, "..", "..", "..", "brand");
+  const svg = (name: string) => ({ body: readFileSync(join(brand, name), "utf8"), type: "image/svg+xml" });
+  const oat = dirname(require.resolve("@knadh/oat/package.json"));
   return {
     "app.css": { body: readFileSync(join(dir, "app.css"), "utf8"), type: "text/css; charset=utf-8" },
     "app.js": { body: readFileSync(join(dir, "app.js"), "utf8"), type: "text/javascript; charset=utf-8" },
+    // The Signed.md logo (light and dark), the square icon and the signing icon, from brand/.
+    "logo-light.svg": svg("signedmd-light.svg"),
+    "logo-dark.svg": svg("signedmd-dark.svg"),
+    "icon.svg": svg("signedmd-icon.svg"),
+    // The signing icon on signing pages when the account has no logo of its own.
+    "sign-icon.svg": svg("signedmd-sign-icon.svg"),
+    // Prefetch admin pages when the pointer rests on a link (Chrome and Edge; others ignore it).
+    "speculation-rules.json": { body: readFileSync(join(dir, "speculation-rules.json"), "utf8"), type: "application/speculationrules+json" },
     "sign.js": { body: readFileSync(join(dir, "sign.js"), "utf8"), type: "text/javascript; charset=utf-8" },
-    "theme.js": { body: readFileSync(join(dir, "theme.js"), "utf8"), type: "text/javascript; charset=utf-8" },
-    // Basecoat UI (MIT), prebuilt, served locally so no CDN is involved.
-    "vendor/basecoat.css": {
-      body: readFileSync(join(dirname(require.resolve("basecoat-css")), "basecoat.cdn.min.css"), "utf8"),
-      type: "text/css; charset=utf-8",
-    },
+    // Oat UI (MIT, oat.ink), served locally so no CDN is involved.
+    "vendor/oat.css": { body: readFileSync(join(oat, "oat.min.css"), "utf8"), type: "text/css; charset=utf-8" },
+    "vendor/oat.js": { body: readFileSync(join(oat, "oat.min.js"), "utf8"), type: "text/javascript; charset=utf-8" },
+    // OverType (MIT, overtype.dev): the Markdown editor. A real textarea with highlighting on top.
+    "vendor/overtype.js": { body: readFileSync(join(dirname(require.resolve("overtype")), "overtype.min.js"), "utf8"), type: "text/javascript; charset=utf-8" },
     "signature_pad.js": {
       body: readFileSync(join(dirname(require.resolve("signature_pad")), "signature_pad.umd.min.js"), "utf8"),
       type: "text/javascript; charset=utf-8",
@@ -73,6 +83,10 @@ export function createApp(ctx: Ctx) {
   app.use("*", async (c, next) => {
     const start = Date.now();
     await next();
+    // Logged-in admin pages name the prefetch rules in a header: our CSP allows no inline scripts.
+    if (c.res.headers.get("content-type")?.startsWith("text/html") && /^\/(documents|templates|team|activity|settings|outbox|agentic)(\/|$)/.test(c.req.path)) {
+      c.res.headers.set("speculation-rules", `"${asset("speculation-rules.json")}"`);
+    }
     if (!c.req.path.startsWith("/assets/")) {
       log.info("request", { method: c.req.method, path: c.req.path.replace(/\/s\/[^/]+/, "/s/…"), status: c.res.status, ms: Date.now() - start });
     }
@@ -99,7 +113,7 @@ export function createApp(ctx: Ctx) {
       const message = "This account is disabled.";
       if (c.req.path.startsWith("/v1/")) return c.json({ error: { code: "PERMISSION_DENIED", message, details: [] } }, 403);
       if (c.req.path === "/mcp") return c.json({ jsonrpc: "2.0", error: { code: -32001, message }, id: null }, 403);
-      return c.html(shell({ title: "Account disabled" }, html`<div class="narrow" style="margin:60px auto"><div class="card"><section><h1>Account disabled</h1><p class="muted">${message}</p></section></div></div>`), 403);
+      return c.html(shell({ title: "Account disabled" }, html`<div class="narrow auth">${logo("/login")}<div class="card"><h1>Account disabled</h1><p class="muted">${message}</p></div></div>`), 403);
     });
   }
 
@@ -115,14 +129,26 @@ export function createApp(ctx: Ctx) {
     return c.json({ keys: [ctx.keys.info], pdf_signing_certificates: pdfCert ? [pdfCert] : [] });
   });
 
-  // Bundled contract fonts (OFL), so the signing page matches the PDF.
-  const FONT_FILES = new Set(["Inter-Regular.ttf", "Inter-Italic.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf", "SourceSerif4-Regular.otf", "SourceSerif4-It.otf", "SourceSerif4-Semibold.otf", "SourceSerif4-Bold.otf", "SourceSerif4-BoldIt.otf"]);
+  // Bundled fonts (OFL): the contract fonts, so the signing page matches the PDF, and the app's font.
+  const FONT_FILES = new Set([
+    ...["Regular", "Bold", "Italic", "BoldItalic"].flatMap((w) => [`STIXTwoText-${w}.ttf`, `Arimo-${w}.ttf`]),
+    ...["400-normal", "400-italic", "500-normal", "600-normal"].map((w) => `ibm-plex-sans-latin-${w}.woff2`),
+    "NothingYouCouldDo.ttf",
+  ]);
   app.get("/assets/fonts/:name", (c) => {
     const name = c.req.param("name");
     if (!FONT_FILES.has(name)) return c.notFound();
-    c.header("content-type", name.endsWith(".otf") ? "font/otf" : "font/ttf");
+    c.header("content-type", name.endsWith(".woff2") ? "font/woff2" : "font/ttf");
     c.header("cache-control", "public, max-age=604800, immutable");
     return c.body(readFileSync(join(here, "..", "assets", "fonts", name)));
+  });
+
+  // The agent skill (skills/signed-md/SKILL.md), so agents can install it from this server.
+  const skillPath = join(here, "..", "..", "..", "skills", "signed-md", "SKILL.md");
+  app.get("/skill.md", (c) => {
+    c.header("content-type", "text/markdown; charset=utf-8");
+    c.header("cache-control", "public, max-age=3600");
+    return c.body(readFileSync(skillPath, "utf8"));
   });
 
   app.get("/assets/vendor/:name", (c) => {

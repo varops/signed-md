@@ -5,9 +5,11 @@
  *   node apps/server/src/cli.ts api-key --label "Sales agent"
  *   node apps/server/src/cli.ts backup ./backups/2026-11-01
  *   node apps/server/src/cli.ts test-email you@acme.com
+ *   node apps/server/src/cli.ts reset-password someone@acme.com
  *
  * Uses the same environment variables as the server (DATA_DIR, DATABASE_URL, ...).
  */
+import { brandAttachment } from "./services/emails.ts";
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { backupSqlite } from "@signed-md/db";
@@ -15,6 +17,7 @@ import { createContext } from "./bootstrap.ts";
 import { getAccount, isSetUp, setup } from "./services/accounts.ts";
 import { createApiKey } from "./services/auth.ts";
 import { renderEmail } from "./services/emailtemplate.ts";
+import { passwordResetLink } from "./services/passwordreset.ts";
 
 function arg(args: string[], name: string): string | undefined {
   const i = args.indexOf(`--${name}`);
@@ -28,7 +31,8 @@ async function main(argv: string[]): Promise<number> {
   setup --account <name> --email <email> --password <password> [--name <name>]   Create the owner (fresh install only)
   api-key [--label <label>] [--user <email>]                                       Create an API key for a user (default: the first owner)
   backup <directory>                                              Copy the database, signing keys, and files
-  test-email <address>                                            Send a test email with the SMTP_* settings`);
+  test-email <address>                                            Send a test email with the SMTP_* settings
+  reset-password <email>                                          Print a one-time link (1 hour) to choose a new password`);
     return 0;
   }
   const ctx = await createContext();
@@ -79,9 +83,16 @@ async function main(argv: string[]): Promise<number> {
         if (!to) throw new Error("test-email needs an address");
         if (!ctx.mailer.smtp) throw new Error("No SMTP server is set. Set SMTP_HOST and the other SMTP_* environment variables.");
         await ctx.mailer.verify();
-        const t = renderEmail({ account: (await getAccount(ctx).catch(() => null))?.name ?? "Signed.md", hasLogo: false, icon: "check", headline: "SMTP works. Signed.md can send email.", paragraphs: ["This is a test email from the Signed.md command line."] });
-        await ctx.mailer.send({ to, subject: "Signed.md test email", text: t.text, html: t.html });
+        const t = renderEmail({ account: (await getAccount(ctx).catch(() => null))?.name ?? "Signed.md", branding: ctx.config.branding, hasLogo: false, icon: "check", headline: "SMTP works. Signed.md can send email.", paragraphs: ["This is a test email from the Signed.md command line."] });
+        await ctx.mailer.send({ to, subject: "Signed.md test email", text: t.text, html: t.html, attachments: brandAttachment(ctx) });
         console.log(`Test email sent to ${to} through ${ctx.mailer.smtp.host}.`);
+        return 0;
+      }
+      case "reset-password": {
+        const email = args[0];
+        if (!email) throw new Error("reset-password needs the person's email");
+        console.log(await passwordResetLink(ctx, email));
+        console.error("Give this link to the person directly. It works once and expires in 1 hour.");
         return 0;
       }
       default:

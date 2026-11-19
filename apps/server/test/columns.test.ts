@@ -51,7 +51,7 @@ const input: PdfInput = {
 describe("columns in the PDF", () => {
   it("lays the blocks out in one unbreakable grid", () => {
     const { source } = buildTypst(input);
-    expect(source).toContain("#block(breakable: false, width: 100%, grid(columns: (1fr, 1fr,), column-gutter: 22pt, [");
+    expect(source).toContain("#block(breakable: false, width: 100%, above: 2.2em, grid(columns: (1fr, 1fr,), column-gutter: 22pt, [");
     expect(source).not.toContain("<!--");
   });
 

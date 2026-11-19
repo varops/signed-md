@@ -26,6 +26,8 @@ RUN pnpm install --frozen-lockfile --prod --filter "@signed-md/server..." \
 COPY packages ./packages
 COPY apps/server/src ./apps/server/src
 COPY apps/server/assets ./apps/server/assets
+COPY brand ./brand
+COPY skills ./skills
 
 # ---- Runtime ----
 FROM node:${NODE_VERSION}-slim
