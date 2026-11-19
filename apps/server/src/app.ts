@@ -84,6 +84,8 @@ export function createApp(ctx: Ctx) {
     const start = Date.now();
     await next();
     // Logged-in admin pages name the prefetch rules in a header: our CSP allows no inline scripts.
+    // Keep every response out of search engines (pages, PDFs, JSON, the skill): noindex, but follow links.
+    c.res.headers.set("x-robots-tag", "noindex, follow");
     if (c.res.headers.get("content-type")?.startsWith("text/html") && /^\/(documents|templates|team|activity|settings|outbox|agentic)(\/|$)/.test(c.req.path)) {
       c.res.headers.set("speculation-rules", `"${asset("speculation-rules.json")}"`);
     }

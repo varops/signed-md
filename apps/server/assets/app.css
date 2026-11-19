@@ -86,7 +86,9 @@ legend { font-size: var(--text-7); font-weight: var(--font-medium); padding: 0; 
 .app[data-collapsed] .rail-logo { display: block; }
 .app[data-collapsed] .sidebar { padding: 18px 10px 14px; }
 .app[data-collapsed] .sidebar-head { justify-content: center; padding: 2px 0; }
-.app[data-collapsed] :is(.sidebar-head .brand, .sidebar-toggle, .side-nav a span, .nav-label, .source-note, .usage-pill, .user-text, .user-menu > button > svg) { display: none; }
+.app[data-collapsed] :is(.sidebar-head .brand, .sidebar-toggle, .nav-label, .source-note, .usage-pill, .user-text, .user-menu > button > svg) { display: none; }
+/* In the rail, link names stay for screen readers (visually hidden, not removed). */
+.app[data-collapsed] .side-nav a span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .app[data-collapsed] .side-nav a { justify-content: center; padding: 9px; }
 .app[data-collapsed] .side-nav hr { margin-inline: 4px; }
 .app[data-collapsed] .user-menu > button { justify-content: center; padding: 6px 0; }

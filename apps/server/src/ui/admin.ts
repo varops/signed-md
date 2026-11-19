@@ -415,7 +415,7 @@ export function createAdmin(ctx: Ctx) {
     const signedCount = d.signers.filter((s) => s.status === "signed").length;
 
     const head = html`<header class="doc-head">
-      <div><h1>${d.title}</h1><div class="row small muted">${copyValue(d.id)} ${badge(d.status)} ${d.archived ? badge("archived") : ""} ${d.source === "inline" ? html`<span class="badge" data-variant="warning">inline</span>` : ""}</div></div>
+      <div><h1>${d.title}</h1><div class="row small muted">${copyValue(d.id)} ${badge(d.status, d.status === "partially_signed" ? `${signedCount} of ${d.signers.length} signed` : undefined)} ${d.archived ? badge("archived") : ""} ${d.source === "inline" ? html`<span class="badge" data-variant="warning">inline</span>` : ""}</div></div>
       <div class="row">
         ${editable && !editingText
           ? d.source === "inline"
@@ -1356,7 +1356,6 @@ const MICROSOFT_LOGO = raw('<svg viewBox="0 0 21 21" width="18" height="18" aria
 function loginPage(error: string | undefined, email: string | undefined, buttons: { google: string | null; microsoft: string | null }, passwords: boolean): H {
   const any = buttons.google || buttons.microsoft;
   return authPage("Log in", html`
-    <h1>Log in</h1>
     ${error ? html`${alert("bad", html`${error}`)}` : ""}
     ${any
       ? html`<div class="card" style="display:grid;gap:10px">
@@ -1729,7 +1728,7 @@ function roleDialog(m: { id: string; name: string; role: keyof typeof ROLE_LABEL
 
 /** A tiny icon for a role in the team list: a crown for owners. */
 function roleIcon(role: keyof typeof ROLE_LABELS): H {
-  return html`<span class="role-icon" data-role="${role}" title="${ROLE_LABELS[role]}">${icon(role === "owner" ? "crown" : role === "admin" ? "shield" : role === "viewer" ? "eye" : "user")}</span>`;
+  return html`<span class="role-icon" data-role="${role}" aria-hidden="true">${icon(role === "owner" ? "crown" : role === "admin" ? "shield" : role === "viewer" ? "eye" : "user")}</span>`;
 }
 
 /** This page's path and query, without the given parameters (to come back here after a form). */

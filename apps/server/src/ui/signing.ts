@@ -24,7 +24,7 @@ import { CONTRACT_FONTS } from "../services/fonts.ts";
 /** Signing pages follow the signer's device for light and dark. */
 function publicShell(title: string, account: string | null, body: H, opts: { scripts?: boolean; bodyClass?: string; footer?: boolean } = {}): H {
   return html`<!doctype html><html lang="en"><head>${head(title)}
-<meta name="robots" content="noindex"><meta name="referrer" content="no-referrer"></head><body class="${opts.bodyClass ?? ""}">
+<meta name="referrer" content="no-referrer"></head><body class="${opts.bodyClass ?? ""}">
 ${body}
 ${opts.footer === false ? "" : footer()}
 ${opts.scripts ? html`<script src="${asset("signature_pad.js")}"></script><script src="${asset("sign.js")}"></script>` : ""}

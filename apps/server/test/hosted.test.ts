@@ -184,6 +184,19 @@ describe("login with Google or Microsoft", () => {
   });
 });
 
+describe("search engines", () => {
+  it("keeps every page and response out of the index, but lets links be followed", async () => {
+    const plain = await testContext();
+    const app = createApp(plain.ctx);
+    const login = await app.request("/login");
+    expect(login.headers.get("x-robots-tag")).toBe("noindex, follow");
+    expect(await login.text()).toContain('<meta name="robots" content="noindex, follow">');
+    expect((await app.request("/skill.md")).headers.get("x-robots-tag")).toBe("noindex, follow");
+    expect((await app.request("/s/not-a-real-token-but-long-enough-xxxx")).headers.get("x-robots-tag")).toBe("noindex, follow");
+    await plain.ctx.close();
+  });
+});
+
 describe("public footer", () => {
   it("shows Powered by with our logo, then the privacy policy when HOSTED or the source link otherwise", async () => {
     const hosted = await testContext({ HOSTED: "true", SMTP_HOST: "smtp.host.example" });

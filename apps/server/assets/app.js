@@ -56,11 +56,18 @@
       ok ? resolve() : reject(new Error("copy failed"));
     });
   }
+  // A polite live region, so screen readers hear what visual cues like "Copied" show.
+  function announce(text) {
+    var live = document.getElementById("smd-live");
+    if (!live) { live = document.createElement("div"); live.id = "smd-live"; live.className = "sr-only"; live.setAttribute("role", "status"); live.setAttribute("aria-live", "polite"); document.body.appendChild(live); }
+    live.textContent = ""; setTimeout(function () { live.textContent = text; }, 50);
+  }
   document.querySelectorAll("[data-copy]").forEach(function (el) {
     el.addEventListener("click", function (e) {
       e.preventDefault();
       var flash = el.hasAttribute("data-copy-flash");
       copyText(el.getAttribute("data-copy")).then(function () {
+        announce("Copied to the clipboard");
         if (flash) { el.classList.add("copied"); setTimeout(function () { el.classList.remove("copied"); }, 1200); return; }
         var t = el.textContent; el.textContent = "Copied"; setTimeout(function () { el.textContent = t; }, 1200);
       }, function () {

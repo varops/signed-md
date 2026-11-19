@@ -82,6 +82,7 @@ export function head(title: string, scheme: "system" | "light" | "dark" = "syste
   return html`<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="${scheme === "system" ? "light dark" : scheme}">
+<meta name="robots" content="noindex, follow">
 <title>${title}</title>
 <link rel="stylesheet" href="${asset("vendor/oat.css")}">
 <link rel="stylesheet" href="${asset("app.css")}">
@@ -172,7 +173,7 @@ function usagePill(u: NonNullable<ShellOptions["usage"]>): H {
 
 /** An avatar: initials, with the picture on top when there is one (app.js drops a picture that fails). */
 export function avatarFigure(name: string, url: string | null | undefined, size: "small" | "" | "large" = "", tooltip?: string): H {
-  if (tooltip) return html`<figure data-variant="avatar" class="${size}" title="${tooltip}"><abbr aria-hidden="true">${initialsOf(name)}</abbr>${url ? html`<img src="${url}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</figure>`;
+  if (tooltip) return html`<figure data-variant="avatar" class="${size}" title="${tooltip}" aria-label="${tooltip}"><abbr aria-hidden="true">${initialsOf(name)}</abbr>${url ? html`<img src="${url}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</figure>`;
   return html`<figure data-variant="avatar" class="${size}" aria-label="${name}"><abbr title="${name}" aria-hidden="true">${initialsOf(name)}</abbr>${url ? html`<img src="${url}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}</figure>`;
 }
 
