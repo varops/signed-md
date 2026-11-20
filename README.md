@@ -145,7 +145,7 @@ Or paste the setup prompt from the **Agents** page into any agent.
 docker compose up -d
 ```
 
-Open the URL, create the first owner, add a template, and create an API key on the **Agents** page. [Self-hosting](docs/self-hosting.md) covers HTTPS, SMTP, PostgreSQL, S3 storage and backups. SQLite and local disk are the default; PostgreSQL and S3 are one setting each.
+The Compose file uses the published image, `ghcr.io/varops/signed-md` (from the first release), or builds it from this repository. Open the URL, create the first owner, add a template, and create an API key on the **Agents** page. [Self-hosting](docs/self-hosting.md) covers HTTPS, SMTP, PostgreSQL, S3 storage and backups. SQLite and local disk are the default; PostgreSQL and S3 are one setting each.
 
 ## Templates
 
@@ -250,6 +250,7 @@ examples           sample templates
 - [REST, MCP and agent skills](docs/integrations.md)
 - [Self-hosting](docs/self-hosting.md)
 - [Legal compatibility](docs/legal.md)
+- [Changelog](CHANGELOG.md)
 
 ## Legal
 

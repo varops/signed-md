@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { VERSION } from "../version.ts";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { SignedError } from "@signed-md/core";
 import { Hono } from "hono";
@@ -48,7 +49,7 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
 }
 
 export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
-  const server = new McpServer({ name: "signed-md", version: "1.0.0" }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: "signed-md", version: VERSION }, { instructions: INSTRUCTIONS });
 
   server.registerTool(
     "signed_list_templates",

@@ -1,8 +1,10 @@
 name: CI
 
+# Work lands on develop, release candidates on rc, releases on main. The rc and release
+# workflows run after this one passes on their branch.
 on:
   push:
-    branches: [main]
+    branches: [develop, rc, main]
   pull_request:
 
 jobs:
@@ -36,6 +38,8 @@ jobs:
         run: |
           npm install --prefix /tmp/pw playwright
           npx --prefix /tmp/pw playwright install --with-deps chromium
+      - name: Versions agree and the changelog has an Unreleased section
+        run: node scripts/release.mjs check
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
@@ -46,9 +50,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t signedmd/signed:ci .
+      - run: docker build -t signed-md:ci .
       - name: Smoke test
         run: |
-          docker run -d --name smd -p 3000:3000 signedmd/signed:ci
+          docker run -d --name smd -p 3000:3000 signed-md:ci
           for i in $(seq 1 30); do curl -fsS localhost:3000/health && exit 0; sleep 1; done
           docker logs smd; exit 1

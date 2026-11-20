@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { VERSION } from "../version.ts";
 import { SignedError } from "@signed-md/core";
 import { now } from "@signed-md/db";
 import type { MiddlewareHandler } from "hono";
@@ -332,7 +333,7 @@ export function createApi(ctx: Ctx) {
     openapi: "3.1.0",
     info: {
       title: "Signed.md API",
-      version: "1.0.0",
+      version: VERSION,
       description:
         "Markdown-native e-signatures. Create a draft, preview it, get human approval, send the approved revision, and download a verifiable package when it is finalized.",
     },

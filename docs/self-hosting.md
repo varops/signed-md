@@ -17,6 +17,19 @@ pnpm install
 pnpm start
 ```
 
+## Images and upgrades
+
+From the first release, each release publishes an image for amd64 and arm64 to `ghcr.io/varops/signed-md`:
+
+| Tag | What it is |
+|---|---|
+| `1.0.0` | One exact release. Pin this in production. |
+| `1.0` | The latest patch release of 1.0. |
+| `latest` | The latest release. |
+| `rc` | The latest release candidate, for testing only. |
+
+Read [CHANGELOG.md](../CHANGELOG.md) before you upgrade, then change the tag and run `docker compose up -d`. Migrations run at start. Back up `DATA_DIR` first.
+
 ## Configuration
 
 All settings are environment variables. Invalid values stop the server at start with a clear message.

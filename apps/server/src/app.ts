@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { VERSION } from "./version.ts";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -121,7 +122,7 @@ export function createApp(ctx: Ctx) {
 
   app.get("/health", async (c) => {
     const db = await ping(ctx.db);
-    return c.json({ status: db ? "ok" : "degraded", database: db ? "ok" : "unreachable", version: "1.0.0" }, db ? 200 : 503);
+    return c.json({ status: db ? "ok" : "degraded", database: db ? "ok" : "unreachable", version: VERSION }, db ? 200 : 503);
   });
 
   app.get("/.well-known/signed-md-keys.json", async (c) => {
