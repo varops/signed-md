@@ -113,19 +113,30 @@ legend { font-size: var(--text-7); font-weight: var(--font-medium); padding: 0; 
 .app-main { position: relative; min-width: 0; }
 .sidebar-toggle { color: var(--muted-foreground); padding: 4px; }
 .sidebar-toggle svg { width: 18px; height: 18px; }
-/* Phones and small tablets: the sidebar becomes a bar on top, with the links scrolling sideways. */
+/* Phones and small tablets: a sticky bar with the logo and a menu button. The button opens the sidebar
+   over the whole screen, laid out as on desktop (and never as the icon rail). */
+.menu-toggle { display: none; color: var(--muted-foreground); padding: 4px; }
+.menu-toggle svg { width: 22px; height: 22px; }
+.menu-toggle[aria-expanded="true"] svg:first-child, .menu-toggle[aria-expanded="false"] svg:last-child { display: none; }
 @media (max-width: 900px) {
-  .app, .app[data-collapsed] { grid-template-columns: minmax(0, 1fr); }
-  .app[data-collapsed] { --sidebar: 250px; }
-  .rail-logo, .app[data-collapsed] .rail-logo { display: none; }
+  .app, .app[data-collapsed] { --sidebar: 250px; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .rail-logo, .sidebar-toggle, .app[data-collapsed] :is(.rail-logo, .sidebar-toggle) { display: none; }
+  .menu-toggle { display: inline-flex; }
+  .sidebar, .app[data-collapsed] .sidebar { position: sticky; top: 0; z-index: 30; height: auto; gap: 0; padding: 10px 16px; overflow: visible; border-bottom: 1px solid var(--border); }
+  .sidebar-head, .app[data-collapsed] .sidebar-head { justify-content: space-between; padding: 0; }
   .app[data-collapsed] .sidebar-head .brand { display: flex; }
-  .app[data-collapsed] :is(.side-nav a span) { display: inline; }
-  .sidebar { position: static; height: auto; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--border); }
-  .side-nav { order: 3; flex-basis: 100%; display: flex; gap: 2px; overflow-x: auto; }
-  .side-nav ul { display: flex; margin: 0; }
-  .side-nav hr, .nav-label, .source-note, .user-text, .user-menu > button > svg { display: none; }
-  .sidebar-foot { margin-inline-start: auto; display: flex; align-items: center; }
-  .sidebar-toggle { display: none; }
+  .side-nav, .sidebar-foot { display: none; }
+  .sidebar[data-open], .app[data-collapsed] .sidebar[data-open] { position: fixed; inset: 0; height: 100dvh; gap: 20px; padding-bottom: 16px; overflow-y: auto; border-bottom: 0; }
+  .sidebar[data-open] .side-nav { display: block; }
+  .sidebar[data-open] .sidebar-foot { display: grid; }
+  .app[data-collapsed] .sidebar[data-open] :is(.nav-label, .source-note, .usage-pill) { display: block; }
+  .app[data-collapsed] .sidebar[data-open] .user-text { display: grid; }
+  .app[data-collapsed] .sidebar[data-open] .user-menu > button > svg { display: block; }
+  .app[data-collapsed] .side-nav a span { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+  .app[data-collapsed] .side-nav a { justify-content: flex-start; padding: 7px 10px; }
+  .app[data-collapsed] .side-nav hr { margin-inline: 8px; }
+  .app[data-collapsed] .user-menu > button { justify-content: flex-start; padding: 6px 8px; }
+  body:has(.sidebar[data-open]) { overflow: hidden; }
 }
 .brand { display: flex; flex-shrink: 0; }
 .brand img { display: block; height: 28px; width: auto; }

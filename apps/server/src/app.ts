@@ -153,6 +153,14 @@ export function createApp(ctx: Ctx) {
     return c.body(readFileSync(skillPath, "utf8"));
   });
 
+  // The home-screen icon (iOS asks for /apple-touch-icon.png on its own too). Full-bleed: iOS rounds the corners.
+  const touchIcon = readFileSync(join(here, "..", "..", "..", "brand", "signedmd-apple-touch-icon.png"));
+  app.get("/apple-touch-icon.png", (c) => {
+    c.header("content-type", "image/png");
+    c.header("cache-control", "public, max-age=86400");
+    return c.body(new Uint8Array(touchIcon));
+  });
+
   app.get("/assets/vendor/:name", (c) => {
     const a = assets[`vendor/${c.req.param("name")}`];
     if (!a) return c.notFound();

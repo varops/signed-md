@@ -77,11 +77,24 @@ const NAV: { label: string | null; items: NavItem[]; featured?: boolean }[] = [
   { label: null, items: [["outbox", "/outbox", "Outbox", "inbox", ["owner", "admin"]]] },
 ];
 
+/** The browser's bar colour: the same as the mobile top bar (light #f9f9f9, dark #111113), following the person's theme. */
+function themeColor(scheme: "system" | "light" | "dark"): H {
+  const light = "#f9f9f9", dark = "#111113";
+  if (scheme !== "system") return html`<meta name="theme-color" content="${scheme === "dark" ? dark : light}">`;
+  return html`<meta name="theme-color" content="${light}" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="${dark}" media="(prefers-color-scheme: dark)">`;
+}
+
 /** <head> shared by every page: Oat UI, our styles, and the colour scheme. */
 export function head(title: string, scheme: "system" | "light" | "dark" = "system"): H {
   return html`<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="${scheme === "system" ? "light dark" : scheme}">
+${themeColor(scheme)}
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Signed.md">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" sizes="512x512" href="/apple-touch-icon.png">
 <meta name="robots" content="noindex, follow">
 <title>${title}</title>
 <link rel="stylesheet" href="${asset("vendor/oat.css")}">
@@ -131,6 +144,7 @@ function sidebar(opts: ShellOptions, user: NonNullable<ShellOptions["user"]>): H
       ${logo("/documents")}
       <button type="button" class="rail-logo" data-smd-sidebar-toggle aria-controls="sidebar" aria-expanded="${opts.collapsed ? "false" : "true"}" aria-label="Expand the sidebar"><img src="${asset("icon.svg")}" alt="" width="28" height="28"></button>
       <button type="button" class="ghost icon sidebar-toggle" data-smd-sidebar-toggle aria-controls="sidebar" aria-expanded="${opts.collapsed ? "false" : "true"}" aria-label="Collapse the sidebar">${icon("panelLeft")}</button>
+      <button type="button" class="ghost icon menu-toggle" aria-controls="sidebar" aria-expanded="false" aria-label="Menu">${icon("menu")}${icon("close")}</button>
     </div>
     <nav class="side-nav" aria-label="Main">
       ${groups.map((g, i) => html`${!g.label && i && !g.featured ? html`<hr>` : ""}${g.label ? html`<p class="nav-label" id="nav-${g.label.toLowerCase()}">${g.label}</p>` : ""}
@@ -209,6 +223,7 @@ const ICONS = {
   file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
   crown: '<path d="M11.56 3.27a.5.5 0 0 1 .88 0l2.95 5.6a1 1 0 0 0 1.52.29l4.27-3.66a.5.5 0 0 1 .82.5l-2.83 10.25a1 1 0 0 1-.96.75H5.8a1 1 0 0 1-.96-.75L2.02 5.99a.5.5 0 0 1 .82-.5l4.27 3.66a1 1 0 0 0 1.52-.29z"/><path d="M5 21h14"/>',
   user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  menu: '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
   panelLeft: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
   template: '<rect width="18" height="7" x="3" y="3" rx="1"/><rect width="9" height="7" x="3" y="14" rx="1"/><rect width="5" height="7" x="16" y="14" rx="1"/>',
   users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',

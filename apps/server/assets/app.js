@@ -243,6 +243,22 @@ document.querySelectorAll("[data-smd-sidebar-toggle]").forEach((button) => {
   });
 });
 
+// Phones: the menu button in the top bar opens the sidebar over the screen. Escape closes it.
+document.querySelectorAll(".menu-toggle").forEach((button) => {
+  const sidebar = document.getElementById(button.getAttribute("aria-controls"));
+  if (!sidebar) return;
+  const set = (open) => {
+    sidebar.toggleAttribute("data-open", open);
+    button.setAttribute("aria-expanded", String(open));
+  };
+  button.addEventListener("click", () => set(!sidebar.hasAttribute("data-open")));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && sidebar.hasAttribute("data-open") && !document.querySelector(":popover-open")) { set(false); button.focus(); }
+  });
+  matchMedia("(min-width: 901px)").addEventListener("change", (e) => { if (e.matches) set(false); });
+  window.addEventListener("pageshow", () => set(false)); // closed again when coming back through history
+});
+
 // Zoom on the pages, from 50% to 200%. The level is a per-browser preference.
 (() => {
   const read = () => { try { return Number(localStorage.getItem("smd-zoom")) || 1; } catch { return 1; } };
