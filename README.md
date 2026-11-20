@@ -20,8 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/04-draft-preview.png" height="420" alt="A draft prepared by an agent, ready for a person to approve and send">
-  <img src="docs/screenshots/08-signing-filled.png" height="420" alt="The signer's view on a phone">
+  <img src="docs/screenshots/hero.webp" width="100%" alt="Signed.md: AI-native document signing. A draft prepared by an agent on desktop, and the signer's view on a phone.">
 </p>
 
 ---
@@ -104,6 +103,21 @@ npx signed-md verify agreement.zip --keys signed-md-keys.json
 `signed-md-keys.json` is the sender's `/.well-known/signed-md-keys.json`. The check confirms every file matches the signed manifest, the evidence chain is intact, and each signer signed the exact text. The npm package ships with the first public release; until then, run `pnpm verify agreement.zip` from this repository.
 
 ## Quick start
+
+### Let your agent install it
+
+Paste this into a coding agent that can run commands on your machine or server (Claude Code, Codex, Cursor and others). It follows the self-hosting guide and stops to ask you for anything it shouldn't decide alone:
+
+```text
+Install Signed.md for me from https://github.com/varops/signed-md.
+Read its README and docs/self-hosting.md first, then run it with Docker Compose.
+Ask me for the public URL and SMTP settings, or leave SMTP out for now so emails go to the Outbox page.
+When it's running, tell me to open it in my browser and create the first owner account myself. Never ask me for that password.
+Then connect yourself using the setup prompt on its Agents page.
+Don't send any documents without my approval.
+```
+
+### Or do it yourself
 
 You need Node.js 22.18+, pnpm and [Typst](https://github.com/typst/typst/releases) 0.13 on your `PATH`.
 
