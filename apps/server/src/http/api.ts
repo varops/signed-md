@@ -170,7 +170,8 @@ export function createApi(ctx: Ctx) {
     async (c) => {
       const q = c.req.valid("query");
       const { folder_id, ...rest } = q;
-      return c.json(await docs.listDocuments(ctx, c.get("actor"), { ...rest, archived: q.archived === "true", mine: q.mine === "true", ...(folder_id ? { folder: folder_id } : {}) }), 200);
+      const { data, next_before } = await docs.listDocuments(ctx, c.get("actor"), { ...rest, archived: q.archived === "true", mine: q.mine === "true", ...(folder_id ? { folder: folder_id } : {}) });
+      return c.json({ data, next_before }, 200);
     },
   );
 

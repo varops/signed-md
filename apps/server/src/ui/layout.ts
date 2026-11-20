@@ -223,6 +223,8 @@ const ICONS = {
   file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
   crown: '<path d="M11.56 3.27a.5.5 0 0 1 .88 0l2.95 5.6a1 1 0 0 0 1.52.29l4.27-3.66a.5.5 0 0 1 .82.5l-2.83 10.25a1 1 0 0 1-.96.75H5.8a1 1 0 0 1-.96-.75L2.02 5.99a.5.5 0 0 1 .82-.5l4.27 3.66a1 1 0 0 0 1.52-.29z"/><path d="M5 21h14"/>',
   user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  chevronLeft: '<path d="m15 18-6-6 6-6"/>',
+  chevronRight: '<path d="m9 18 6-6-6-6"/>',
   menu: '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
   panelLeft: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
   template: '<rect width="18" height="7" x="3" y="3" rx="1"/><rect width="9" height="7" x="3" y="14" rx="1"/><rect width="5" height="7" x="16" y="14" rx="1"/>',
@@ -274,7 +276,8 @@ export function field(id: string, label: H | string, control: H, hint?: H | stri
 export function when(iso: string | null | undefined): H {
   if (!iso) return html`<span class="muted">–</span>`;
   const d = new Date(iso);
-  return html`<time datetime="${iso}" title="${iso}">${d.toISOString().slice(0, 16).replace("T", " ")} UTC</time>`;
+  const t = d.toISOString();
+  return html`<time datetime="${iso}" title="${iso}">${t.slice(0, 10)}<span class="time"> ${t.slice(11, 16)} UTC</span></time>`;
 }
 
 export function issuesList(issues: { message: string; field?: string }[]): H {

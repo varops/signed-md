@@ -187,7 +187,7 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
       },
     },
     ({ status, q, archived, limit, folder_id }) =>
-      run(() => docs.listDocuments(ctx, actor, { ...(status ? { status } : {}), ...(q ? { q } : {}), archived: archived === true, ...(limit ? { limit } : {}), ...(folder_id ? { folder: folder_id } : {}) })),
+      run(async () => { const { data, next_before } = await docs.listDocuments(ctx, actor, { ...(status ? { status } : {}), ...(q ? { q } : {}), archived: archived === true, ...(limit ? { limit } : {}), ...(folder_id ? { folder: folder_id } : {}) }); return { data, next_before }; }),
   );
 
   server.registerTool(

@@ -1,5 +1,5 @@
 import { type Database, newId, now } from "@signed-md/db";
-import type { Kysely } from "kysely";
+import type { ExpressionBuilder, Kysely } from "kysely";
 import { type Actor, actorRef } from "../context.ts";
 
 /** Record a team, settings, or template event for the activity history. */
@@ -68,26 +68,63 @@ const AUDIT_TYPES: Record<string, (d: Record<string, unknown>) => string> = {
   "folder.deleted": (d) => `deleted the ${d.kind} folder “${d.name}”${d.moved ? ` (${d.moved} moved to the top level)` : ""}`,
 };
 
-/** Recent team and document activity, newest first. */
-export async function listActivity(db: Kysely<Database>, limit = 100): Promise<ActivityItem[]> {
-  const audit = await db.selectFrom("audit_events").selectAll().orderBy("created_at", "desc").limit(limit).execute();
+/** A page of activity, newest first, with cursors for the older and newer pages (null at either end). */
+export interface ActivityPage {
+  items: ActivityItem[];
+  older: string | null;
+  newer: string | null;
+}
+
+/**
+ * Team and document activity, newest first, a page at a time. It merges two tables, so each row's
+ * position is its time plus a key ("a:" audit id, "e:" event id); the cursor is "time|key". A newer page
+ * that would come up short is the first page instead.
+ */
+export async function listActivity(db: Kysely<Database>, opts: { limit?: number; before?: string; after?: string } = {}): Promise<ActivityPage> {
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const newer = !opts.before && !!opts.after;
+  const cursor = opts.before ?? opts.after;
+  const c = cursor ? { at: cursor.slice(0, cursor.indexOf("|")), key: cursor.slice(cursor.indexOf("|") + 1) } : null;
+  const op = newer ? ">" : "<";
+  const dir = newer ? "asc" : "desc";
+  // Past the cursor, for one table: an earlier (or later) time, or the same time and a key past the cursor's.
+  // At the cursor's own time, rows of the other table are all past it or none are ("a:" sorts before "e:").
+  const past = (prefix: "a:" | "e:", at: "created_at" | "events.created_at", id: "id" | "events.id") => (eb: ExpressionBuilder<any, any>) => {
+    if (!c) return eb(at, "is not", null);
+    if (c.key.slice(0, 2) === prefix) return eb.or([eb(at, op, c.at), eb.and([eb(at, "=", c.at), eb(id, op, c.key.slice(2))])]);
+    const sameTimeToo = newer ? prefix > c.key.slice(0, 2) : prefix < c.key.slice(0, 2);
+    return eb(at, sameTimeToo ? (newer ? ">=" : "<=") : op, c.at);
+  };
+  const audit = await db.selectFrom("audit_events").selectAll().where((eb) => past("a:", "created_at", "id")(eb)).orderBy("created_at", dir).orderBy("id", dir).limit(limit + 1).execute();
   const docEvents = await db
     .selectFrom("events")
     .innerJoin("documents", "documents.id", "events.document_id")
-    .select(["events.type", "events.data", "events.created_at", "events.document_id", "documents.title"])
+    .select(["events.id", "events.type", "events.data", "events.created_at", "events.document_id", "documents.title"])
     .where("events.type", "in", Object.keys(DOC_TYPES))
-    .orderBy("events.created_at", "desc")
-    .limit(limit)
+    .where((eb) => past("e:", "events.created_at", "events.id")(eb))
+    .orderBy("events.created_at", dir)
+    .orderBy("events.id", dir)
+    .limit(limit + 1)
     .execute();
-  const items: ActivityItem[] = [
+  const rows: (ActivityItem & { key: string })[] = [
     ...audit.map((a) => {
       const d = JSON.parse(a.data) as Record<string, unknown>;
-      return { at: a.created_at, actor: a.actor_label, type: a.type, summary: AUDIT_TYPES[a.type]?.(d) ?? a.type };
+      return { key: `a:${a.id}`, at: a.created_at, actor: a.actor_label, type: a.type, summary: AUDIT_TYPES[a.type]?.(d) ?? a.type };
     }),
     ...docEvents.map((e) => {
       const d = JSON.parse(e.data) as Record<string, unknown> & { _actor_label?: string };
-      return { at: e.created_at, actor: d._actor_label ?? "", type: e.type, summary: DOC_TYPES[e.type] ?? e.type, document: { id: e.document_id, title: e.title } };
+      return { key: `e:${e.id}`, at: e.created_at, actor: d._actor_label ?? "", type: e.type, summary: DOC_TYPES[e.type] ?? e.type, document: { id: e.document_id, title: e.title } };
     }),
   ];
-  return items.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)).slice(0, limit);
+  const sign = newer ? 1 : -1;
+  rows.sort((x, y) => sign * (x.at < y.at ? -1 : x.at > y.at ? 1 : x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
+  const more = rows.length > limit;
+  if (newer && !more) return listActivity(db, { limit });
+  const page = newer ? rows.slice(0, limit).reverse() : rows.slice(0, limit);
+  const pos = (r: { at: string; key: string } | undefined) => (r ? `${r.at}|${r.key}` : null);
+  return {
+    items: page.map(({ key: _key, ...item }) => item),
+    older: newer || more ? pos(page[page.length - 1]) : null,
+    newer: newer || cursor ? pos(page[0]) : null,
+  };
 }

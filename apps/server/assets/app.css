@@ -59,6 +59,33 @@ pre { background: var(--muted); border-radius: var(--radius-medium); padding: 12
 .nowrap { white-space: nowrap; }
 .w-full { width: 100%; }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; width: auto; } /* Oat's .row is a 12-column grid at 100% width */
+/* Team invite: email, role and the button in a grid, so the button lines up with (and is as tall as) the fields.
+   On phones the email takes its own line. */
+.invite-row { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto; grid-template-areas: "el rl ." "ei rs b"; gap: 6px 10px; align-items: stretch; }
+.invite-row > [data-field] { display: contents; }
+.invite-row label { margin: 0; }
+.invite-row label[for="f-email"] { grid-area: el; } .invite-row #f-email { grid-area: ei; margin: 0; }
+.invite-row label[for="f-role"] { grid-area: rl; } .invite-row #f-role { grid-area: rs; margin: 0; width: 100%; }
+.invite-row > button { grid-area: b; height: auto; margin: 0 !important; }
+@media (max-width: 600px) {
+  .invite-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "el el" "ei ei" "rl rl" "rs b"; }
+  .invite-row label[for="f-role"] { margin-top: 8px; }
+}
+/* A red icon button for a destructive action (deactivate someone). */
+.danger-icon { color: var(--danger) !important; padding: 6px; }
+.danger-icon svg { width: 18px; height: 18px; }
+.danger-icon:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+/* Newer / Older under a long list. */
+.pager { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 14px 0 0; }
+.pager .button { display: inline-flex; align-items: center; gap: 4px; }
+.pager svg { width: 15px; height: 15px; }
+/* The documents filter: search, status and the button, all the same height. On phones the search takes a line. */
+.filter-form { align-items: stretch; margin-bottom: 14px; }
+.filter-form > * { margin: 0; }
+.filter-form input[type="search"] { max-width: 320px; }
+.filter-form select { max-width: 200px; }
+.filter-form button { height: auto; }
+@media (max-width: 600px) { .filter-form input[type="search"] { max-width: none; flex-basis: 100%; } .filter-form select { max-width: none; flex: 1; } }
 .row-stretch { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; width: 100%; justify-content: space-between; }
 .spread { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
 .stack > * + * { margin-top: 12px; }
@@ -175,7 +202,7 @@ legend { font-size: var(--text-7); font-weight: var(--font-medium); padding: 0; 
 @media (min-width: 1920px) { .app:not([data-collapsed]) .wrap:not(.full) { max-width: calc(1120px + var(--sidebar) - 100px); padding-right: calc(40px + var(--sidebar) - 100px); } }
 /* Editors and document pages use the whole width. */
 .app .wrap.full { max-width: none; padding: 20px 24px 24px; }
-@media (max-width: 900px) { .app .wrap, .app .wrap.full { padding: 20px 16px 48px; } }
+@media (max-width: 900px) { .app .wrap, .app .wrap.full { padding: 20px 16px 48px; } .app .wrap:not(.full) { padding-top: 30px; } }
 .narrow { max-width: 460px; }
 /* Public pages: log in, set up, join, password reset. */
 /* Log in, invitation and password reset: the box sits in the middle of the screen, a little above centre. */
@@ -293,6 +320,8 @@ dl.kv dd { margin: 0; word-break: break-word; }
 figure[data-variant="avatar"]:not([role="group"]) { position: relative; flex: none; margin: 0; }
 figure[data-variant="avatar"] > abbr { text-decoration: none; font-size: .8em; }
 figure[data-variant="avatar"] > img { position: absolute; inset: 0; }
+/* Your own avatar (sidebar and account menu): initials on our yellow when there is no picture. */
+:is(.user-menu, .account-head) figure[data-variant="avatar"] { background: var(--brand); color: #111; }
 
 /* Forms */
 .check { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; }
@@ -356,6 +385,8 @@ textarea.code { font-family: var(--mono); font-size: .86rem; min-height: 380px; 
 .timeline li > div { padding-top: 3px; overflow-wrap: anywhere; }
 .tl-actor { font-weight: var(--font-medium, 500); }
 .timeline time { display: block; font-size: var(--text-8, .75rem); color: var(--muted-foreground); margin-top: 1px; }
+/* Phones: the activity page drops the card around the timeline, for more room per line. */
+@media (max-width: 600px) { .activity-card { padding: 0; border: 0; background: none; box-shadow: none; } }
 
 /* ---- The agreement (rendered Markdown) ---- */
 .doc { font-family: var(--font-doc-serif); background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 40px 48px; font-size: 16.5px; line-height: 1.65; color: var(--card-foreground); }
@@ -506,6 +537,37 @@ td > dialog { text-align: start; font-size: 1rem; font-weight: normal; white-spa
 
 /* App tables (not tables inside a contract): small text, and tiny uppercase headings. */
 table:not(.doc table) { font-size: .85rem; }
+/* Lists on phones: every row becomes a card. Title and status on top, then the signers, and a footer row of
+   details (folder, owner, date; for templates the ID, live version and source). The whole card opens the item.
+   --indent lines the signers up with the title (icon or avatar width plus the gap). */
+.m-only { display: none; }
+@media (max-width: 600px) {
+  .table:has(> table.stack) { padding: 0; border: 0; background: none; box-shadow: none; overflow: visible; }
+  table.stack thead { display: none; }
+  table.stack, table.stack tbody { display: grid; gap: 10px; }
+  table.stack tr { position: relative; display: flex; flex-wrap: wrap; align-items: flex-start; border: 1px solid var(--border); border-radius: var(--radius-large, 12px); background: var(--card); overflow: hidden; }
+  table.stack td { display: block; padding: 0; border: 0; }
+  table.stack .cell-main { order: 1; flex: 1 1 0; min-width: 0; padding: 14px 8px 14px 14px; }
+  table.stack .cell-main .item-cell > div { min-width: 0; }
+  table.stack .cell-main .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  table.stack .cell-status { order: 2; flex: none; padding: 14px 14px 14px 0; }
+  table.stack .cell-status:empty { display: none; }
+  table.stack tr::after { content: ""; order: 3; flex-basis: 100%; } /* the line break after title and status */
+  table.stack .cell-wide { order: 4; flex-basis: 100%; padding: 0 14px 14px calc(14px + var(--indent, 34px)); margin-top: -4px; }
+  table.stack .cell-meta { order: 5; flex: 1 1 auto; align-self: stretch; display: flex; align-items: center; gap: .3em; padding: 8px 14px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--muted) 45%, transparent); font-size: .75rem; color: var(--muted-foreground); white-space: nowrap; }
+  table.stack .cell-meta:not(.lead) { border-left: 1px solid var(--border); }
+  table.stack .cell-meta > .row { display: inline-flex; }
+  table.stack .cell-meta figure { display: none; }
+  table.stack .cell-meta .small { font-size: inherit; }
+  table.stack .cell-meta :is(.link-button, .copy-value) { padding: 0; height: auto; min-height: 0; font-size: inherit; }
+  table.stack .m-only { display: inline; }
+  table.stack .hide-sm { display: none; }
+  table.stack .cell-meta time .time { display: none; } /* the date is enough here; the full time is in the tooltip */
+  table.stack .cell-status .danger-icon { margin: -6px -6px 0 0; }
+  table.stack a.item-cell::after { content: ""; position: absolute; inset: 0; }
+  table.stack :is(.cell-meta, .cell-wide, .cell-status) > * { position: relative; z-index: 1; }
+}
+}
 th:not(.doc th) { font-size: .75rem; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
 /* A list row that starts with an icon (templates). */
 .item-cell { display: flex; align-items: start; gap: 10px; }
@@ -516,6 +578,7 @@ a.item-cell:hover strong { text-decoration: underline; text-underline-offset: 3p
 /* Folder cell: the name, with a chevron on hover that opens "move to". */
 .folder-move > button > svg:last-child { opacity: 0; transition: opacity 150ms; }
 .folder-move > button:is(:hover, :focus-visible, [aria-expanded="true"]) > svg:last-child { opacity: .6; }
+@media (hover: none) { .folder-move > button > svg:last-child { opacity: .6; } }
 .move-menu { max-height: 320px; overflow-y: auto; }
 .move-menu [role="menuitem"] > span { flex: 1; text-align: start; }
 .move-menu [role="menuitem"] > svg { color: var(--muted-foreground); }
@@ -647,6 +710,15 @@ a.text-link { color: var(--link) !important; text-decoration: underline; text-un
 .edit-pane .doc-head .import-form { flex-wrap: nowrap; justify-content: flex-end; flex: none; }
 .edit-pane .doc-head .import-form input[type="file"] { max-width: 220px; }
 .edit-bar .help-button { margin-inline-start: auto; color: var(--muted-foreground); }
+/* Phones: "Placeholder help" sits at the top, beside the title, instead of at the end of the editor. */
+.help-top { display: none; }
+@media (max-width: 900px) {
+  .help-top { display: inline-flex; flex: none; margin-inline-start: auto; color: var(--muted-foreground); }
+  .edit-bar .help-button { display: none; }
+  /* With an import button too, the title takes the first line, Import and help the second. */
+  .edit-pane > .doc-head:has(.import-form) { flex-wrap: wrap; align-items: center; row-gap: 10px; }
+  .edit-pane > .doc-head:has(.import-form) > .title-block { flex-basis: 100%; }
+}
 
 /* The template's name is the page title, edited in place. */
 .title-block { display: grid; gap: 2px; flex: 1; min-width: 0; }

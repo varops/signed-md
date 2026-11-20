@@ -259,7 +259,10 @@ export function createAdmin(ctx: Ctx) {
     const filtering = !!(q || status || archived);
     const folder = current ? current.id : undefined;
     const listUrl = hereWithout(c.req.url, "msg");
-    const list = await docs.listDocuments(ctx, user, { archived, mine, ...(status ? { status } : {}), ...(q ? { q } : {}), ...(folder ? { folder } : {}), limit: 100 });
+    const before = c.req.query("before") || undefined;
+    const after = c.req.query("after") || undefined;
+    const list = await docs.listDocuments(ctx, user, { archived, mine, ...(status ? { status } : {}), ...(q ? { q } : {}), ...(folder ? { folder } : {}), ...(before ? { before } : after ? { after } : {}), limit: 25 });
+    const paged = !!(before || after) && !!list.newer_after;
     const manageFolders = can(user, "documents.create");
     const avatarsOn = (await getAccount(ctx)).config.branding.avatars;
     const welcome = c.req.query("welcome") === "1";
@@ -272,11 +275,11 @@ export function createAdmin(ctx: Ctx) {
       ${hit ? limitAlert(hit) : ""}
       ${welcome ? html`${alert("info", html`<strong>Welcome to Signed.md.</strong> ${user.role === "owner" ? "Next steps: create a template, invite your team, and create an API key in Settings so your agent can send agreements." : user.role === "viewer" ? "You can read every document and template." : "Create an API key in Settings to connect your agent, or start a document from an approved template."}`)}` : ""}
       ${folderHead("Documents", "/documents", current, can(user, "documents.create") ? newMenu("document", withQuery("/documents/new", { folder: current?.id }), manageFolders && !current, c.get("csrf")) : "")}
-      ${!current && !filtering ? folderGrid("document", docFolders, await folders.folderCounts(ctx, "document", mine ? user.id : undefined), (id) => withQuery("/documents", { folder: id, mine: mine && seesAll ? "1" : undefined }), manageFolders, c.get("csrf")) : ""}
+      ${!current && !filtering && !paged ? folderGrid("document", docFolders, await folders.folderCounts(ctx, "document", mine ? user.id : undefined), (id) => withQuery("/documents", { folder: id, mine: mine && seesAll ? "1" : undefined }), manageFolders, c.get("csrf")) : ""}
       ${seesAll ? tabs("Which documents", [["All documents", withQuery("/documents", { folder: current?.id, archived: archived ? "1" : undefined }), !mine], ["Mine", withQuery("/documents", { folder: current?.id, mine: "1", archived: archived ? "1" : undefined }), mine]]) : ""}
-      <search><form class="row" method="get" aria-label="Filter documents" style="margin-bottom:14px">
-        <input type="search" name="q" value="${q ?? ""}" placeholder="Search title, signer name or email" aria-label="Search title, signer name or email" autocapitalize="none" spellcheck="false" style="max-width:320px;margin-top:0">
-        <select name="status" aria-label="Status" style="max-width:200px;margin-top:0"><option value="">Any status</option>
+      <search><form class="row filter-form" method="get" aria-label="Filter documents">
+        <input type="search" name="q" value="${q ?? ""}" placeholder="Search title, signer name or email" aria-label="Search title, signer name or email" autocapitalize="none" spellcheck="false">
+        <select name="status" aria-label="Status"><option value="">Any status</option>
           ${["draft", "sent", "partially_signed", "signed", "finalized", "declined", "expired", "revoked"].map((s) => html`<option value="${s}" ${s === status ? "selected" : ""}>${s.replace("_", " ")}</option>`)}
         </select>
         ${archived ? html`<input type="hidden" name="archived" value="1">` : ""}
@@ -287,19 +290,20 @@ export function createAdmin(ctx: Ctx) {
       <div class="card table">
       ${list.data.length === 0
         ? current ? empty("Nothing in this folder") : archived ? empty("Nothing archived") : filtering ? empty("No matches") : empty("No documents yet", html`<a href="/documents/new">Create one</a> or connect an agent.`)
-        : html`<table><thead><tr><th>Title</th><th>Folder</th><th>Status</th><th>Signers</th>${seesAll && !mine ? html`<th>Owner</th>` : ""}<th>Created</th></tr></thead><tbody>
+        : html`<table class="stack"><thead><tr><th>Title</th><th>Folder</th><th>Status</th><th>Signers</th>${seesAll && !mine ? html`<th>Owner</th>` : ""}<th>Created</th></tr></thead><tbody>
           ${list.data.map((d) => {
             const signed = d.signers.filter((s) => s.status === "signed").length;
             return html`<tr>
-              <td><a class="item-cell" href="/documents/${d.id}">${icon("file")}<div><strong>${d.title}</strong><div class="small muted mono">${d.id}</div></div></a></td>
-              <td>${folderCell("document", d, docFolders, canManageDocument(user, { owner_user_id: d.owner?.id ?? null }), c.get("csrf"), listUrl)}</td>
-              <td>${badge(d.status, d.status === "partially_signed" ? `${signed} of ${d.signers.length} signed` : undefined)}</td>
-              <td><figure data-variant="avatar" role="group" class="small signers" aria-label="Signers">${d.signers.map((s) => avatar(ctx, avatarsOn, s.name, s.email, "small", signerLabel(s)))}</figure></td>
-              ${seesAll && !mine ? html`<td>${d.owner ? html`<div class="row" style="gap:8px;flex-wrap:nowrap">${avatar(ctx, avatarsOn, d.owner.name, d.owner.email, "small")}<span class="small">${d.owner.name}</span></div>` : html`<span class="muted">–</span>`}</td>` : ""}
-              <td class="nowrap">${when(d.created_at)}</td></tr>`;
+              <td class="cell-main"><a class="item-cell" href="/documents/${d.id}">${icon("file")}<div><strong>${d.title}</strong><div class="small muted mono">${d.id}</div></div></a></td>
+              <td class="cell-meta lead">${folderCell("document", d, docFolders, canManageDocument(user, { owner_user_id: d.owner?.id ?? null }), c.get("csrf"), listUrl)}</td>
+              <td class="cell-status">${badge(d.status, d.status === "partially_signed" ? `${signed} of ${d.signers.length} signed` : undefined)}</td>
+              <td class="cell-wide"><figure data-variant="avatar" role="group" class="small signers" aria-label="Signers">${d.signers.map((s) => avatar(ctx, avatarsOn, s.name, s.email, "small", signerLabel(s)))}</figure></td>
+              ${seesAll && !mine ? html`<td class="cell-meta">${d.owner ? html`<div class="row" style="gap:8px;flex-wrap:nowrap">${avatar(ctx, avatarsOn, d.owner.name, d.owner.email, "small")}<span class="small">${d.owner.name}</span></div>` : html`<span class="muted">–</span>`}</td>` : ""}
+              <td class="nowrap cell-meta">${when(d.created_at)}</td></tr>`;
           })}
         </tbody></table>`}
       </div>
+      ${pager(c.req.url, "documents", list.newer_after, list.next_before)}
       <p><a class="small" href="${withQuery("/documents", { folder: current?.id, mine: mine && seesAll ? "1" : undefined, archived: archived ? undefined : "1" })}">${archived ? "Back to active documents" : "View archive"}</a></p>`,
     );
   });
@@ -706,13 +710,13 @@ export function createAdmin(ctx: Ctx) {
       ${!current && !archived ? folderGrid("template", tplFolders, await folders.folderCounts(ctx, "template"), (id) => withQuery("/templates", { folder: id }), can(c.get("user"), "templates.manage"), c.get("csrf")) : ""}
       <div class="card table">
       ${list.length === 0 ? (current ? empty("Nothing in this folder") : archived ? empty("Nothing archived") : empty("No templates yet", html`<a href="/templates/new">Create your first template</a>.`))
-        : html`<table><thead><tr><th>Name</th><th>ID</th><th>Folder</th><th>Live</th><th>Latest</th><th>Created via</th></tr></thead><tbody>
-          ${list.map((t) => html`<tr><td><a class="item-cell" href="/templates/${t.id}">${icon("template")}<div><strong>${t.name}</strong>${t.description ? html`<div class="tiny muted">${t.description}</div>` : ""}</div></a></td>
-            <td class="nowrap">${copyValue(t.id)}</td>
-            <td>${folderCell("template", t, tplFolders, can(c.get("user"), "templates.manage"), c.get("csrf"), listUrl)}</td>
-            <td>${t.approved_version ? html`v${t.approved_version}` : html`<span class="muted">none</span>`}</td>
-            <td><div class="row">v${t.current_version} ${badge(t.versions[0]!.approval_status)}</div></td>
-            <td>${t.created_via === "ui" ? "UI" : html`<span class="badge" data-variant="warning">${t.created_via.toUpperCase()}</span>`}</td></tr>`)}
+        : html`<table class="stack"><thead><tr><th>Name</th><th>ID</th><th>Folder</th><th>Live</th><th>Latest</th><th>Created via</th></tr></thead><tbody>
+          ${list.map((t) => html`<tr><td class="cell-main"><a class="item-cell" href="/templates/${t.id}">${icon("template")}<div><strong>${t.name}</strong>${t.description ? html`<div class="tiny muted">${t.description}</div>` : ""}</div></a></td>
+            <td class="nowrap cell-meta lead">${copyValue(t.id)}</td>
+            <td class="cell-meta${t.folder ? "" : " hide-sm"}">${folderCell("template", t, tplFolders, can(c.get("user"), "templates.manage"), c.get("csrf"), listUrl)}</td>
+            <td class="cell-meta"><span class="m-only">Live </span>${t.approved_version ? html`v${t.approved_version}` : html`<span class="muted">none</span>`}</td>
+            <td class="cell-status"><div class="row">v${t.current_version} ${badge(t.versions[0]!.approval_status)}</div></td>
+            <td class="cell-meta${t.created_via === "ui" ? " hide-sm" : ""}"><span class="m-only">via </span>${t.created_via === "ui" ? "UI" : html`<span class="badge" data-variant="warning">${t.created_via.toUpperCase()}</span>`}</td></tr>`)}
         </tbody></table>`}
       </div>
       <p><a class="small" href="${archived ? "/templates" : withQuery("/templates", { folder: current?.id, archived: "1" })}">${archived ? "Back to active templates" : "View archive"}</a></p>`);
@@ -1022,9 +1026,9 @@ export function createAdmin(ctx: Ctx) {
     return page(c, "Team", "team", html`
       <div class="page-head"><h1>Team</h1></div>
       <form method="post" action="/team/invite" class="card" aria-labelledby="invite-someone">${csrfInput(csrf)}<header><h2 id="invite-someone">Invite someone</h2></header>
-        <div class="row" style="align-items:flex-end">
-          <div data-field style="flex:1;min-width:220px;margin:0"><label for="f-email">Email</label><input id="f-email" type="email" name="email" required placeholder="name@company.com"></div>
-          <div data-field style="margin:0"><label for="f-role">Role</label><select id="f-role" name="role">${assignable.map((r) => html`<option value="${r}" ${r === "member" ? "selected" : ""}>${ROLE_LABELS[r]}</option>`)}</select></div>
+        <div class="invite-row">
+          <div data-field><label for="f-email">Email</label><input id="f-email" type="email" name="email" required placeholder="name@company.com"></div>
+          <div data-field><label for="f-role">Role</label><select id="f-role" name="role">${assignable.map((r) => html`<option value="${r}" ${r === "member" ? "selected" : ""}>${ROLE_LABELS[r]}</option>`)}</select></div>
           <button type="submit">Send invitation</button>
         </div>
         <details class="tiny link-details"><summary>What each role can do</summary>
@@ -1033,27 +1037,27 @@ export function createAdmin(ctx: Ctx) {
           </tbody></table></details>
       </form>
 
-      ${invitations.length ? html`<section class="card" aria-labelledby="pending-invitations"><header><h2 id="pending-invitations">Pending invitations</h2></header><div class="table"><table><tbody>
-        ${invitations.map((i) => html`<tr><td>${i.email}<div class="small muted">Invited by ${i.invited_by} · expires ${when(i.expires_at)}</div></td><td>${ROLE_LABELS[i.role]}</td>
-          <td style="text-align:right" class="nowrap">
+      ${invitations.length ? html`<section class="card" aria-labelledby="pending-invitations"><header><h2 id="pending-invitations">Pending invitations</h2></header><div class="table"><table class="stack" style="--indent: 0px"><tbody>
+        ${invitations.map((i) => html`<tr><td class="cell-main">${i.email}<div class="small muted">Invited by ${i.invited_by} · expires ${when(i.expires_at)}</div></td><td class="cell-meta lead">${ROLE_LABELS[i.role]}</td>
+          <td style="text-align:right" class="nowrap cell-status">
             <form method="post" action="/team/invitations/${i.id}/resend" class="inline">${csrfInput(csrf)}<button type="submit" class="outline small">Resend</button></form>
             <form method="post" action="/team/invitations/${i.id}/revoke" class="inline">${csrfInput(csrf)}<button data-variant="danger" type="submit" class="small">Revoke</button></form></td></tr>`)}
       </tbody></table></div></section>` : ""}
 
-      <div class="card table"><table><thead><tr><th>Person</th><th>Role</th><th>Last login</th><th></th></tr></thead><tbody>
+      <div class="card table"><table class="stack" style="--indent: 50px"><thead><tr><th>Person</th><th>Role</th><th>Last login</th><th></th></tr></thead><tbody>
         ${members.map((m) => {
           const self = m.id === user.id;
           const locked = m.role === "owner" && !isOwner;
           return html`<tr>
-            <td><div class="row" style="gap:10px;flex-wrap:nowrap">${avatar(ctx, account.config.branding.avatars, m.name, m.email)}<div><strong>${m.name}</strong>${self ? html` <span class="muted small">(you)</span>` : ""}<div class="small muted">${m.email}</div></div></div></td>
-            <td>${self || locked || m.status !== "active"
+            <td class="cell-main"><div class="row" style="gap:10px;flex-wrap:nowrap">${avatar(ctx, account.config.branding.avatars, m.name, m.email)}<div><strong>${m.name}</strong>${self ? html` <span class="muted small">(you)</span>` : ""}<div class="small muted">${m.email}</div></div></div></td>
+            <td class="cell-meta lead">${self || locked || m.status !== "active"
               ? html`<span class="role-cell">${roleIcon(m.role)}${ROLE_LABELS[m.role]}</span>`
               : html`<button type="button" class="link-button role-cell" commandfor="role-${m.id}" command="show-modal" aria-label="Change role for ${m.name}, now ${ROLE_LABELS[m.role]}">${roleIcon(m.role)}${ROLE_LABELS[m.role]}${icon("chevronDown")}</button>
                 ${roleDialog(m, assignable, csrf)}`}</td>
-            <td class="nowrap">${m.status === "active" ? when(m.last_login_at) : badge("deactivated")}</td>
-            <td style="text-align:right">${self || locked ? ""
+            <td class="nowrap cell-meta">${m.status === "active" ? html`<span class="m-only">Last login </span>${when(m.last_login_at)}` : badge("deactivated")}</td>
+            <td style="text-align:right" class="cell-status">${self || locked ? ""
               : m.status === "active"
-                ? html`<button type="button" data-variant="danger" class="small" commandfor="deactivate-${m.id}" command="show-modal">Deactivate</button>
+                ? html`<button type="button" class="ghost icon danger-icon" commandfor="deactivate-${m.id}" command="show-modal" aria-label="Deactivate ${m.name}" title="Deactivate">${icon("trash")}</button>
                   <dialog id="deactivate-${m.id}" closedby="any" aria-labelledby="deactivate-${m.id}-title" aria-describedby="deactivate-${m.id}-text">
                     <form method="post" action="/team/${m.id}/deactivate">${csrfInput(csrf)}
                       <header><h2 id="deactivate-${m.id}-title">Deactivate ${m.name}?</h2></header>
@@ -1107,11 +1111,14 @@ export function createAdmin(ctx: Ctx) {
 
   app.get("/activity", async (c) => {
     requirePermission(c.get("user"), "activity.read");
-    const items = await listActivity(ctx.db, 150);
+    const before = c.req.query("before") || undefined;
+    const after = c.req.query("after") || undefined;
+    const { items, older, newer } = await listActivity(ctx.db, { limit: 50, ...(before ? { before } : after ? { after } : {}) });
     return page(c, "Activity", "activity", html`<div class="page-head"><h1>Activity</h1></div>
-      <div class="card">${items.length === 0 ? empty("Nothing yet") : html`<ul class="timeline activity">
+      <div class="card activity-card">${items.length === 0 ? empty("Nothing yet") : html`<ul class="timeline activity">
         ${items.map((i) => html`<li>${eventIcon(i.type)}<div><span class="tl-actor">${i.actor || "Signed.md"}</span> ${i.summary}${i.document ? html` · <a href="/documents/${i.document.id}">${i.document.title}</a>` : ""}<time datetime="${i.at}">${when(i.at)}</time></div></li>`)}
-      </ul>`}</div>`);
+      </ul>`}</div>
+      ${pager(c.req.url, "activity", newer, older)}`);
   });
 
   // ---- Branding ----
@@ -1488,6 +1495,7 @@ function templateForm(csrf: string, font: ContractFont, s: { id?: string; name: 
             ${s.id ? html`<div class="row small muted">New version</div>` : s.folders?.length ? html`<div class="row small muted"><label for="f-folder">Folder</label>${folderSelect("f-folder", s.folders, s.folderId, "template-form")}</div>` : ""}
           </div>
           ${offerImport ? importForm(csrf, "/templates/import", "Start from a Word or PDF file") : ""}
+          <button type="button" class="ghost small help-button help-top" popovertarget="placeholder-help" aria-controls="placeholder-help">Placeholder help</button>
         </header>
         ${notice ?? ""}
         <form method="post" action="${s.id ? `/templates/${s.id}/edit` : "/templates"}" class="text-form" id="template-form">${csrfInput(csrf)}
@@ -1628,6 +1636,21 @@ function zoomControls(): H {
 }
 
 /** A URL with query parameters, leaving out empty ones. */
+/** Newer and older pages of a list, keeping the current filters. Nothing when the list fits on one page. */
+function pager(url: string, what: string, newer: string | null, older: string | null): H | string {
+  if (!newer && !older) return "";
+  const link = (key: "before" | "after", cursor: string) => {
+    const u = new URL(url);
+    for (const k of ["before", "after", "msg"]) u.searchParams.delete(k);
+    u.searchParams.set(key, cursor);
+    return u.pathname + u.search;
+  };
+  return html`<nav class="pager" aria-label="More ${what}">
+    ${newer ? html`<a class="button outline small" href="${link("after", newer)}" rel="prev">${icon("chevronLeft")} Newer</a>` : html`<span></span>`}
+    ${older ? html`<a class="button outline small" href="${link("before", older)}" rel="next">Older ${icon("chevronRight")}</a>` : ""}
+  </nav>`;
+}
+
 function withQuery(path: string, params: Record<string, string | undefined>): string {
   const q = new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => !!e[1]));
   return q.size ? `${path}?${q}` : path;

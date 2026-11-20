@@ -840,20 +840,45 @@ export interface ListDocumentsOptions {
   archived?: boolean;
   q?: string;
   limit?: number;
+  /** next_before from the previous page: the older page. */
   before?: string;
+  /** newer_after from a page: the newer page (web UI only). */
+  after?: string;
   /** A folder id, or "none" for documents in no folder. */
   folder?: string;
 }
 
-export async function listDocuments(ctx: Ctx, actor: Actor, opts: ListDocumentsOptions = {}): Promise<{ data: DocumentView[]; next_before: string | null }> {
+/** A list cursor: the created_at and id of a row, so rows created in the same millisecond are never skipped. */
+function encodeCursor(row: { created_at: string; id: string }): string {
+  return `${row.created_at}|${row.id}`;
+}
+function decodeCursor(cursor: string): { at: string; id: string | null } {
+  const i = cursor.indexOf("|");
+  return i < 0 ? { at: cursor, id: null } : { at: cursor.slice(0, i), id: cursor.slice(i + 1) }; // a bare timestamp: older cursors
+}
+
+/**
+ * Documents, newest first, a page at a time. `before` (next_before of a page) gives the older page and
+ * `after` (newer_after) the newer one. A newer page that would come up short is the first page instead.
+ */
+export async function listDocuments(ctx: Ctx, actor: Actor, opts: ListDocumentsOptions = {}): Promise<{ data: DocumentView[]; next_before: string | null; newer_after: string | null }> {
   const limit = Math.min(Math.max(opts.limit ?? 25, 1), 100);
-  let q = ctx.db.selectFrom("documents").selectAll().orderBy("created_at", "desc").orderBy("id", "desc").limit(limit + 1);
+  const newer = !opts.before && !!opts.after;
+  let q = ctx.db.selectFrom("documents").selectAll().limit(limit + 1);
+  q = newer ? q.orderBy("created_at", "asc").orderBy("id", "asc") : q.orderBy("created_at", "desc").orderBy("id", "desc");
   q = opts.archived ? q.where("archived_at", "is not", null) : q.where("archived_at", "is", null);
   if (opts.status) q = q.where("status", "=", opts.status);
   if (opts.folder === "none") q = q.where("folder_id", "is", null);
   else if (opts.folder) q = q.where("folder_id", "=", opts.folder);
   if (opts.mine || !(can(actor, "documents.read_all") || can(actor, "documents.manage_all"))) q = q.where("owner_user_id", "=", userIdOf(actor) ?? "");
-  if (opts.before) q = q.where("created_at", "<", opts.before);
+  const cursor = opts.before ?? opts.after;
+  if (cursor) {
+    const c = decodeCursor(cursor);
+    const op = newer ? ">" : "<";
+    q = c.id === null
+      ? q.where("created_at", op, c.at)
+      : q.where((eb) => eb.or([eb("created_at", op, c.at), eb.and([eb("created_at", "=", c.at), eb("id", op, c.id!)])]));
+  }
   if (opts.q) {
     const term = `%${opts.q.toLowerCase().replace(/[%_]/g, "")}%`;
     q = q.where((eb) =>
@@ -864,8 +889,15 @@ export async function listDocuments(ctx: Ctx, actor: Actor, opts: ListDocumentsO
     );
   }
   const rows = await q.execute();
-  const page = rows.slice(0, limit);
+  const more = rows.length > limit;
+  if (newer && !more) return listDocuments(ctx, actor, { ...opts, after: undefined });
+  const page = newer ? rows.slice(0, limit).reverse() : rows.slice(0, limit);
   const setting = (await getAccount(ctx)).config.inline_documents;
   const data = await Promise.all(page.map(async (d) => documentView(ctx, d, await loadSigners(ctx.db, d.id), setting)));
-  return { data, next_before: rows.length > limit ? page[page.length - 1]!.created_at : null };
+  const first = page[0], last = page[page.length - 1];
+  return {
+    data,
+    next_before: last && (newer || more) ? encodeCursor(last) : null,
+    newer_after: first && (newer || !!cursor) ? encodeCursor(first) : null,
+  };
 }
