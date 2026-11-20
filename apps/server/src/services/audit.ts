@@ -38,6 +38,7 @@ const DOC_TYPES: Record<string, string> = {
   "document.inline_approved": "approved the inline document",
   "document.converted_to_inline": "turned a template draft into an inline document to edit its text",
   "signer.viewed": "opened",
+  "signer.downloaded_review_copy": "downloaded a copy for review",
   "signer.signed": "signed",
   "signer.declined": "declined",
   "signer.link_resent": "resent a signing link",

@@ -565,7 +565,9 @@ Do not implement cloud storage backends until needed.
 
 ### Markdown first
 
-Until completion, there is no PDF. Preview and the signing page render HTML from the same parsed Markdown tree.
+Until completion, there is no signed PDF. Preview and the signing page render HTML from the same parsed Markdown tree.
+
+The one exception is the review copy. A signer whose link can still be used to sign can download an unsigned PDF from "Other actions" (`GET /s/:token/review.pdf`), for example to share with a lawyer. It is rendered from the document as sent, with every signer field blank (other people's signatures too), "Copy for review – not signed" at the top and in the footer, and no certificate page. It is not sealed or stored. Each download is recorded as a `signer.downloaded_review_copy` event.
 
 ### PDF at completion
 

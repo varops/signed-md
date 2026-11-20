@@ -260,7 +260,7 @@ Preview provides:
 - Validation warnings.
 - The revision.
 
-There is no PDF before completion.
+There is no signed PDF before completion. Signers can download an unsigned review copy from the signing page.
 
 Agents should present a human-readable summary alongside the preview.
 

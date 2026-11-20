@@ -79,6 +79,14 @@ pre { background: var(--muted); border-radius: var(--radius-medium); padding: 12
 .pager { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 14px 0 0; }
 .pager .button { display: inline-flex; align-items: center; gap: 4px; }
 .pager svg { width: 15px; height: 15px; }
+/* A small icon button at the end of a list row (download the signed PDF). */
+td.row-action { width: 1%; text-align: end; }
+td.row-action .button { padding: 4px; color: var(--muted-foreground); }
+td.row-action .button svg { width: 18px; height: 18px; }
+td.row-action .button:hover { color: var(--foreground); }
+@media (max-width: 600px) { table.stack td.row-action { flex: none; min-width: 44px; justify-content: center; padding: 0 12px; } table.stack td.row-action .button { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; min-width: 20px; padding: 0; color: inherit; } table.stack td.row-action .button svg { width: 16px; height: 16px; } }
+/* Outbox: one <details> per email. */
+.outbox-mail { margin: 0 0 10px; }
 /* The documents filter: search, status and the button, all the same height. On phones the search takes a line. */
 .filter-form { align-items: stretch; margin-bottom: 14px; }
 .filter-form > * { margin: 0; }
@@ -330,8 +338,8 @@ figure[data-variant="avatar"] > img { position: absolute; inset: 0; }
 .inline-fields > [data-field] { margin: 0 !important; }
 @media (max-width: 600px) { .inline-fields { grid-template-columns: 1fr !important; } }
 /* iOS Safari zooms into any field under 16px when it gets focus. On touch and narrow screens every field is 16px
-   (the title input is already larger). OverType's editor gets the same size from app.js. */
-@media (pointer: coarse), (max-width: 900px) { :is(input, select, textarea):not(.title-input) { font-size: 16px !important; } }
+   (the title input is already larger), except fields inside a document page, which scale with the page. OverType's editor gets the same size from app.js. */
+@media (pointer: coarse), (max-width: 900px) { :is(input, select, textarea):not(.title-input, .doc.page *) { font-size: 16px !important; } }
 textarea.code { font-family: var(--mono); font-size: .86rem; min-height: 380px; line-height: 1.5; }
 .editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: end; }
 .editor textarea.code, .editor .ot-host { height: 680px; }
@@ -348,7 +356,7 @@ textarea.code { font-family: var(--mono); font-size: .86rem; min-height: 380px; 
 /* A page like the PDF: white A4 (PDFs are always white), its margins and type sizes, scaled to the
    page's width. 1pt of the PDF is 1/595 of the page width; it never goes below 1.2px for reading. */
 .doc.page { color-scheme: light; container-type: inline-size; background: #fff; color: #1c1917; border: 0; border-radius: 2px; box-shadow: 0 1px 3px rgb(0 0 0 / .15), 0 8px 24px rgb(0 0 0 / .08); max-width: 794px; margin-inline: auto; padding: 0; }
-.doc.page > .page-body { --pt: max(100cqw / 595, 1.2px); padding: calc(68 * 100cqw / 595) calc(68 * 100cqw / 595) calc(74 * 100cqw / 595); font-size: calc(11.25 * var(--pt)); line-height: 1.55; }
+.doc.page > .page-body { --pt: calc(100cqw / 595); padding: calc(68 * 100cqw / 595) calc(68 * 100cqw / 595) calc(74 * 100cqw / 595); font-size: calc(11.25 * var(--pt)); line-height: 1.55; }
 .doc.page.smd-font-sans > .page-body { font-size: calc(10 * var(--pt)); }
 .doc.page h1 { font-size: calc(19 * var(--pt)); margin: 0 0 calc(16 * var(--pt)); }
 .doc.page h2 { font-size: calc(12.5 * var(--pt)); margin: calc(20 * var(--pt)) 0 calc(9 * var(--pt)); }
@@ -431,6 +439,8 @@ textarea.code { font-family: var(--mono); font-size: .86rem; min-height: 380px; 
 .intro-card { max-width: 560px; margin: 56px auto 16px !important; }
 .intro-card h1 { margin: 4px 0 0; }
 .intro-icon { display: block; width: 48px; height: 48px; border-radius: 10px; }
+/* Phones: the intro sits on the page without a card (Other actions keeps its card). */
+@media (max-width: 600px) { .intro-card { padding: 0; border: 0; background: none; box-shadow: none; margin: 24px auto 24px !important; } }
 .disclosure { display: block; background: var(--muted); border-radius: var(--radius-medium); padding: 12px 14px; font-size: .9rem; }
 .disclosure details { margin-top: 8px; }
 .check.consent { margin: 14px 0 18px; }
@@ -554,7 +564,7 @@ table:not(.doc table) { font-size: .85rem; }
   table.stack .cell-status:empty { display: none; }
   table.stack tr::after { content: ""; order: 3; flex-basis: 100%; } /* the line break after title and status */
   table.stack .cell-wide { order: 4; flex-basis: 100%; padding: 0 14px 14px calc(14px + var(--indent, 34px)); margin-top: -4px; }
-  table.stack .cell-meta { order: 5; flex: 1 1 auto; align-self: stretch; display: flex; align-items: center; gap: .3em; padding: 8px 14px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--muted) 45%, transparent); font-size: .75rem; color: var(--muted-foreground); white-space: nowrap; }
+  table.stack .cell-meta { order: 5; flex: 1 1 auto; align-self: stretch; display: flex; align-items: center; gap: .3em; min-width: 0; overflow: hidden; padding: 8px 12px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--muted) 45%, transparent); font-size: .75rem; color: var(--muted-foreground); white-space: nowrap; }
   table.stack .cell-meta:not(.lead) { border-left: 1px solid var(--border); }
   table.stack .cell-meta > .row { display: inline-flex; }
   table.stack .cell-meta figure { display: none; }
@@ -787,6 +797,10 @@ a.text-link { color: var(--link) !important; text-decoration: underline; text-un
 .intro-logo { display: inline-flex; align-items: center; max-width: 100%; padding: 10px 14px; border-radius: 12px; background: #fff; border: 1px solid light-dark(var(--border), transparent); }
 .intro-logo img { display: block; max-height: 40px; max-width: 200px; width: auto; }
 .message-card { text-align: center; }
+/* Message pages ("You're done", "Link expired"): centred on the screen, a little above the middle, like log in. */
+body:has(.message-card) { display: flex; flex-direction: column; min-height: 100dvh; }
+main:has(> .message-card) { flex: 1; width: 100%; display: flex; flex-direction: column; justify-content: center; padding-bottom: 10dvh; }
+.intro-card.message-card { margin: 32px auto !important; width: 100%; }
 .message-card .intro-logo { margin: 0 auto 14px; }
 .intro-card > .intro-logo, .intro-card > .intro-icon { margin-bottom: 16px; }
 
@@ -795,6 +809,17 @@ body.signing-body { background: light-dark(#eeedeb, #1c1c1f); }
 .signing-body .sign-wrap { max-width: 860px; }
 .doc.page.signing { --field-bg: #fff7d6; --field-line: #c99700; --input: #d6d3d1; }
 .doc.page.signing .smd-input { color: #1c1917; }
+/* Inside a page everything scales with the page, as in the PDF: sizes in em, not pixels. On a phone the
+   fields are small like the text; iOS zooms in on the one being filled (they are left out of the 16px rule). */
+.doc.page .smd-signature { height: 3.4em; }
+.doc.page .smd-signature-typed { padding: 0 .4em; }
+.doc.page .smd-sign { gap: .4em; }
+.doc.page .smd-sign-tag { line-height: 1.2; padding: .45em .9em .45em .75em; margin-right: .75em; }
+.doc.page .smd-sign-tag::after { right: -.75em; border-width: 1.05em 0 1.05em .75em; }
+.doc.page.signing .smd-input { padding: .15em .5em; border-radius: .3em; }
+.doc.page.signing input[type=date].smd-input { min-width: 9em; }
+.doc.page.signing .smd-textarea { min-height: 5.5em; margin: .4em 0; }
+.doc.page.signing .smd-check { width: 1.1em; height: 1.1em; }
 .doc.page.signing .smd-slot-other { color: #57534e; border-color: #a8a29e; }
 
 /* Signing: the page, with a timeline of signers beside it ("You are here", "Next"). */
@@ -816,7 +841,7 @@ body.signing-body { background: light-dark(#eeedeb, #1c1c1f); }
 .signer-timeline li[data-state="signed"] .tl-state { color: var(--success); }
 .signer-timeline li[data-state="declined"] .tl-state { color: var(--danger); }
 .signer-timeline li[data-state="later"] { opacity: .7; }
-@media (max-width: 960px) { .sign-layout { grid-template-columns: minmax(0, 1fr); } .sign-aside { position: static; order: -1; } }
+@media (max-width: 960px) { .sign-layout { grid-template-columns: minmax(0, 1fr); } .sign-aside { position: static; } }
 .signer-timeline strong .muted { font-weight: 400; }
 
 /* Progress steps that aren't people: a small round icon in place of the avatar. */
@@ -836,7 +861,7 @@ body.signing-body { background: light-dark(#eeedeb, #1c1c1f); }
 
 /* Page numbers on the paginated previews, where the PDF puts them (bottom right, small and grey). */
 .pages.paged .doc.page { position: relative; }
-.page-number { position: absolute; right: calc(68 * 100cqw / 595); bottom: calc(30 * 100cqw / 595); font: calc(7 * max(100cqw / 595, 1px)) var(--font-doc-sans); color: #78716c; letter-spacing: normal; }
+.page-number { position: absolute; right: calc(68 * 100cqw / 595); bottom: calc(30 * 100cqw / 595); font: calc(7 * 100cqw / 595) var(--font-doc-sans); color: #78716c; letter-spacing: normal; }
 
 /* Drawing a signature: a line to sign on, and Clear inside the drawing area. Neither is part of the image. */
 .sig-pad-wrap { position: relative; }

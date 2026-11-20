@@ -9,6 +9,7 @@ import { downloadLink } from "../services/finalize.ts";
 import { getAccount } from "../services/accounts.ts";
 import {
   declineDocument,
+  reviewCopy,
   fieldLabel,
   openSigningPage,
   recordConsent,
@@ -84,6 +85,11 @@ function declineBlock(token: string): H {
   // The fields belong to a form placed outside the signing form (forms can't be nested), so this
   // block can sit anywhere, including beside the document inside the signing form.
   return html`<details class="other-actions"><summary>Other actions</summary>
+    <div role="group" aria-labelledby="review-title" aria-describedby="review-note">
+      <h5 id="review-title">Download a copy</h5>
+      <p class="small muted" id="review-note">An unsigned PDF with every field left blank, to read offline or share for review, for example with your lawyer.</p>
+      <a class="button outline small" href="/s/${token}/review.pdf" download>Download PDF</a></div>
+    <hr>
     <div role="group" aria-labelledby="decline-title" aria-describedby="decline-note">
       <h5 id="decline-title">Decline to sign</h5>
       <p class="small muted" id="decline-note">The sender will be told. You can add a reason.</p>
@@ -308,6 +314,17 @@ export function createSigningRoutes(ctx: Ctx) {
   };
 
   app.get("/s/:token", (c) => render(c, c.req.param("token")));
+
+  // An unsigned copy for review: every field blank, marked "Copy for review – not signed".
+  app.get("/s/:token/review.pdf", async (c) => {
+    const copy = await reviewCopy(ctx, c.req.param("token"), meta(c));
+    if (!copy) return c.html(message("Copy not available", "This document can no longer be signed through this link, so there is no copy to download here."), 404);
+    const name = `${copy.title.replace(/[^A-Za-z0-9 ._-]+/g, "").trim().slice(0, 80) || "document"} - review copy.pdf`;
+    c.header("content-type", "application/pdf");
+    c.header("content-disposition", `attachment; filename="${name}"`);
+    c.header("cache-control", "no-store");
+    return c.body(new Uint8Array(copy.pdf));
+  });
 
   app.post("/s/:token/start", async (c) => {
     const token = c.req.param("token");

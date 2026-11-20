@@ -66,6 +66,8 @@ export interface PdfInput {
   disclosureVersion: string;
   /** Contract body font family. */
   font: ContractFont;
+  /** An unsigned copy for review: marked as such, every signer field blank, no certificate page. */
+  review?: boolean;
 }
 
 interface Asset {
@@ -255,33 +257,8 @@ export function buildTypst(input: PdfInput): { source: string; assets: Asset[] }
     })
     .join("\n");
 
-  const footer = t(`${input.documentId} · ${input.revision}`);
-  const source = `#set document(title: ${typstString(input.title)}, author: ${typstString(input.accountName)})
-#let ink = rgb("#1c1917")
-#let muted = rgb("#78716c")
-#let rule = rgb("#d6d3d1")
-#let wash = rgb("#f5f5f4")
-#set page(paper: "a4", margin: (x: 2.4cm, top: 2.4cm, bottom: 2.6cm), footer: context [
-  #set text(font: "Arimo", size: 7pt, fill: muted)
-  ${footer} #h(1fr) Page #counter(page).display() of #counter(page).final().first()
-])
-#set text(font: ${typstString(CONTRACT_FONTS[input.font].pdf)}, size: ${input.font === "sans-serif" ? "10pt" : "11.25pt"}${input.font === "serif" ? ", tracking: -0.005em" : ""}, fill: ink, lang: "en", hyphenate: false)
-#set par(justify: false, leading: 0.72em, spacing: 1.15em)
-#show heading: set text(weight: "bold", fill: ink)
-#show heading.where(level: 1): it => block(below: 16pt)[#text(size: 19pt, it.body)]
-#show heading.where(level: 2): it => block(above: 20pt, below: 9pt)[#text(size: 12.5pt, it.body)]
-#show heading.where(level: 3): it => block(above: 16pt, below: 7pt)[#text(size: 10.5pt, it.body)]
-#set list(indent: 4pt, body-indent: 8pt, spacing: 0.75em)
-#set enum(indent: 4pt, body-indent: 8pt, spacing: 0.75em)
-#set table(stroke: 0.5pt + rule, inset: (x: 8pt, y: 7pt), fill: (_, y) => if y == 0 { wash })
-#show table: set par(justify: false)
-#show table.cell.where(y: 0): set text(size: 9pt, weight: "bold")
-#show raw: set text(font: "DejaVu Sans Mono", size: 9pt)
-#show strong: set text(weight: "semibold")
-
-${body}
-
-#pagebreak()
+  // The certificate of completion, on its own page after the contract (not in a review copy).
+  const certificate = () => `#pagebreak()
 #set text(font: "Arimo", size: 8.5pt)
 #set par(leading: 0.6em, spacing: 0.9em)
 #grid(columns: (1fr, auto), align: (left + bottom, right + bottom),
@@ -323,7 +300,38 @@ ${input.timestampAuthority ? `- The seal and the evidence package carry trusted 
 - Each signer agreed to the electronic record and signature disclosure (version ${t(input.disclosureVersion)}) before signing. The exact text is in the evidence log.
 - The evidence package (ZIP) holds the signed Markdown, this PDF, and a hash-chained evidence log, with a manifest signed by key ${t(input.keyId)}. Verify it offline with #raw("npx signed-md verify agreement.zip"). Public keys: ${t(input.publicUrl)}/.well-known/signed-md-keys.json.
 - Each signer was identified by a unique link sent to their email address. This shows control of that email address. It does not by itself prove legal identity.
-]
+]`;
+  const footer = t(`${input.review ? "Copy for review – not signed · " : ""}${input.documentId} · ${input.revision}`);
+  const reviewNote = input.review
+    ? `#block(width: 100%, fill: wash, inset: (x: 10pt, y: 8pt), radius: 4pt, below: 18pt)[#set text(font: "Arimo", size: 8pt, fill: muted)
+#text(weight: "bold", fill: ink)[Copy for review – not signed.] The fields are left blank. Sign only through the link you were sent.]
+`
+    : "";
+  const source = `#set document(title: ${typstString(input.title)}, author: ${typstString(input.accountName)})
+#let ink = rgb("#1c1917")
+#let muted = rgb("#78716c")
+#let rule = rgb("#d6d3d1")
+#let wash = rgb("#f5f5f4")
+#set page(paper: "a4", margin: (x: 2.4cm, top: 2.4cm, bottom: 2.6cm), footer: context [
+  #set text(font: "Arimo", size: 7pt, fill: muted)
+  ${footer} #h(1fr) Page #counter(page).display() of #counter(page).final().first()
+])
+#set text(font: ${typstString(CONTRACT_FONTS[input.font].pdf)}, size: ${input.font === "sans-serif" ? "10pt" : "11.25pt"}${input.font === "serif" ? ", tracking: -0.005em" : ""}, fill: ink, lang: "en", hyphenate: false)
+#set par(justify: false, leading: 0.72em, spacing: 1.15em)
+#show heading: set text(weight: "bold", fill: ink)
+#show heading.where(level: 1): it => block(below: 16pt)[#text(size: 19pt, it.body)]
+#show heading.where(level: 2): it => block(above: 20pt, below: 9pt)[#text(size: 12.5pt, it.body)]
+#show heading.where(level: 3): it => block(above: 16pt, below: 7pt)[#text(size: 10.5pt, it.body)]
+#set list(indent: 4pt, body-indent: 8pt, spacing: 0.75em)
+#set enum(indent: 4pt, body-indent: 8pt, spacing: 0.75em)
+#set table(stroke: 0.5pt + rule, inset: (x: 8pt, y: 7pt), fill: (_, y) => if y == 0 { wash })
+#show table: set par(justify: false)
+#show table.cell.where(y: 0): set text(size: 9pt, weight: "bold")
+#show raw: set text(font: "DejaVu Sans Mono", size: 9pt)
+#show strong: set text(weight: "semibold")
+
+${reviewNote}${body}
+${input.review ? "" : certificate()}
 `;
   return { source, assets };
 }

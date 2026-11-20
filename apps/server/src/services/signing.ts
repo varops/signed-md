@@ -1,9 +1,11 @@
-import { type FieldDef, type FieldValue, normalizeValue, SignedError, transition } from "@signed-md/core";
+import { type FieldDef, type FieldValue, normalizeValue, parseTemplate, SignedError, transition } from "@signed-md/core";
 import { enqueueJob, now } from "@signed-md/db";
 import type { ElementContent } from "hast";
 import type { Actor, Ctx } from "../context.ts";
 import { sha256 } from "../crypto.ts";
+import { getAccount } from "./accounts.ts";
 import { appendEvent } from "./events.ts";
+import { renderPdf } from "./pdf.ts";
 import { activateNextGroup, type DocRow, loadDocument, loadSigners, lockDocument, type SignerRow } from "./documents.ts";
 import { emitWebhook } from "./webhooks.ts";
 import { type ContractFont, fontOf } from "./fonts.ts";
@@ -244,6 +246,47 @@ export function renderCompletedValue(def: FieldDef, v: SignerFieldValue): Elemen
   }
   const text = def.type === "checkbox" ? (v ? "☑" : "☐") : String(v);
   return { type: "element", tagName: "span", properties: { className: ["smd-value"] }, children: [{ type: "text", value: text }] };
+}
+
+/**
+ * An unsigned copy of the document for review, for example by the signer's lawyer: the text as sent,
+ * with every signer field blank (other people's signatures included), marked "Copy for review – not
+ * signed". Only while the link can still be used to sign. Recorded in the evidence log.
+ */
+export async function reviewCopy(ctx: Ctx, token: string, meta: RequestMeta): Promise<{ title: string; pdf: Buffer } | null> {
+  const s = await findByToken(ctx, token);
+  if (!s) return null;
+  const { doc, signer } = s;
+  if (!["sent", "partially_signed"].includes(doc.status) || isExpired(doc) || signer.status === "signed") return null;
+  const account = await getAccount(ctx);
+  const pdf = await renderPdf(ctx.config.typstBin, {
+    review: true,
+    title: doc.title,
+    documentId: doc.id,
+    revision: doc.revision,
+    content: doc.content,
+    contentSha256: sha256(doc.content),
+    fields: parseTemplate(doc.content).fields,
+    values: new Map(),
+    signers: [],
+    sender: null,
+    source: "",
+    sentAt: doc.sent_at,
+    completedAt: now(),
+    accountName: account.name,
+    publicUrl: ctx.config.publicUrl,
+    keyId: ctx.keys.info.kid,
+    timezone: doc.timezone,
+    sealedBy: "",
+    timestampAuthority: null,
+    disclosureVersion: DISCLOSURE_VERSION,
+    font: fontOf(doc.font),
+  });
+  await ctx.db.transaction().execute(async (trx) => {
+    await lockDocument(ctx, trx, doc.id);
+    await appendEvent(trx, doc.id, "signer.downloaded_review_copy", signerActor(signer), { signer: signer.key, ...meta });
+  });
+  return { title: doc.title, pdf };
 }
 
 /**

@@ -12,7 +12,7 @@ import { IMPORT_ACCEPT, importDocument } from "../services/imports.ts";
 import { changePassword, createApiKey, csrfToken, listApiKeys, login, revokeApiKey, SESSION_SECONDS, sessionActor, sessionCookie } from "../services/auth.ts";
 import * as docs from "../services/documents.ts";
 import { listEvents } from "../services/events.ts";
-import { listArtifacts } from "../services/finalize.ts";
+import { downloadLink, listArtifacts } from "../services/finalize.ts";
 import * as tpl from "../services/templates.ts";
 import * as folders from "../services/folders.ts";
 import { listDeliveries } from "../services/webhooks.ts";
@@ -263,6 +263,11 @@ export function createAdmin(ctx: Ctx) {
     const after = c.req.query("after") || undefined;
     const list = await docs.listDocuments(ctx, user, { archived, mine, ...(status ? { status } : {}), ...(q ? { q } : {}), ...(folder ? { folder } : {}), ...(before ? { before } : after ? { after } : {}), limit: 25 });
     const paged = !!(before || after) && !!list.newer_after;
+    // Signed PDFs of finished documents on this page, for the download button in each row (links last an hour).
+    const pdfIds = list.data.length
+      ? await ctx.db.selectFrom("artifacts").select(["id", "document_id"]).where("type", "=", "pdf").where("document_id", "in", list.data.map((d) => d.id)).execute()
+      : [];
+    const pdfOf = new Map(pdfIds.map((a) => [a.document_id, downloadLink(ctx, a.id, 3600).url]));
     const manageFolders = can(user, "documents.create");
     const avatarsOn = (await getAccount(ctx)).config.branding.avatars;
     const welcome = c.req.query("welcome") === "1";
@@ -290,7 +295,7 @@ export function createAdmin(ctx: Ctx) {
       <div class="card table">
       ${list.data.length === 0
         ? current ? empty("Nothing in this folder") : archived ? empty("Nothing archived") : filtering ? empty("No matches") : empty("No documents yet", html`<a href="/documents/new">Create one</a> or connect an agent.`)
-        : html`<table class="stack"><thead><tr><th>Title</th><th>Folder</th><th>Status</th><th>Signers</th>${seesAll && !mine ? html`<th>Owner</th>` : ""}<th>Created</th></tr></thead><tbody>
+        : html`<table class="stack"><thead><tr><th>Title</th><th>Folder</th><th>Status</th><th>Signers</th>${seesAll && !mine ? html`<th>Owner</th>` : ""}<th>Created</th><th><span class="sr-only">Download</span></th></tr></thead><tbody>
           ${list.data.map((d) => {
             const signed = d.signers.filter((s) => s.status === "signed").length;
             return html`<tr>
@@ -299,7 +304,8 @@ export function createAdmin(ctx: Ctx) {
               <td class="cell-status">${badge(d.status, d.status === "partially_signed" ? `${signed} of ${d.signers.length} signed` : undefined)}</td>
               <td class="cell-wide"><figure data-variant="avatar" role="group" class="small signers" aria-label="Signers">${d.signers.map((s) => avatar(ctx, avatarsOn, s.name, s.email, "small", signerLabel(s)))}</figure></td>
               ${seesAll && !mine ? html`<td class="cell-meta">${d.owner ? html`<div class="row" style="gap:8px;flex-wrap:nowrap">${avatar(ctx, avatarsOn, d.owner.name, d.owner.email, "small")}<span class="small">${d.owner.name}</span></div>` : html`<span class="muted">–</span>`}</td>` : ""}
-              <td class="nowrap cell-meta">${when(d.created_at)}</td></tr>`;
+              <td class="nowrap cell-meta">${when(d.created_at)}</td>
+              <td class="cell-meta row-action${pdfOf.has(d.id) ? "" : " hide-sm"}">${pdfOf.has(d.id) ? html`<a class="button ghost icon small" href="${pdfOf.get(d.id)}" aria-label="Download the signed PDF of ${d.title}" title="Download signed PDF">${icon("download")}</a>` : ""}</td></tr>`;
           })}
         </tbody></table>`}
       </div>
@@ -461,7 +467,7 @@ export function createAdmin(ctx: Ctx) {
             : html`<p class="small muted">Fix the problems shown on the document, then send.</p>`}
         </section>`
       : html`<section class="panel-block row-stretch" aria-labelledby="status"><h2 id="status">${d.status === "finalized" ? "Signed" : active ? `${signedCount} of ${d.signers.length} signed` : badge(d.status)}</h2>
-          ${artifacts.length ? html`<div class="stack">${artifacts.map((a) => html`<a class="button outline w-full" href="${a.download.url}">${a.type === "zip" ? "Download package (.zip)" : "Download signed PDF"}</a>`)}
+          ${artifacts.length ? html`<div class="stack">${artifacts.map((a) => html`<a class="button w-full${a.type === "zip" ? " main-action" : ""}" href="${a.download.url}">${a.type === "zip" ? "Download package (.zip)" : "Download signed PDF"}</a>`)}
             <p class="tiny muted">Verify the package offline with <code>npx signed-md verify file.zip</code>.</p></div>` : ""}
           ${active && manage ? html`<button type="button" data-variant="danger" class="outline small" commandfor="revoke-dialog" command="show-modal">Revoke</button>
             <dialog id="revoke-dialog" closedby="any" aria-labelledby="revoke-title"><form method="post" action="/documents/${d.id}/revoke">${csrfInput(csrf)}
@@ -1262,10 +1268,10 @@ export function createAdmin(ctx: Ctx) {
     const mails = await ctx.mailer.outbox(50);
     return page(c, "Outbox", "outbox", html`<div class="page-head"><h1>Outbox</h1></div>
       ${alert(smtp ? "info" : "warn", smtp ? `SMTP is configured (${smtp.host}). New emails are sent there. This list shows emails written before SMTP was set.` : "No SMTP server is set. Emails are kept here instead of being sent, so you can test the full flow. Set the SMTP_* environment variables to send them.")}
-      ${mails.length === 0 ? html`<div class="card">No emails yet.</div>` : mails.map((m, i) => html`<div class="card"><details  ${i === 0 ? "open" : ""}><summary><strong>${m.subject}</strong> <span class="muted">→ ${m.to} · ${when(m.created_at)}</span></summary>
+      ${mails.length === 0 ? html`<div class="card">No emails yet.</div>` : mails.map((m, i) => html`<details class="outbox-mail" ${i === 0 ? "open" : ""}><summary><strong>${m.subject}</strong> <span class="muted">→ ${m.to} · ${when(m.created_at)}</span></summary>
         ${m.html ? html`<iframe class="email-frame" src="/outbox/${m.id}/html" title="${m.subject}" loading="lazy"></iframe>` : ""}
         ${m.attachments.length ? html`<p class="small muted">Attachments: ${m.attachments.map((a) => `${a.filename} (${Math.round(a.size / 1024)} KB)`).join(", ")}</p>` : ""}
-        <details class="small"><summary>Plain text version</summary><pre>${m.text}</pre></details></details></div>`)}`);
+        <details class="small"><summary>Plain text version</summary><pre>${m.text}</pre></details></details>`)}`);
   });
 
   return app;
