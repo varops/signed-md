@@ -6,7 +6,11 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ## [Unreleased]
 
-The first public release.
+The first public release of Signed.md: AI-native document signing you host yourself.
+
+Agents draft agreements from approved Markdown templates through MCP or the REST API. People review, approve and send them, and signers sign in the browser on any device. Every completed agreement becomes a PDF/A-2b, sealed with PAdES and timestamped, plus a ZIP evidence package that anyone can check offline with `signed-md verify`.
+
+Get started with Docker Compose (see [self-hosting](https://github.com/varops/signed-md/blob/main/docs/self-hosting.md)), or point your agent at the README and ask it to install Signed.md for you. Signed.md is open source under AGPL-3.0. [docs/legal.md](https://github.com/varops/signed-md/blob/main/docs/legal.md) explains how it fits ESIGN, UETA, eIDAS and UK law. It is not legal advice.
 
 ### Before you upgrade or install
 
