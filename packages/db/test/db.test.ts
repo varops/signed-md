@@ -52,7 +52,11 @@ for (const [name, url] of targets) {
       await h.db.updateTable("jobs").set({ status: "running", locked_until: "2000-01-01T00:00:00.000Z" }).where("id", "=", a!).execute();
       const again = await claimJob(h.db, h.dialect);
       expect(again?.id).toBe(a);
-      await completeJob(h.db, a!);
+      // The first claim was superseded: it can neither complete nor fail the newer run.
+      expect(await completeJob(h.db, job!)).toBe(false);
+      expect(await failJob(h.db, job!, "late")).toBe("lost");
+      expect(await completeJob(h.db, again!)).toBe(true);
+      expect(await completeJob(h.db, again!)).toBe(false); // done is final
       const done = await h.db.selectFrom("jobs").select("status").where("id", "=", a!).executeTakeFirstOrThrow();
       expect(done.status).toBe("done");
     });

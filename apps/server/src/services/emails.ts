@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SignedError } from "@signed-md/core";
+import { isAwaitingSigner, isOpenStatus, SignedError } from "@signed-md/core";
 import type { Ctx } from "../context.ts";
 import { unseal } from "../crypto.ts";
 import { getAccount } from "./accounts.ts";
@@ -25,6 +25,11 @@ export interface EmailJob {
 async function adminEmails(ctx: Ctx): Promise<string[]> {
   const rows = await ctx.db.selectFrom("users").select("email").where("status", "=", "active").where("role", "in", ["owner", "admin"]).execute();
   return rows.map((r) => r.email);
+}
+
+/** Out for signature and not past its deadline: only then do signing emails still make sense. */
+function stillSigning(doc: { status: Parameters<typeof isOpenStatus>[0]; expires_at: string | null }): boolean {
+  return isOpenStatus(doc.status) && !(doc.expires_at !== null && doc.expires_at < new Date().toISOString());
 }
 
 function longDate(iso: string | null, tz: string): string {
@@ -148,8 +153,8 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
     case "signing_request":
     case "reminder": {
       if (!signer || !job.link) throw new Error("signing email without signer or link");
-      // Do not send stale links: the signer may have signed, or the document may be closed.
-      if (!["sent", "partially_signed"].includes(doc.status) || signer.status === "signed" || signer.status === "declined") return;
+      // Do not send stale links: the signer may have signed, or the document may be closed or past its deadline.
+      if (!stillSigning(doc) || !isAwaitingSigner(signer.status)) return;
       const link = unseal(ctx.keys.serverSecret, job.link);
       const reminder = job.kind === "reminder";
       msg(signer.email, `${reminder ? "Reminder: " : ""}Please sign: ${doc.title}`, {
@@ -174,7 +179,7 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
       break;
     }
     case "last_signer": {
-      if (!signer || signer.status === "signed" || !["sent", "partially_signed"].includes(doc.status)) return;
+      if (!signer || !isAwaitingSigner(signer.status) || !stillSigning(doc)) return;
       msg(signer.email, `Waiting for you: ${doc.title}`, {
         icon: "bell",
         person: sender,

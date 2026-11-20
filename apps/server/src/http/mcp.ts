@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { VERSION } from "../version.ts";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { SignedError } from "@signed-md/core";
+import { DocumentStatuses, SignedError } from "@signed-md/core";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Actor, Ctx } from "../context.ts";
@@ -180,7 +180,7 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
     {
       description: "List or search documents.",
       inputSchema: {
-        status: z.string().optional(),
+        status: z.enum(DocumentStatuses).optional(),
         q: z.string().optional().describe("Search title, signer name or email"),
         archived: z.boolean().optional(),
         limit: z.number().int().min(1).max(100).optional(),

@@ -1,6 +1,6 @@
 import { lookup } from "node:dns";
 import { isIP } from "node:net";
-import { SignedError } from "@signed-md/core";
+import { deliveryMachine, SignedError } from "@signed-md/core";
 import { type Database, enqueueJob, newId, now } from "@signed-md/db";
 import type { Kysely, Transaction } from "kysely";
 import { Agent, fetch } from "undici";
@@ -129,7 +129,7 @@ export function signWebhook(secret: string, body: string, timestamp = Math.floor
 
 export async function deliverWebhook(ctx: Ctx, deliveryId: string): Promise<void> {
   const d = await ctx.db.selectFrom("webhook_deliveries").selectAll().where("id", "=", deliveryId).executeTakeFirst();
-  if (!d || d.status === "delivered") return;
+  if (!d || !deliveryMachine.can(d.status, "deliver")) return;
   const account = await getAccount(ctx);
   const allowPrivate = ctx.config.allowInsecureWebhooks;
   if (!agent || agentPrivate !== allowPrivate) {
@@ -162,22 +162,30 @@ export async function deliverWebhook(ctx: Ctx, deliveryId: string): Promise<void
     error = (err as Error).cause ? `${(err as Error).message}: ${String(((err as Error).cause as Error).message ?? (err as Error).cause)}` : (err as Error).message;
   }
 
+  // Only a pending delivery moves on: a late attempt never undoes a delivery that already succeeded.
   await ctx.db
     .updateTable("webhook_deliveries")
-    .set({
-      attempts: Number(d.attempts) + 1,
+    .set((eb) => ({
+      attempts: eb("attempts", "+", 1),
       last_status_code: statusCode,
       last_error: error,
-      status: error ? "pending" : "delivered",
+      status: deliveryMachine.next(d.status, error ? "retry" : "deliver"),
       delivered_at: error ? null : now(),
-    })
+    }))
     .where("id", "=", d.id)
+    .where("status", "=", "pending")
     .execute();
   if (error) throw new Error(`Webhook delivery failed: ${error}`);
 }
 
+/** The job gave up retrying. A delivery that succeeded in the meantime stays delivered. */
 export async function markWebhookFailed(ctx: Ctx, deliveryId: string): Promise<void> {
-  await ctx.db.updateTable("webhook_deliveries").set({ status: "failed" }).where("id", "=", deliveryId).execute();
+  await ctx.db
+    .updateTable("webhook_deliveries")
+    .set({ status: deliveryMachine.next("pending", "give_up") })
+    .where("id", "=", deliveryId)
+    .where("status", "in", deliveryMachine.sources("give_up"))
+    .execute();
 }
 
 export async function listDeliveries(ctx: Ctx, limit = 50) {

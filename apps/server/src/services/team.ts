@@ -1,5 +1,6 @@
-import { SignedError } from "@signed-md/core";
-import { enqueueJob, newId, now } from "@signed-md/db";
+import { invitationMachine, invitationStatus, SignedError, type UserStatus, userMachine } from "@signed-md/core";
+import { type Database, enqueueJob, newId, now } from "@signed-md/db";
+import type { Kysely, Transaction } from "kysely";
 import type { Actor, Ctx, Role } from "../context.ts";
 import { randomToken, seal, sha256 } from "../crypto.ts";
 import { recordAudit } from "./audit.ts";
@@ -14,7 +15,7 @@ export interface TeamMember {
   email: string;
   name: string;
   role: Role;
-  status: "active" | "disabled";
+  status: UserStatus;
   last_login_at: string | null;
   created_at: string;
 }
@@ -31,6 +32,11 @@ export interface PendingInvitation {
 function checkRole(role: string): Role {
   if (!(ROLES as string[]).includes(role)) throw new SignedError("INVALID_REQUEST", `Unknown role '${role}'`);
   return role as Role;
+}
+
+/** Update an invitation only while it is still pending: not accepted, revoked or expired. */
+function updatePendingInvitation(db: Kysely<Database> | Transaction<Database>) {
+  return db.updateTable("invitations").where("accepted_at", "is", null).where("revoked_at", "is", null).where("expires_at", ">", now());
 }
 
 /** Only owners can grant or take away the owner role, or act on another owner. */
@@ -72,7 +78,7 @@ export async function inviteMember(ctx: Ctx, actor: Actor, input: { email: strin
   const account = await ctx.db.selectFrom("accounts").select("id").limit(1).executeTakeFirstOrThrow();
   const token = randomToken(32);
   await ctx.db.transaction().execute(async (trx) => {
-    await trx.updateTable("invitations").set({ revoked_at: now() }).where("email", "=", email).where("accepted_at", "is", null).where("revoked_at", "is", null).execute();
+    await updatePendingInvitation(trx).set({ revoked_at: now() }).where("email", "=", email).execute();
     const id = newId("inv");
     await trx
       .insertInto("invitations")
@@ -97,15 +103,17 @@ export async function inviteMember(ctx: Ctx, actor: Actor, input: { email: strin
 export async function revokeInvitation(ctx: Ctx, actor: Actor, id: string): Promise<void> {
   requirePermission(actor, "team.manage");
   const inv = await ctx.db.selectFrom("invitations").selectAll().where("id", "=", id).executeTakeFirst();
-  if (!inv || inv.accepted_at || inv.revoked_at) return;
+  if (!inv || !invitationMachine.can(invitationStatus(inv), "revoke")) return;
   requireCanAssign(actor, inv.role);
-  await ctx.db.updateTable("invitations").set({ revoked_at: now() }).where("id", "=", id).execute();
+  const res = await updatePendingInvitation(ctx.db).set({ revoked_at: now() }).where("id", "=", id).executeTakeFirst();
+  if (Number(res.numUpdatedRows) !== 1) return;
   await recordAudit(ctx.db, actor, "team.invite_revoked", { email: inv.email });
 }
 
 /** Send a fresh invitation link to the same email and role. */
 export async function resendInvitation(ctx: Ctx, actor: Actor, id: string): Promise<void> {
   const inv = await ctx.db.selectFrom("invitations").selectAll().where("id", "=", id).executeTakeFirst();
+  // An expired invitation can be sent again; an accepted or revoked one can't.
   if (!inv || inv.accepted_at || inv.revoked_at) throw new SignedError("NOT_FOUND", "Invitation not found");
   await inviteMember(ctx, actor, { email: inv.email, role: inv.role });
 }
@@ -113,7 +121,7 @@ export async function resendInvitation(ctx: Ctx, actor: Actor, id: string): Prom
 export async function findInvitation(ctx: Ctx, token: string) {
   if (!/^[A-Za-z0-9_-]{20,100}$/.test(token)) return null;
   const inv = await ctx.db.selectFrom("invitations").selectAll().where("token_hash", "=", sha256(token)).executeTakeFirst();
-  if (!inv || inv.accepted_at || inv.revoked_at || inv.expires_at < now()) return null;
+  if (!inv || !invitationMachine.can(invitationStatus(inv), "accept")) return null;
   const account = await ctx.db.selectFrom("accounts").select("name").limit(1).executeTakeFirstOrThrow();
   const inviter = await ctx.db.selectFrom("users").select(["name", "email"]).where("id", "=", inv.invited_by).executeTakeFirst();
   return { ...inv, account_name: account.name, inviter: inviter ? inviter.name || inviter.email : null };
@@ -131,20 +139,22 @@ export async function acceptInvitation(ctx: Ctx, token: string, input: { name: s
   const passwordHash = password === null ? null : await hashPassword(password);
   const userId = newId("usr");
   await ctx.db.transaction().execute(async (trx) => {
+    // Claim the invitation first: it may have been revoked, used or expired since it was read.
+    const claimed = await updatePendingInvitation(trx).set({ accepted_at: now() }).where("id", "=", inv.id).executeTakeFirst();
+    if (Number(claimed.numUpdatedRows) !== 1) throw new SignedError("INVALID_REQUEST", "This invitation is not valid or has expired. Ask for a new one.");
     const taken = await trx.selectFrom("users").select("id").where("email", "=", inv.email).executeTakeFirst();
     if (taken) throw new SignedError("INVALID_REQUEST", "This email already has an account. Log in instead.");
     await trx
       .insertInto("users")
       .values({ id: userId, account_id: inv.account_id, email: inv.email, name, role: inv.role, password_hash: passwordHash, status: "active", invited_by: inv.invited_by, last_login_at: now(), deactivated_at: null, theme: "system", created_at: now() })
       .execute();
-    await trx.updateTable("invitations").set({ accepted_at: now() }).where("id", "=", inv.id).execute();
   });
   await recordAudit(ctx.db, { kind: "user", id: userId, accountId: inv.account_id, label: inv.email, name, role: inv.role }, "team.joined", { role: inv.role });
   return createSession(ctx, userId);
 }
 
-async function activeOwners(ctx: Ctx): Promise<number> {
-  const r = await ctx.db.selectFrom("users").select((eb) => eb.fn.countAll<number>().as("n")).where("role", "=", "owner").where("status", "=", "active").executeTakeFirstOrThrow();
+async function activeOwners(db: Kysely<Database> | Transaction<Database>): Promise<number> {
+  const r = await db.selectFrom("users").select((eb) => eb.fn.countAll<number>().as("n")).where("role", "=", "owner").where("status", "=", "active").executeTakeFirstOrThrow();
   return Number(r.n);
 }
 
@@ -161,10 +171,13 @@ export async function changeRole(ctx: Ctx, actor: Actor, userId: string, newRole
   const user = await targetUser(ctx, actor, userId);
   requireCanAssign(actor, role);
   if (user.role === role) return;
-  if (user.role === "owner" && user.status === "active" && (await activeOwners(ctx)) <= 1) {
-    throw new SignedError("INVALID_REQUEST", "There must be at least one owner. Make someone else an owner first.");
-  }
-  await ctx.db.updateTable("users").set({ role }).where("id", "=", userId).execute();
+  await ctx.db.transaction().execute(async (trx) => {
+    await trx.updateTable("users").set({ role }).where("id", "=", userId).execute();
+    // Counted after the change, in the same transaction, so two owners can't demote each other at once.
+    if (user.role === "owner" && (await activeOwners(trx)) < 1) {
+      throw new SignedError("INVALID_REQUEST", "There must be at least one owner. Make someone else an owner first.");
+    }
+  });
   await recordAudit(ctx.db, actor, "team.role_changed", { email: user.email, from: user.role, to: role });
 }
 
@@ -172,16 +185,31 @@ export async function changeRole(ctx: Ctx, actor: Actor, userId: string, newRole
 export async function deactivateMember(ctx: Ctx, actor: Actor, userId: string): Promise<void> {
   const user = await targetUser(ctx, actor, userId);
   if (userId === userIdOf(actor)) throw new SignedError("INVALID_REQUEST", "You can't deactivate yourself.");
-  if (user.status === "disabled") return;
-  if (user.role === "owner" && (await activeOwners(ctx)) <= 1) throw new SignedError("INVALID_REQUEST", "There must be at least one active owner.");
-  await ctx.db.updateTable("users").set({ status: "disabled", deactivated_at: now() }).where("id", "=", userId).execute();
+  if (!userMachine.can(user.status, "deactivate")) return;
+  const changed = await ctx.db.transaction().execute(async (trx) => {
+    const res = await trx
+      .updateTable("users")
+      .set({ status: userMachine.next(user.status, "deactivate"), deactivated_at: now() })
+      .where("id", "=", userId)
+      .where("status", "in", userMachine.sources("deactivate"))
+      .executeTakeFirst();
+    if (user.role === "owner" && (await activeOwners(trx)) < 1) throw new SignedError("INVALID_REQUEST", "There must be at least one active owner.");
+    return Number(res.numUpdatedRows) === 1;
+  });
+  if (!changed) return;
   await recordAudit(ctx.db, actor, "team.deactivated", { email: user.email });
 }
 
 export async function reactivateMember(ctx: Ctx, actor: Actor, userId: string): Promise<void> {
   const user = await targetUser(ctx, actor, userId);
-  if (user.status === "active") return;
-  await ctx.db.updateTable("users").set({ status: "active", deactivated_at: null }).where("id", "=", userId).execute();
+  if (!userMachine.can(user.status, "reactivate")) return;
+  const res = await ctx.db
+    .updateTable("users")
+    .set({ status: userMachine.next(user.status, "reactivate"), deactivated_at: null })
+    .where("id", "=", userId)
+    .where("status", "in", userMachine.sources("reactivate"))
+    .executeTakeFirst();
+  if (Number(res.numUpdatedRows) !== 1) return;
   await recordAudit(ctx.db, actor, "team.reactivated", { email: user.email });
 }
 

@@ -35,7 +35,7 @@ const ZIP_MTIME = new Date("2000-01-01T00:00:00Z");
 export async function finalizeDocument(ctx: Ctx, documentId: string): Promise<void> {
   const doc = await loadDocument(ctx.db, documentId);
   if (doc.status === "finalized") return;
-  if (doc.status !== "signed") throw new SignedError("INVALID_TRANSITION", `Cannot finalize a ${doc.status} document`);
+  transition(doc.status, "finalize"); // INVALID_TRANSITION unless signed
 
   const account = await getAccount(ctx);
   const signers = await loadSigners(ctx.db, documentId);

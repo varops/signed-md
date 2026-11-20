@@ -1,6 +1,6 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { VERSION } from "../version.ts";
-import { SignedError } from "@signed-md/core";
+import { DocumentStatuses, SignedError } from "@signed-md/core";
 import { now } from "@signed-md/db";
 import type { MiddlewareHandler } from "hono";
 import type { Actor, Ctx } from "../context.ts";
@@ -159,7 +159,7 @@ export function createApi(ctx: Ctx) {
   app.openapi(
     createRoute({ method: "get", path: "/v1/documents", tags: ["Documents"], summary: "List documents", security,
       request: { query: z.object({
-        status: z.string().optional(),
+        status: z.enum(DocumentStatuses).optional(),
         archived: z.enum(["true", "false"]).optional(),
         mine: z.enum(["true", "false"]).optional().openapi({ description: "Only documents owned by the API key's user. Members always see only their own." }),
         q: z.string().max(200).optional().openapi({ description: "Search title, signer name, or email" }),

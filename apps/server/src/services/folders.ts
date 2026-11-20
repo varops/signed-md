@@ -106,11 +106,13 @@ export async function deleteFolder(ctx: Ctx, actor: Actor, id: string): Promise<
   const f = await getFolder(ctx, id);
   requirePermission(actor, MANAGE[f.kind]);
   const moved = await ctx.db.transaction().execute(async (trx) => {
+    // Claim the folder first: deleting it twice moves nothing and logs once.
+    const claimed = await trx.updateTable("folders").set({ archived_at: now() }).where("id", "=", id).where("archived_at", "is", null).executeTakeFirst();
+    if (Number(claimed.numUpdatedRows) !== 1) return 0;
     const res =
       f.kind === "template"
         ? await trx.updateTable("templates").set({ folder_id: null }).where("folder_id", "=", id).executeTakeFirst()
         : await trx.updateTable("documents").set({ folder_id: null }).where("folder_id", "=", id).executeTakeFirst();
-    await trx.updateTable("folders").set({ archived_at: now() }).where("id", "=", id).execute();
     await recordAudit(trx, actor, "folder.deleted", { kind: f.kind, name: f.name, moved: Number(res.numUpdatedRows) });
     return Number(res.numUpdatedRows);
   });

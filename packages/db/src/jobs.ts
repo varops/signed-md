@@ -65,30 +65,46 @@ export async function claimJob(
   return result.rows[0] ?? null;
 }
 
-export async function completeJob(db: Kysely<Database>, id: string): Promise<void> {
-  await db.updateTable("jobs").set({ status: "done", finished_at: now(), locked_until: null }).where("id", "=", id).execute();
+/**
+ * Job lifecycle: pending → running (claim) → done, back to pending (retry), or failed.
+ * A running job whose lock expired can be claimed again, which bumps `attempts`. Completing or
+ * failing a job only applies to the claim that is still current (same status and attempt), so a
+ * slow worker whose lock expired can't overwrite the newer run.
+ */
+export const JOB_TRANSITIONS = {
+  claim: { pending: "running", running: "running" },
+  complete: { running: "done" },
+  retry: { running: "pending" },
+  fail: { running: "failed" },
+} as const satisfies Record<string, Partial<Record<JobTable["status"], JobTable["status"]>>>;
+
+/** Only the current claim of a job may finish it. */
+function currentClaim(db: Kysely<Database>, job: Pick<JobTable, "id" | "attempts">) {
+  return db.updateTable("jobs").where("id", "=", job.id).where("status", "=", "running").where("attempts", "=", job.attempts);
 }
 
-/** Record a failure and schedule a retry with exponential backoff, or mark the job failed. */
-export async function failJob(db: Kysely<Database>, job: JobTable, error: string): Promise<"retry" | "failed"> {
-  if (job.attempts >= job.max_attempts) {
-    await db
-      .updateTable("jobs")
-      .set({ status: "failed", last_error: error.slice(0, 2000), finished_at: now(), locked_until: null })
-      .where("id", "=", job.id)
-      .execute();
-    return "failed";
+/** Mark a claimed job done. False when the claim was lost (the lock expired and another worker took it). */
+export async function completeJob(db: Kysely<Database>, job: Pick<JobTable, "id" | "attempts">): Promise<boolean> {
+  const res = await currentClaim(db, job).set({ status: JOB_TRANSITIONS.complete.running, finished_at: now(), locked_until: null }).executeTakeFirst();
+  return Number(res.numUpdatedRows) === 1;
+}
+
+/** Record a failure and schedule a retry with exponential backoff, or mark the job failed. "lost" when the claim was lost. */
+export async function failJob(db: Kysely<Database>, job: JobTable, error: string): Promise<"retry" | "failed" | "lost"> {
+  if (Number(job.attempts) >= Number(job.max_attempts)) {
+    const res = await currentClaim(db, job)
+      .set({ status: JOB_TRANSITIONS.fail.running, last_error: error.slice(0, 2000), finished_at: now(), locked_until: null })
+      .executeTakeFirst();
+    return Number(res.numUpdatedRows) === 1 ? "failed" : "lost";
   }
-  const delay = Math.min(2 ** job.attempts * 15, 6 * 3600) * 1000; // 30s, 60s, 2m, ... capped at 6h
-  await db
-    .updateTable("jobs")
+  const delay = Math.min(2 ** Number(job.attempts) * 15, 6 * 3600) * 1000; // 30s, 60s, 2m, ... capped at 6h
+  const res = await currentClaim(db, job)
     .set({
-      status: "pending",
+      status: JOB_TRANSITIONS.retry.running,
       last_error: error.slice(0, 2000),
       run_at: new Date(Date.now() + delay).toISOString(),
       locked_until: null,
     })
-    .where("id", "=", job.id)
-    .execute();
-  return "retry";
+    .executeTakeFirst();
+  return Number(res.numUpdatedRows) === 1 ? "retry" : "lost";
 }

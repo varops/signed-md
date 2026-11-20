@@ -23,8 +23,8 @@ export async function runOneJob(ctx: Ctx): Promise<boolean> {
   try {
     if (!handler) throw new Error(`No handler for job type '${job.type}'`);
     await handler(ctx, payload);
-    await completeJob(ctx.db, job.id);
-    log.debug("job done", { id: job.id, type: job.type });
+    if (await completeJob(ctx.db, job)) log.debug("job done", { id: job.id, type: job.type });
+    else log.warn("job finished after its lock expired", { id: job.id, type: job.type });
   } catch (err) {
     const outcome = await failJob(ctx.db, job, (err as Error).stack ?? String(err));
     log.warn("job failed", { id: job.id, type: job.type, attempt: Number(job.attempts), outcome, error: (err as Error).message });

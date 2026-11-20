@@ -10,7 +10,11 @@ import {
   transition,
   formatValue,
   type DocumentStatus,
+  isDocumentStatus,
+  isAwaitingSigner,
+  isOpenStatus,
   mixedOrderIssue,
+  signerMachine,
 } from "@signed-md/core";
 import { type Database, type DocumentTable, enqueueJob, newId, now, type SignerTable } from "@signed-md/db";
 import type { Kysely, Selectable, Transaction } from "kysely";
@@ -375,7 +379,7 @@ export async function validateDocument(ctx: Ctx, actor: Actor, id: string): Prom
 export interface PreviewResult extends ValidationResult {
   document_id: string;
   title: string;
-  status: string;
+  status: DocumentStatus;
   markdown: string;
   html: string;
   values: { key: string; label: string; type: string; value: FieldValue | null; display: string | null }[];
@@ -471,7 +475,7 @@ export async function sendDocument(
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, id);
     requireManageDocument(actor, doc);
-    if (doc.status !== "draft") throw new SignedError("DOCUMENT_ALREADY_SENT", "This document has already been sent");
+    const status = transition(doc.status, "send"); // DOCUMENT_ALREADY_SENT unless it's a draft
     // Checked again here: drafts made before the limit was reached can't be sent past it.
     await requireUnderLimit(ctx, trx);
     const signerRows = await loadSigners(trx, id);
@@ -488,7 +492,6 @@ export async function sendDocument(
     }
 
     const t = now();
-    const status = transition("draft", "send");
     await trx
       .updateTable("documents")
       .set({
@@ -571,7 +574,7 @@ export async function issueToken(
   const t = now();
   await trx
     .updateTable("signers")
-    .set({ token_hash: sha256(token), status: signer.status === "pending" ? "notified" : signer.status, notified_at: signer.notified_at ?? t })
+    .set({ token_hash: sha256(token), status: signerMachine.next(signer.status, "notify"), notified_at: signer.notified_at ?? t })
     .where("id", "=", signer.id)
     .execute();
   await appendEvent(trx, documentId, "signer.notified", { kind: "system", id: "system", label: "Signed.md" }, {
@@ -595,7 +598,7 @@ export async function revokeDocument(ctx: Ctx, actor: Actor, id: string, reason?
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, id);
     requireManageDocument(actor, doc);
-    const status = transition(doc.status as never, "revoke");
+    const status = transition(doc.status, "revoke");
     const t = now();
     await trx
       .updateTable("documents")
@@ -618,13 +621,13 @@ export async function resendToSigner(ctx: Ctx, actor: Actor, id: string, key: st
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, id);
     requireManageDocument(actor, doc);
-    if (doc.status !== "sent" && doc.status !== "partially_signed") {
+    if (!isOpenStatus(doc.status)) {
       throw new SignedError("INVALID_TRANSITION", `Cannot resend a link for a ${doc.status} document`);
     }
     const signer = (await loadSigners(trx, id)).find((s) => s.key === key);
     if (!signer) throw new SignedError("SIGNER_INVALID", `Document has no signer '${key}'`);
     if (signer.status === "pending") throw new SignedError("INVALID_TRANSITION", `Signer '${key}' has not been notified yet. Their signing group is not active.`);
-    if (signer.status === "signed" || signer.status === "declined") throw new SignedError("INVALID_TRANSITION", `Signer '${key}' has already ${signer.status}`);
+    if (!isAwaitingSigner(signer.status)) throw new SignedError("INVALID_TRANSITION", `Signer '${key}' has already ${signer.status}`);
     const recent = await trx
       .selectFrom("events")
       .select("created_at")
@@ -764,7 +767,7 @@ export async function getDocument(ctx: Ctx, actor: Actor, id: string): Promise<D
 }
 
 export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], inlineSetting: string): Promise<DocumentView> {
-  const active = ["sent", "partially_signed"].includes(doc.status);
+  const active = isOpenStatus(doc.status);
   const unsigned = signers.filter((s) => s.status !== "signed");
   const currentGroup = active && unsigned.length > 0 ? Math.min(...unsigned.map((s) => Number(s.signing_order))) : null;
   let validation: DocumentView["validation"] = null;
@@ -800,7 +803,7 @@ export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], 
       decline_reason: s.decline_reason,
     })),
     current_signing_group: currentGroup,
-    outstanding: active ? signers.filter((s) => s.status === "notified" || s.status === "viewed").map((s) => ({ signer: s.key, action: "sign" as const })) : [],
+    outstanding: active ? signers.filter((s) => isAwaitingSigner(s.status)).map((s) => ({ signer: s.key, action: "sign" as const })) : [],
     validation,
     approved_revision: doc.approved_revision,
     approved_by: doc.approved_by,
@@ -863,11 +866,13 @@ function decodeCursor(cursor: string): { at: string; id: string | null } {
  */
 export async function listDocuments(ctx: Ctx, actor: Actor, opts: ListDocumentsOptions = {}): Promise<{ data: DocumentView[]; next_before: string | null; newer_after: string | null }> {
   const limit = Math.min(Math.max(opts.limit ?? 25, 1), 100);
+  // An unknown status matches nothing, as before the column was typed.
+  if (opts.status && !isDocumentStatus(opts.status)) return { data: [], next_before: null, newer_after: null };
   const newer = !opts.before && !!opts.after;
   let q = ctx.db.selectFrom("documents").selectAll().limit(limit + 1);
   q = newer ? q.orderBy("created_at", "asc").orderBy("id", "asc") : q.orderBy("created_at", "desc").orderBy("id", "desc");
   q = opts.archived ? q.where("archived_at", "is not", null) : q.where("archived_at", "is", null);
-  if (opts.status) q = q.where("status", "=", opts.status);
+  if (opts.status && isDocumentStatus(opts.status)) q = q.where("status", "=", opts.status);
   if (opts.folder === "none") q = q.where("folder_id", "is", null);
   else if (opts.folder) q = q.where("folder_id", "=", opts.folder);
   if (opts.mine || !(can(actor, "documents.read_all") || can(actor, "documents.manage_all"))) q = q.where("owner_user_id", "=", userIdOf(actor) ?? "");

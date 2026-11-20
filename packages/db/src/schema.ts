@@ -169,7 +169,8 @@ export interface DocumentTable {
   /** Markdown with template values resolved. */
   content: string;
   revision: string;
-  status: string;
+  /** Kept in step with DocumentStatuses in @signed-md/core (checked by apps/server/src/services/states.ts). */
+  status: "draft" | "sent" | "partially_signed" | "signed" | "finalized" | "declined" | "expired" | "revoked";
   title: string;
   timezone: string;
   locale: string;

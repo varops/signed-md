@@ -1,4 +1,4 @@
-import { parseTemplate, SignedError, type FieldDef } from "@signed-md/core";
+import { parseTemplate, SignedError, type FieldDef, templateVersionMachine, type TemplateVersionStatus } from "@signed-md/core";
 import { newId, now } from "@signed-md/db";
 import { type Actor, actorRef, actorVia, type Ctx } from "../context.ts";
 import { recordAudit } from "./audit.ts";
@@ -16,7 +16,7 @@ export interface TemplateInput {
 
 export interface TemplateVersionView {
   version: number;
-  approval_status: "pending_approval" | "approved";
+  approval_status: TemplateVersionStatus;
   created_by: string;
   created_at: string;
   approved_by: string | null;
@@ -159,10 +159,10 @@ export async function approveTemplateVersion(ctx: Ctx, actor: Actor, templateId:
   requirePermission(actor, "templates.approve");
   const res = await ctx.db
     .updateTable("template_versions")
-    .set({ approval_status: "approved", approved_by: actorRef(actor), approved_at: now() })
+    .set({ approval_status: templateVersionMachine.next("pending_approval", "approve"), approved_by: actorRef(actor), approved_at: now() })
     .where("template_id", "=", templateId)
     .where("version", "=", version)
-    .where("approval_status", "=", "pending_approval")
+    .where("approval_status", "in", templateVersionMachine.sources("approve"))
     .executeTakeFirst();
   if (Number(res.numUpdatedRows) > 0) {
     await recordAudit(ctx.db, actor, "template.approved", { name: (await getTemplate(ctx, templateId)).name, version });
@@ -175,13 +175,16 @@ export async function approveTemplateVersion(ctx: Ctx, actor: Actor, templateId:
 
 export async function setTemplateArchived(ctx: Ctx, actor: Actor, templateId: string, archived: boolean): Promise<TemplateView> {
   requirePermission(actor, "templates.manage");
+  await getTemplate(ctx, templateId); // TEMPLATE_NOT_FOUND when missing
+  // Only a real change is written and logged: archiving twice keeps the first date and one audit entry.
   const res = await ctx.db
     .updateTable("templates")
     .set({ archived_at: archived ? now() : null })
     .where("id", "=", templateId)
+    .where("archived_at", archived ? "is" : "is not", null)
     .executeTakeFirst();
-  if (Number(res.numUpdatedRows) === 0) throw new SignedError("TEMPLATE_NOT_FOUND", `Template ${templateId} does not exist`);
   const t = await getTemplate(ctx, templateId);
+  if (Number(res.numUpdatedRows) === 0) return t;
   await recordAudit(ctx.db, actor, archived ? "template.archived" : "template.unarchived", { name: t.name });
   return t;
 }

@@ -1,4 +1,5 @@
 import { z } from "@hono/zod-openapi";
+import { DocumentStatuses, SignerStatuses, TemplateVersionStatuses } from "@signed-md/core";
 
 export const ErrorSchema = z
   .object({
@@ -76,7 +77,7 @@ export const DocumentSchema = z
   .object({
     id: z.string(),
     title: z.string(),
-    status: z.enum(["draft", "sent", "partially_signed", "signed", "finalized", "declined", "expired", "revoked"]),
+    status: z.enum(DocumentStatuses),
     owner: z.object({ id: z.string(), name: z.string(), email: z.string() }).nullable().openapi({ description: "The team member who owns and sent the document." }),
     revision: z.string(),
     source: z.enum(["template", "inline"]),
@@ -88,7 +89,7 @@ export const DocumentSchema = z
         name: z.string(),
         email: z.string(),
         order: z.number(),
-        status: z.enum(["pending", "notified", "viewed", "signed", "declined"]),
+        status: z.enum(SignerStatuses),
         notified_at: z.string().nullable(),
         viewed_at: z.string().nullable(),
         signed_at: z.string().nullable(),
@@ -168,7 +169,7 @@ const FieldDefSchema = z
 
 const TemplateVersionSchema = z.object({
   version: z.number(),
-  approval_status: z.enum(["pending_approval", "approved"]),
+  approval_status: z.enum(TemplateVersionStatuses),
   created_by: z.string(),
   created_at: z.string(),
   approved_by: z.string().nullable(),

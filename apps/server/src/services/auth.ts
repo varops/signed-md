@@ -145,7 +145,8 @@ export async function revokeApiKey(ctx: Ctx, actor: Actor, id: string): Promise<
   const key = await ctx.db.selectFrom("api_keys").selectAll().where("id", "=", id).executeTakeFirst();
   if (!key || (key.user_id !== userIdOf(actor) && !can(actor, "keys.manage_all"))) throw new SignedError("NOT_FOUND", "API key not found");
   if (key.revoked_at) return;
-  await ctx.db.updateTable("api_keys").set({ revoked_at: now() }).where("id", "=", id).execute();
+  const res = await ctx.db.updateTable("api_keys").set({ revoked_at: now() }).where("id", "=", id).where("revoked_at", "is", null).executeTakeFirst();
+  if (Number(res.numUpdatedRows) !== 1) return;
   await recordAudit(ctx.db, actor, "apikey.revoked", { label: key.label });
 }
 

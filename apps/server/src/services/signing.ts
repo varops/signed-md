@@ -1,4 +1,4 @@
-import { type FieldDef, type FieldValue, normalizeValue, parseTemplate, SignedError, transition } from "@signed-md/core";
+import { type FieldDef, type FieldValue, documentMachine, isAwaitingSigner, isOpenStatus, normalizeValue, parseTemplate, SignedError, signerMachine, transition } from "@signed-md/core";
 import { enqueueJob, now } from "@signed-md/db";
 import type { ElementContent } from "hast";
 import type { Actor, Ctx } from "../context.ts";
@@ -149,6 +149,14 @@ function isExpired(doc: DocRow): boolean {
   return doc.expires_at !== null && doc.expires_at < now();
 }
 
+/**
+ * Out for signature and not past its deadline. The worker moves expired documents to "expired"
+ * once a minute; until then this check makes them behave as expired everywhere.
+ */
+function isSignable(doc: DocRow): boolean {
+  return isOpenStatus(doc.status) && !isExpired(doc);
+}
+
 /** Load the signing page for a token. Records the first view as evidence. */
 export async function openSigningPage(ctx: Ctx, token: string, meta: RequestMeta): Promise<SignerPageState> {
   const s = await findByToken(ctx, token);
@@ -156,16 +164,16 @@ export async function openSigningPage(ctx: Ctx, token: string, meta: RequestMeta
   const { doc, signer } = s;
   if (doc.status === "revoked") return { state: "revoked", title: doc.title };
   if (doc.status === "declined") return { state: "declined", title: doc.title };
-  if (doc.status === "expired" || (isExpired(doc) && !["signed", "finalized"].includes(doc.status))) return { state: "expired", title: doc.title };
+  if (doc.status === "expired" || (isExpired(doc) && isOpenStatus(doc.status))) return { state: "expired", title: doc.title };
   if (signer.status === "signed") return { state: "signed", title: doc.title, signer_name: signer.name, document_status: doc.status };
-  if (!["sent", "partially_signed"].includes(doc.status)) return { state: "invalid" };
+  if (!isOpenStatus(doc.status)) return { state: "invalid" };
 
-  if (signer.status === "notified") {
+  if (signerMachine.can(signer.status, "view")) {
     await ctx.db.transaction().execute(async (trx) => {
       await lockDocument(ctx, trx, doc.id);
       const fresh = await trx.selectFrom("signers").select("status").where("id", "=", signer.id).executeTakeFirstOrThrow();
-      if (fresh.status !== "notified") return;
-      await trx.updateTable("signers").set({ status: "viewed", viewed_at: now() }).where("id", "=", signer.id).execute();
+      if (!signerMachine.can(fresh.status, "view")) return;
+      await trx.updateTable("signers").set({ status: signerMachine.next(fresh.status, "view"), viewed_at: now() }).where("id", "=", signer.id).execute();
       await appendEvent(trx, doc.id, "signer.viewed", signerActor(signer), { signer: signer.key, ...meta });
     });
   }
@@ -257,7 +265,7 @@ export async function reviewCopy(ctx: Ctx, token: string, meta: RequestMeta): Pr
   const s = await findByToken(ctx, token);
   if (!s) return null;
   const { doc, signer } = s;
-  if (!["sent", "partially_signed"].includes(doc.status) || isExpired(doc) || signer.status === "signed") return null;
+  if (!isSignable(doc) || !isAwaitingSigner(signer.status)) return null;
   const account = await getAccount(ctx);
   const pdf = await renderPdf(ctx.config.typstBin, {
     review: true,
@@ -301,8 +309,8 @@ export async function recordConsent(ctx: Ctx, token: string, meta: RequestMeta):
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, s.doc.id);
     const signer = await trx.selectFrom("signers").selectAll().where("id", "=", s.signer.id).executeTakeFirstOrThrow();
-    if (!["sent", "partially_signed"].includes(doc.status) || isExpired(doc)) throw new SignedError("INVALID_TRANSITION", "This document can no longer be signed");
-    if (signer.consented_at || signer.status === "signed" || signer.status === "declined") return;
+    if (!isSignable(doc)) throw new SignedError("INVALID_TRANSITION", "This document can no longer be signed");
+    if (signer.consented_at || !isAwaitingSigner(signer.status)) return;
     await trx.updateTable("signers").set({ consented_at: now() }).where("id", "=", signer.id).execute();
     await appendEvent(trx, doc.id, "signer.consented", signerActor(signer), {
       signer: signer.key,
@@ -327,11 +335,9 @@ export async function submitSignature(
   return ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, s.doc.id);
     const signer = await trx.selectFrom("signers").selectAll().where("id", "=", s.signer.id).executeTakeFirstOrThrow();
-    if (!["sent", "partially_signed"].includes(doc.status) || isExpired(doc)) {
-      throw new SignedError("INVALID_TRANSITION", "This document can no longer be signed");
-    }
+    if (!isSignable(doc)) throw new SignedError("INVALID_TRANSITION", "This document can no longer be signed");
     if (signer.token_hash !== sha256(token)) throw new SignedError("PERMISSION_DENIED", "This signing link is no longer valid");
-    if (signer.status !== "notified" && signer.status !== "viewed") throw new SignedError("INVALID_TRANSITION", "You have already completed this document");
+    if (!isAwaitingSigner(signer.status)) throw new SignedError("INVALID_TRANSITION", "You have already completed this document");
     if (!signer.consented_at && !input.consent) {
       throw new SignedError("FIELD_REQUIRED", "You must agree to sign electronically", [{ code: "FIELD_REQUIRED", field: "consent", message: "Consent is required" }]);
     }
@@ -356,7 +362,7 @@ export async function submitSignature(
     for (const v of values) {
       await trx.updateTable("fields").set({ value: JSON.stringify(v.value), completed_at: t }).where("id", "=", v.id).execute();
     }
-    await trx.updateTable("signers").set({ status: "signed", signed_at: t, consented_at: signer.consented_at ?? t }).where("id", "=", signer.id).execute();
+    await trx.updateTable("signers").set({ status: signerMachine.next(signer.status, "sign"), signed_at: t, consented_at: signer.consented_at ?? t }).where("id", "=", signer.id).execute();
 
     const actor = signerActor(signer);
     if (!signer.consented_at) {
@@ -374,7 +380,7 @@ export async function submitSignature(
     const unsigned = signers.filter((x) => x.status !== "signed");
 
     if (unsigned.length === 0) {
-      const status = transition(doc.status as never, "complete");
+      const status = transition(doc.status, "complete");
       await trx.updateTable("documents").set({ status, completed_at: t, updated_at: t }).where("id", "=", doc.id).execute();
       await appendEvent(trx, doc.id, "document.signed", { kind: "system", id: "system", label: "Signed.md" }, {});
       await emitWebhook(ctx, trx, { ...doc, status }, "document.signed", { completed_at: t });
@@ -382,13 +388,13 @@ export async function submitSignature(
       return { document_status: status };
     }
 
-    const status = transition(doc.status as never, "sign");
+    const status = transition(doc.status, "sign");
     await trx.updateTable("documents").set({ status, updated_at: t }).where("id", "=", doc.id).execute();
     await activateNextGroup(ctx, trx, doc.id);
 
     if (unsigned.length === 1 && signers.length > 1) {
       const last = (await loadSigners(trx, doc.id)).find((x) => x.status !== "signed")!;
-      const notified = last.status === "notified" || last.status === "viewed";
+      const notified = isAwaitingSigner(last.status);
       await emitWebhook(ctx, trx, { ...doc, status }, "document.awaiting_last_signer", {
         signer: { key: last.key, name: last.name, email: last.email, notified },
       });
@@ -407,12 +413,16 @@ export async function declineDocument(ctx: Ctx, token: string, reason: string | 
   await ctx.db.transaction().execute(async (trx) => {
     const doc = await lockDocument(ctx, trx, s.doc.id);
     const signer = await trx.selectFrom("signers").selectAll().where("id", "=", s.signer.id).executeTakeFirstOrThrow();
+    // The same checks as signing: a document past its deadline, or an old link, can't be declined either.
+    if (!isSignable(doc)) throw new SignedError("INVALID_TRANSITION", "This document can no longer be signed");
+    if (signer.token_hash !== sha256(token)) throw new SignedError("PERMISSION_DENIED", "This signing link is no longer valid");
     if (signer.status === "signed") throw new SignedError("INVALID_TRANSITION", "You have already signed this document");
-    const status = transition(doc.status as never, "decline");
+    const signerStatus = signerMachine.next(signer.status, "decline");
+    const status = transition(doc.status, "decline");
     const t = now();
     const why = reason?.trim().slice(0, 1000) || null;
     await trx.updateTable("documents").set({ status, updated_at: t }).where("id", "=", doc.id).execute();
-    await trx.updateTable("signers").set({ status: "declined", declined_at: t, decline_reason: why }).where("id", "=", signer.id).execute();
+    await trx.updateTable("signers").set({ status: signerStatus, declined_at: t, decline_reason: why }).where("id", "=", signer.id).execute();
     await trx.updateTable("signers").set({ token_hash: null }).where("document_id", "=", doc.id).where("id", "!=", signer.id).execute();
     await appendEvent(trx, doc.id, "signer.declined", signerActor(signer), { signer: signer.key, reason: why, ...meta });
     await emitWebhook(ctx, trx, { ...doc, status }, "document.declined", {
@@ -428,14 +438,14 @@ export async function expireDocuments(ctx: Ctx): Promise<number> {
   const due = await ctx.db
     .selectFrom("documents")
     .select("id")
-    .where("status", "in", ["sent", "partially_signed"])
+    .where("status", "in", documentMachine.sources("expire"))
     .where("expires_at", "<", now())
     .execute();
   for (const { id } of due) {
     await ctx.db.transaction().execute(async (trx) => {
       const doc = await lockDocument(ctx, trx, id);
-      if (!["sent", "partially_signed"].includes(doc.status)) return;
-      const status = transition(doc.status as never, "expire");
+      if (!documentMachine.can(doc.status, "expire")) return;
+      const status = transition(doc.status, "expire");
       await trx.updateTable("documents").set({ status, updated_at: now() }).where("id", "=", id).execute();
       await trx.updateTable("signers").set({ token_hash: null }).where("document_id", "=", id).execute();
       await appendEvent(trx, id, "document.expired", { kind: "system", id: "system", label: "Signed.md" }, { expires_at: doc.expires_at });

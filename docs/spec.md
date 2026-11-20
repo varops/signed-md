@@ -288,6 +288,20 @@ Notes:
 - Archiving is a flag (`archived_at`) on any document, in any status. It is not a status and does not change one.
 - Drafts are not revoked; they are archived.
 - The state machine must reject invalid transitions.
+- A `sent` or `partially_signed` document past its expiry counts as expired at once (no signing, declining or signing emails), even before the worker moves it to `expired`.
+
+### Other lifecycles
+
+Every status in Signed.md has a transition table in `packages/core/src/state.ts`. Code asks the table for the next state, and the database update checks the state it started from, so two racing requests can't both win.
+
+| Lifecycle | States | Transitions |
+|---|---|---|
+| Signer | `pending`, `notified`, `viewed`, `signed`, `declined` | notify (pending → notified; a resend keeps the state), view (notified → viewed), sign or decline (notified or viewed) |
+| Template version | `pending_approval`, `approved` | approve (owner, web UI only) |
+| Team member | `active`, `disabled` | deactivate, reactivate |
+| Invitation | `pending`, `accepted`, `revoked`, `expired` (from its timestamps) | accept or revoke, only while pending |
+| Webhook delivery | `pending`, `delivered`, `failed` | deliver, retry, give up – only from pending |
+| Job | `pending`, `running`, `done`, `failed` | claim, complete, retry, fail – only by the current claim |
 
 When a signing group completes, the next group (by `order`) is notified in the same transaction that records the last signature of the current group.
 

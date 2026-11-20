@@ -33,3 +33,4 @@ The first public release.
 - Password reset by email, a signed login cookie and optional Google and Microsoft buttons for your own sign-in service.
 - A mobile layout for the app and the signing page.
 - A Docker image and Docker Compose file.
+- One transition table for every status: documents, signers, template versions, team members, invitations, webhook deliveries and jobs. Each change checks the state it started from, so racing requests can't both succeed.
