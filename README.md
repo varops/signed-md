@@ -8,8 +8,7 @@
 <h3 align="center">AI-native document signing</h3>
 
 <p align="center">
-  Your agent drafts and sends the agreement. People approve it and sign it.<br>
-  Everyone gets a signed PDF and a package they can verify offline.
+  Your agents handle the paperwork. People approve and sign.<br>Every agreement comes with independently verifiable evidence.
 </p>
 
 <p align="center">
