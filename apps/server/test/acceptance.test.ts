@@ -157,9 +157,13 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
 
   it("completes the MVP workflow", async () => {
     const browser = await playwright!.chromium.launch();
-    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
     const shot = async (name: string, p = page) => {
-      if (SHOTS) await p.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: true });
+      if (!SHOTS) return;
+      await p.waitForLoadState("networkidle");
+      await p.waitForTimeout(700); // the live preview refreshes after a short pause; dialogs finish closing
+      await p.evaluate(() => window.scrollTo(0, 0)); // sticky bars at the top of a full-page shot
+      await p.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: p === page }); // phone shots: one screen, all the same size
     };
 
     // 1–2. Fresh install: initial administrator setup.
@@ -296,7 +300,7 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     expect(avatarRequests.some((u) => u.includes("jane@acme.example"))).toBe(true);
     await shot("12-signing-email");
 
-    const signer = await browser.newPage({ viewport: { width: 420, height: 900 }, isMobile: true, hasTouch: true });
+    const signer = await browser.newPage({ viewport: { width: 420, height: 900 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
     await signer.goto(janeLink);
     // "Let's start": agree to sign electronically before the document opens.
     await shot("05-signing-intro", signer);
@@ -412,6 +416,9 @@ describe.skipIf(!playwright)("v1.0 acceptance: agent-driven signing, end to end"
     await shot("14-activity");
     await page.goto(`${base}/documents`);
     await shot("10-documents");
+    await page.goto(`${base}/agentic`);
+    expect(await page.locator("text=Connect using MCP / API").count()).toBe(1);
+    await shot("15-agents");
     await mcp.close();
     await browser.close();
   }, 120_000);

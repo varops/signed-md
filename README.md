@@ -1,76 +1,144 @@
-# Signed.md
-
-**Get documents signed. One API call.**
-
-Signed.md is an open-source, self-hosted e-signature service built for humans, developers, and AI agents. Templates are plain Markdown. Agents prepare and send agreements through a REST API or MCP. Every completed agreement comes back as a package anyone can verify offline.
-
-An independent open-source product by VarOps.
-
-> **Status:** v1.0. The end-to-end workflow works and is tested. Signed.md creates simple electronic signatures designed to meet the US ESIGN Act and UETA, EU eIDAS and similar laws. See [legal compatibility](docs/legal.md). This is not legal advice: consult an attorney before relying on it for agreements that matter to you.
-
-<p>
-  <img src="docs/screenshots/05-signing-intro.png" width="260" alt="Let's start">
-  <img src="docs/screenshots/07-adopt-signature.png" width="260" alt="Adopt your signature">
-  <img src="docs/screenshots/08-signing-filled.png" width="260" alt="Inline fields, ready to finish">
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/signedmd-dark.svg">
+    <img src="brand/signedmd-light.svg" alt="Signed.md" height="64">
+  </picture>
 </p>
 
-## Why Signed.md
+<h3 align="center">AI-native document signing</h3>
 
-- **Markdown templates.** No PDFs to edit, no signature boxes to drag around.
-- **Built for agents.** REST API, MCP server, and an agent skill. The server enforces the approval flow: an agent can only send the exact revision a person approved.
-- **Approved terms stay approved.** Agents can draft templates, but only a person can approve them, in the web UI. The server enforces each template's limits (minimum fee, allowed notice periods, …).
-- **Verifiable packages.** Each completed agreement is a ZIP with the signed Markdown, a PDF, the evidence log, and a signed manifest. Verify it without contacting the server.
-- **Runs anywhere.** One Docker container, SQLite, local disk. PostgreSQL with one setting. SMTP optional.
-- **Built for teams.** Invite people as owners, administrators, members, or viewers. Every action and API key is tied to a person.
-- **Never deletes.** Documents and templates are revoked or archived, never deleted. People are deactivated.
-- **No generative AI.** Signed.md is not an AI product. The agent brings the intelligence; Signed.md does the execution.
+<p align="center">
+  Your agent drafts and sends the agreement. People approve it and sign it.<br>
+  Everyone gets a signed PDF and a package they can verify offline.
+</p>
 
-## Try it
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-AGPL--3.0-1c1917" alt="Licence: AGPL-3.0"></a>
+  <img src="https://img.shields.io/badge/MCP-built%20in-f6da1c" alt="MCP built in">
+  <img src="https://img.shields.io/badge/templates-Markdown-1c1917" alt="Markdown templates">
+  <img src="https://img.shields.io/badge/self--hosted-Docker-1c1917" alt="Self-hosted with Docker">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/04-draft-preview.png" height="420" alt="A draft prepared by an agent, ready for a person to approve and send">
+  <img src="docs/screenshots/08-signing-filled.png" height="420" alt="The signer's view on a phone">
+</p>
+
+---
+
+E-signature tools were built for people clicking through forms. Signed.md is built for the way work gets done now: you ask an agent, and the agent does the paperwork.
+
+Templates are plain Markdown, which every language model reads and writes well. Agents connect over MCP or REST and act as you, with your role. The server keeps the rules an agent must not bend. Only a person approves a template, and an agent can only send the exact revision a person saw. And there is no AI inside Signed.md itself. The agent brings the intelligence; Signed.md does the execution, and keeps the proof.
+
+Open source (AGPL-3.0), self-hosted, one Docker container.
+
+## Ask your agent
+
+Connect any MCP client (Claude, ChatGPT, Cursor, your own) and talk to it like you'd talk to an assistant:
+
+> Send Acme our standard services agreement for $1,000 a month with 30 days' notice. Jane Doe (jane@acme.example) signs for them, then I countersign. Show me before you send it.
+
+Behind that one sentence, the agent:
+
+1. finds your approved "Standard services agreement" template;
+2. creates a draft with the values filled in, which the server checks against the template's limits (the fee has a minimum, notice must be 30, 60 or 90 days);
+3. shows you the preview and its revision, and waits for your OK;
+4. sends that exact revision. Jane signs on her phone, then you get your link;
+5. tells you when it's done, and can fetch the signed PDF and evidence package for you.
+
+You never opened a PDF editor or dragged a signature box.
+
+## Why AI-native
+
+**MCP and REST from day one.** 16 MCP tools over Streamable HTTP (`signed_create_document`, `signed_preview_document`, `signed_send_document` and more), the same actions over REST with an OpenAPI spec, and webhooks when things happen.
+
+**An agent skill that sets itself up.** The Agents page gives you one prompt to paste into any agent. It installs the [Signed.md skill](skills/signed-md/SKILL.md), asks you for an API key and checks the connection.
+
+**Markdown in, Markdown kept.** Templates are Markdown with placeholders. Agents write and read them as easily as you do, and you can import an existing Word or PDF contract in the web UI. The signed Markdown is the source of truth.
+
+**Guardrails the agent can't talk its way around.** These live in the server, not in a prompt:
+
+- Templates an agent writes start as pending. Only an owner can approve one, and only in the web UI.
+- Every draft has a revision hash covering the text, values, signers and settings. Sending needs the exact revision a person approved. Change a comma and it needs a new look.
+- Template limits (minimum fee, allowed notice periods, required fields) are checked on every draft.
+- API keys belong to people and act with their current role. Members only see their own documents.
+
+**No generative AI inside.** Signed.md never writes or rewrites your contracts. What you approve is what gets signed.
+
+## Signing that people actually finish
+
+<p>
+  <img src="docs/screenshots/05-signing-intro.png" width="250" alt="Let's start: who sent it, what to complete, and the disclosure">
+  <img src="docs/screenshots/07-adopt-signature.png" width="250" alt="Adopt your signature: type or draw">
+  <img src="docs/screenshots/08-signing-filled.png" width="250" alt="Every field done, ready to finish">
+</p>
+
+- No account and no app. Signers open a link on any device.
+- A short intro shows who sent it, what to fill in, and the e-signature disclosure.
+- Fields sit inline, where they appear in the agreement. One button walks through them: Start, Next, Finish.
+- Type or draw a signature once, then apply it with one tap.
+- A progress panel shows who has signed, who is next and the deadline.
+- Signers can download an unsigned review copy to show their lawyer, or decline with a reason.
+- Signers with the same order sign in parallel. The next group gets its link when the current one is done.
+
+## Proof you don't have to take our word for
+
+<p align="center">
+  <img src="docs/screenshots/09-finalized.png" width="720" alt="A finalized document with the signed PDF and the evidence package">
+</p>
+
+When the last person signs, Signed.md renders the PDF once and seals it:
+
+- **PDF/A-2b**, with fonts embedded, checked with veraPDF.
+- **PAdES seal**, so PDF readers flag any change made after signing.
+- **RFC 3161 timestamps** from a trusted authority (DigiCert by default).
+- **A certificate page** with every signer's consent, view and signing times, IP address and device.
+- **An evidence package** (ZIP) with the signed Markdown, the PDF, a hash-chained evidence log and a signed manifest.
+
+Anyone can check the package offline, without your server:
+
+```bash
+npx signed-md verify agreement.zip --keys signed-md-keys.json
+```
+
+`signed-md-keys.json` is the sender's `/.well-known/signed-md-keys.json`. The check confirms every file matches the signed manifest, the evidence chain is intact, and each signer signed the exact text. The npm package ships with the first public release; until then, run `pnpm verify agreement.zip` from this repository.
+
+## Quick start
+
+You need Node.js 22.18+, pnpm and [Typst](https://github.com/typst/typst/releases) 0.13 on your `PATH`.
 
 ```bash
 pnpm install
 pnpm demo
 ```
 
-This starts a seeded instance at `http://localhost:3000` with two approved templates and prints an API key. You need Node.js 22.18+ and [Typst](https://github.com/typst/typst/releases) 0.13 on your `PATH`. Emails go to the **Outbox** page, so you can sign as each signer from there.
+Open http://localhost:3000 and log in as `demo@signed.md` / `signed-md-demo`. The demo has two approved templates and prints an API key. Without SMTP, emails land on the **Outbox** page, so you can sign as each signer from there.
 
-Connect Claude Code and ask it to send something:
+Then connect your agent. With Claude Code:
 
 ```bash
 claude mcp add --transport http signed-md http://localhost:3000/mcp --header "Authorization: Bearer <API key>"
 ```
 
-> Send Acme our standard agreement for $1,000/month with a 30-day termination clause. Jane Doe (jane@acme.example) signs for Acme, then I countersign. Show me before sending.
+Or paste the setup prompt from the **Agents** page into any agent.
 
-## Run it
+<p align="center">
+  <img src="docs/screenshots/15-agents.png" width="720" alt="The Agents page: a setup prompt for any agent, MCP and REST details, API keys and the webhook">
+</p>
+
+### Run it for real
 
 ```bash
 docker compose up -d
 ```
 
-Open the URL, create the administrator, add a template, and create an API key on the **Agents** page. See [self-hosting](docs/self-hosting.md) for configuration, HTTPS, PostgreSQL, and backups.
+Open the URL, create the first owner, add a template, and create an API key on the **Agents** page. [Self-hosting](docs/self-hosting.md) covers HTTPS, SMTP, PostgreSQL, S3 storage and backups. SQLite and local disk are the default; PostgreSQL and S3 are one setting each.
 
-## How it works
+## Templates
 
 A template is Markdown with placeholders:
 
 ```markdown
-# Service agreement
-
-Client: {{$client_name:text}}
-Monthly fee: {{$fee:currency(USD)}}
-Plan: {{$plan:choice(standard|premium)}}
-
-Client signature: {{client.signature:signature}}
-Provider signature: {{provider.signature:signature}}
-```
-
-- `{{$name:type}}` is a **template value**, filled in when the document is created.
-- `{{signer.field:type}}` is a **signer field**, filled in by that signer while signing.
-
-Optional front matter adds limits that the server enforces:
-
-```yaml
 ---
 fields:
   $fee:
@@ -78,66 +146,104 @@ fields:
   $notice_days:
     allowed_values: [30, 60, 90]
 ---
+
+# Service agreement
+
+This agreement is between **Automaze Ltd** and {{$client_name:text}}.
+The client pays {{$fee:currency(USD)}} per month.
+Either party may end it with {{$notice_days:number}} days' written notice.
+
+<!-- columns -->
+
+**Client**
+
+Signature: {{client.signature:signature}}
+
+<!-- column -->
+
+**Provider**
+
+Signature: {{provider.signature:signature}}
+
+<!-- /columns -->
 ```
+
+- `{{$name:type}}` is a template value. The agent (or you) fills it in when creating the document.
+- `{{signer.field:type}}` is filled in by that signer while signing.
+- Types: text, longtext, number, currency, date, choice, checkbox, signature and initials.
+- The front matter holds limits the server enforces.
+- `<!-- columns -->` puts signature blocks side by side, in the preview and the PDF.
+
+<p align="center">
+  <img src="docs/screenshots/02-template-editor.png" width="720" alt="The template editor: Markdown on the left, the A4 preview on the right">
+</p>
 
 The lifecycle:
 
 ```text
-draft → preview (revision) → person approves → send → sign → signed → finalized
+draft → preview (revision) → a person approves → send → sign → signed → finalized
 ```
 
-Signers with the same `order` sign at the same time. The next group gets its link when the current group is done. Order `0` means any order (everyone signs at once). Use it for every signer or none: a mix of `0` and numbers is refused.
+## Built for teams
 
-## For agents and developers
+<p>
+  <img src="docs/screenshots/10-documents.png" height="300" alt="Documents, with folders, filters and signer avatars">
+  <img src="docs/screenshots/13-team.png" height="300" alt="Team roles: owner, administrator, member, viewer">
+</p>
+
+- Four roles: owner, administrator, member and viewer. Every action and API key is tied to a person.
+- Folders for templates and documents, search and filters.
+- Your logo, banner colour, default message and contract font (serif or sans-serif) on emails, signing pages and PDFs.
+- An activity log of everything people and agents did.
+- Nothing is ever deleted. Documents and templates are revoked or archived; people are deactivated.
+- Optional "Sign in with Google / Microsoft" buttons through your own sign-in service (see [`sso/`](sso)).
+
+## For developers
 
 | Interface | Where |
 |---|---|
 | MCP | `POST /mcp` (Streamable HTTP), `Authorization: Bearer <key>` |
 | REST | `/v1/...`, OpenAPI at `/openapi.json` |
-| Agent skill | [`skills/signed-md/SKILL.md`](skills/signed-md/SKILL.md) |
+| Agent skill | [`skills/signed-md/SKILL.md`](skills/signed-md/SKILL.md), also served at `/skill.md` |
 | Webhooks | `document.awaiting_last_signer`, `document.signed`, `document.finalized`, `document.declined`, signed with HMAC-SHA256 |
+| Verifier | `npx signed-md verify`, works offline |
 
-## Verify a package
+[REST, MCP and agent skills](docs/integrations.md) has the full reference.
 
-```bash
-npx signed-md verify agreement.zip --keys signed-md-keys.json
-```
-
-`signed-md-keys.json` is the sender's `/.well-known/signed-md-keys.json`. The check confirms every file matches the signed manifest, the evidence chain is intact, and every signer signed the exact text. From this repository: `pnpm verify agreement.zip`.
-
-## Development
+### Development
 
 ```bash
 pnpm install
 pnpm typecheck
-pnpm test                 # unit, service, and end-to-end tests
-TEST_POSTGRES_URL=postgres://... pnpm test   # also run database tests on PostgreSQL
+pnpm test                                     # unit, service and end-to-end tests
+TEST_POSTGRES_URL=postgres://... pnpm test    # also run the database tests on PostgreSQL
 ```
 
-The acceptance test (`apps/server/test/acceptance.test.ts`) runs the full v1.0 workflow from the spec: setup and template approval in a browser, an agent over MCP, signing in a mobile browser, webhooks, and offline verification. It needs Playwright with Chromium; set `PLAYWRIGHT_PATH` if it is not installed globally.
+The acceptance test (`apps/server/test/acceptance.test.ts`) runs the whole workflow: setup and template approval in a browser, an agent over MCP, signing in a mobile browser, webhooks and offline verification. It needs Playwright with Chromium (set `PLAYWRIGHT_PATH` if it isn't installed globally). `SCREENSHOTS=1` regenerates the screenshots in this README.
 
 ```text
 apps/server        services, REST, MCP, web UI, signing page, worker, CLI
 packages/core      field engine, rendering, state machine, evidence format and verification
 packages/db        schema, migrations (SQLite and PostgreSQL), job queue
-packages/verify    signed-md verify CLI
-skills/signed-md   agent skill
+packages/verify    the signed-md verify CLI
+skills/signed-md   the agent skill
+sso                sign-in cookie helpers for your own sign-in service
 examples           sample templates
 ```
 
 ## Documentation
 
 - [Technical specification](docs/spec.md)
-- [REST, MCP, and agent skills](docs/integrations.md)
+- [REST, MCP and agent skills](docs/integrations.md)
 - [Self-hosting](docs/self-hosting.md)
 - [Legal compatibility](docs/legal.md)
 
 ## Legal
 
-Signed.md creates simple electronic signatures with evidence designed to meet common legal requirements. [Legal compatibility](docs/legal.md) explains how it meets each one, what it doesn't cover, and what senders are responsible for. It is not legal advice, and Signed.md comes without warranty. Whether a signature is valid depends on your country, the document and the facts, so consult an attorney if it matters.
+Signed.md creates simple electronic signatures, with evidence designed to meet the US ESIGN Act and UETA, EU eIDAS and UK law. [Legal compatibility](docs/legal.md) explains how it meets each one, what it doesn't cover, and what senders are responsible for. This is not legal advice, and Signed.md comes without warranty. Whether a signature is valid depends on your country, the document and the facts, so consult an attorney if it matters.
 
 ## Licence
 
-Copyright © 2026 VarOps.
+Copyright © 2026 VarOps. An independent open-source product.
 
-Signed.md is free software under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). You can use, change, and self-host it freely. If you run a modified version as a network service, you must offer its source code to its users. Set `SOURCE_URL` to point the "Source" link in the app at your code.
+Signed.md is free software under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). You can use, change and self-host it freely. If you run a modified version as a network service, you must offer its source code to its users. Set `SOURCE_URL` to point the "Source" link in the app at your code.
