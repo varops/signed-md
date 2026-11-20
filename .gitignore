@@ -7,3 +7,7 @@ dist/
 *.db-shm
 .env
 .DS_Store
+
+# Local only
+CLAUDE.md
+docs/prd.md
