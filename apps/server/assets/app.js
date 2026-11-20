@@ -137,7 +137,7 @@
     area.parentNode.insertBefore(host, area);
     var props = { name: area.name, id: area.id, spellcheck: "false", autocapitalize: "none", autocorrect: "off", "data-font": area.getAttribute("data-font") || "" };
     var editor = new window.OverType(host, {
-      value: area.value, theme: theme, fontSize: "13.5px", lineHeight: 1.6, padding: area.getAttribute("data-ot-padding") || "14px",
+      value: area.value, theme: theme, fontSize: matchMedia("(pointer: coarse), (max-width: 900px)").matches ? "16px" : "13.5px", lineHeight: 1.6, padding: area.getAttribute("data-ot-padding") || "14px",
       textareaProps: props, customSyntax: smdSyntax, toolbar: false
     })[0];
     area.remove();

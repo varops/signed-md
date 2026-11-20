@@ -78,7 +78,8 @@ describe("password reset", async () => {
     const app = createApp(ctx);
     const loginPage = await (await app.request("/login")).text();
     expect(loginPage).toContain('href="/forgot"');
-    expect(loginPage).toContain('class="logo-light"');
+    expect(loginPage).not.toContain('class="brand"'); // no logo above the form: the footer carries it
+    expect(loginPage).toContain('class="foot-logo"');
     const known = await (await app.request("/forgot", { method: "POST", body: new URLSearchParams({ email: EMAIL }) })).text();
     const unknown = await (await app.request("/forgot", { method: "POST", body: new URLSearchParams({ email: "nobody@automaze.example" }) })).text();
     expect(known.replace(EMAIL, "X")).toBe(unknown.replace("nobody@automaze.example", "X"));

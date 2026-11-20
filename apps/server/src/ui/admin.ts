@@ -27,7 +27,7 @@ import { HOSTED_APP_URL } from "../hosted.ts";
 import { brandAttachment } from "../services/emails.ts";
 import { MESSAGE_VARIABLES, personalizeMessage } from "../services/messagevars.ts";
 import { type FormBody, parseSigners, parseValues, signerRows, str, valueInput } from "./forms.ts";
-import { alert, asset, avatarFigure, badge, csrfInput, empty, eventIcon, field, type H, icon, issuesList, logo, shell, when } from "./layout.ts";
+import { alert, asset, avatarFigure, badge, csrfInput, empty, eventIcon, field, type H, icon, issuesList, shell, when } from "./layout.ts";
 import { canEmailResets, findPasswordReset, RESET_MINUTES, requestPasswordReset, resetPassword } from "../services/passwordreset.ts";
 
 type Env = { Variables: { user: Actor & { kind: "user" }; csrf: string } };
@@ -1373,9 +1373,9 @@ function loginPage(error: string | undefined, email: string | undefined, buttons
       : ""}`);
 }
 
-/** Public pages (log in, set up, join, password reset): the logo above a narrow column. */
+/** Public pages (log in, set up, join, password reset): a narrow column. The footer carries our logo. */
 function authPage(title: string, body: H): H {
-  return shell({ title }, html`<div class="narrow auth">${logo("/login")}${body}</div>`);
+  return shell({ title }, html`<div class="narrow auth">${body}</div>`);
 }
 
 function forgotPage(email = "", sent = false, canEmail = true): H {

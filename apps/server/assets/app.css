@@ -167,9 +167,10 @@ legend { font-size: var(--text-7); font-weight: var(--font-medium); padding: 0; 
 @media (max-width: 900px) { .app .wrap, .app .wrap.full { padding: 20px 16px 48px; } }
 .narrow { max-width: 460px; }
 /* Public pages: log in, set up, join, password reset. */
-.auth { margin: 56px auto; }
-.auth > .brand { margin-bottom: 28px; }
-.auth > .brand img { height: 36px; }
+/* Log in, invitation and password reset: the box sits in the middle of the screen, a little above centre. */
+body:has(.auth) { display: flex; flex-direction: column; min-height: 100dvh; }
+main:has(> .auth) { flex: 1; width: 100%; display: flex; flex-direction: column; justify-content: center; padding-bottom: 10dvh; }
+.auth { margin: 32px auto; width: 100%; }
 .auth h1 { font-size: var(--text-3, 1.5rem); }
 .forgot { margin: 12px 0 0; text-align: center; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
@@ -288,6 +289,9 @@ figure[data-variant="avatar"] > img { position: absolute; inset: 0; }
 .inline-fields { display: grid; grid-template-columns: 1fr 1fr 90px; gap: 10px; }
 .inline-fields > [data-field] { margin: 0 !important; }
 @media (max-width: 600px) { .inline-fields { grid-template-columns: 1fr !important; } }
+/* iOS Safari zooms into any field under 16px when it gets focus. On touch and narrow screens every field is 16px
+   (the title input is already larger). OverType's editor gets the same size from app.js. */
+@media (pointer: coarse), (max-width: 900px) { :is(input, select, textarea):not(.title-input) { font-size: 16px !important; } }
 textarea.code { font-family: var(--mono); font-size: .86rem; min-height: 380px; line-height: 1.5; }
 .editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: end; }
 .editor textarea.code, .editor .ot-host { height: 680px; }
