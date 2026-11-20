@@ -6,6 +6,8 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ## [Unreleased]
 
+## [1.0.0] – 2026-11-20
+
 The first public release of Signed.md: AI-native document signing you host yourself.
 
 Agents draft agreements from approved Markdown templates through MCP or the REST API. People review, approve and send them, and signers sign in the browser on any device. Every completed agreement becomes a PDF/A-2b, sealed with PAdES and timestamped, plus a ZIP evidence package that anyone can check offline with `signed-md verify`.
@@ -38,3 +40,4 @@ Get started with Docker Compose (see [self-hosting](https://github.com/varops/si
 - A mobile layout for the app and the signing page.
 - A Docker image and Docker Compose file.
 - One transition table for every status: documents, signers, template versions, team members, invitations, webhook deliveries and jobs. Each change checks the state it started from, so racing requests can't both succeed.
+
