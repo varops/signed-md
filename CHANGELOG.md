@@ -6,6 +6,8 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ## [Unreleased]
 
+## [1.1.1] – 2026-11-21
+
 A small release for the verifier. `npx signed-md verify` now works from npm, and the package has a proper README.
 
 ### Fixed
