@@ -6,6 +6,8 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ## [Unreleased]
 
+A small release for the verifier. `npx signed-md verify` now works from npm, and the package has a proper README.
+
 ### Fixed
 
 - The `signed-md verify` command explains a missing or unreadable file, or a missing keys file, instead of printing a stack trace. It exits with code 2.
