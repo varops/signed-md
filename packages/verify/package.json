@@ -4,7 +4,7 @@
   "description": "Verify Signed.md completion packages offline.",
   "type": "module",
   "bin": {
-    "signed-md": "./bin/signed-md.js"
+    "signed-md": "bin/signed-md.js"
   },
   "exports": {
     ".": {
@@ -23,12 +23,13 @@
   "devDependencies": {
     "esbuild": "^0.28.2"
   },
+  "homepage": "https://github.com/varops/signed-md/tree/main/packages/verify#readme",
   "files": [
     "bin",
     "dist"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/varops/signed-md.git"
+    "url": "git+https://github.com/varops/signed-md.git"
   }
 }

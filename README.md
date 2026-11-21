@@ -99,7 +99,7 @@ Anyone can check the package offline, without your server:
 npx signed-md verify agreement.zip --keys signed-md-keys.json
 ```
 
-`signed-md-keys.json` is the sender's `/.well-known/signed-md-keys.json`. The check confirms every file matches the signed manifest, the evidence chain is intact, and each signer signed the exact text. The npm package ships with the first public release; until then, run `pnpm verify agreement.zip` from this repository.
+`signed-md-keys.json` is the sender's `/.well-known/signed-md-keys.json`. The check confirms every file matches the signed manifest, the evidence chain is intact, and each signer signed the exact text. The verifier is the [`signed-md`](https://www.npmjs.com/package/signed-md) package on npm.
 
 ## Quick start
 

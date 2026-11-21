@@ -6,6 +6,11 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ## [Unreleased]
 
+### Fixed
+
+- The `signed-md verify` command explains a missing or unreadable file, or a missing keys file, instead of printing a stack trace. It exits with code 2.
+- The `signed-md` npm package now has a README.
+
 ## [1.1.0] – 2026-11-21
 
 Signed.md now chases signatures for you. Signers who haven't signed get reminder emails with the same link as their first email, until they sign, decline, or the document expires.
