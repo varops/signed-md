@@ -6,6 +6,8 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ## [Unreleased]
 
+## [1.1.0] – 2026-11-21
+
 Signed.md now chases signatures for you. Signers who haven't signed get reminder emails with the same link as their first email, until they sign, decline, or the document expires.
 
 ### Before you upgrade
