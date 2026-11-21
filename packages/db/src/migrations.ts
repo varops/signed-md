@@ -328,6 +328,16 @@ const m008: Migration = {
   },
 };
 
+/** Automatic reminders: a per-document switch, and each signer's link kept sealed so reminders reuse it. */
+const m009: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema.alterTable("documents").addColumn("reminders", "integer", (c) => c.notNull().defaultTo(0)).execute();
+    await db.schema.alterTable("signers").addColumn("link_sealed", "text").execute();
+    await db.schema.alterTable("signers").addColumn("reminders_sent", "integer", (c) => c.notNull().defaultTo(0)).execute();
+    await db.schema.alterTable("signers").addColumn("last_reminded_at", "text").execute();
+  },
+};
+
 export const migrations: Record<string, Migration> = {
   "001_initial": m001,
   "002_signer_message": m002,
@@ -337,6 +347,7 @@ export const migrations: Record<string, Migration> = {
   "006_usage_counters": m006,
   "007_folders": m007,
   "008_password_resets": m008,
+  "009_reminders": m009,
 };
 
 export const migrationProvider: MigrationProvider = {

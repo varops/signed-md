@@ -484,6 +484,7 @@ export function createAdmin(ctx: Ctx) {
       <dt>Source</dt><dd>${d.template ? html`<a href="/templates/${d.template.id}">template v${d.template.version}</a>${d.source === "inline" ? html` <span class="muted">· text edited</span>` : ""}` : "inline"}</dd>
       <dt>Revision</dt><dd class="mono">${d.revision.slice(0, 20)}…</dd>
       ${editable ? "" : html`<dt>Font</dt><dd>${CONTRACT_FONTS[d.font].label}</dd>`}
+      ${editable ? "" : html`<dt>Reminders</dt><dd>${d.reminders ? "Every 3 business days" : "Off"}</dd>`}
       ${d.approved_by ? html`<dt>Approved by</dt><dd>${d.approved_by}</dd>` : ""}
       ${d.message ? html`<dt>Message</dt><dd>${d.message}</dd>` : ""}
       <dt>Created</dt><dd>${when(d.created_at)}</dd>
@@ -494,7 +495,7 @@ export function createAdmin(ctx: Ctx) {
       ${Object.keys(d.metadata).length ? html`<dt>Metadata</dt><dd class="mono">${JSON.stringify(d.metadata)}</dd>` : ""}
     </dl>`;
 
-    const signerList = html`${d.signers.map((s) => html`<div class="signer-item"><div class="spread"><div class="row" style="gap:10px;flex-wrap:nowrap">${avatar(ctx, account.config.branding.avatars, s.name, s.email)}<div><strong>${s.name || s.key}</strong><div class="tiny muted">${s.email} · <code>${s.key}</code> · order ${s.order}</div></div></div>${badge(s.status)}</div>
+    const signerList = html`${d.signers.map((s) => html`<div class="signer-item"><div class="spread"><div class="row" style="gap:10px;flex-wrap:nowrap">${avatar(ctx, account.config.branding.avatars, s.name, s.email)}<div><strong>${s.name || s.key}</strong><div class="tiny muted">${s.email} · <code>${s.key}</code> · order ${s.order}${s.reminders_sent ? ` · ${s.reminders_sent} ${s.reminders_sent === 1 ? "reminder" : "reminders"}` : ""}</div></div></div>${badge(s.status)}</div>
       ${s.decline_reason ? html`<div class="small">Reason: “${s.decline_reason}”</div>` : ""}
       ${manage && active && (s.status === "notified" || s.status === "viewed") ? html`<form method="post" action="/documents/${d.id}/signers/${s.key}/resend" class="inline">${csrfInput(csrf)}<button type="submit" class="outline small" style="margin-top:6px">Resend link</button></form>` : ""}
     </div>`)}`;
@@ -516,6 +517,8 @@ export function createAdmin(ctx: Ctx) {
                 <div data-field><label for="f-expires_in_days">Expires after (days)</label><input id="f-expires_in_days" type="number" min="1" max="365" name="expires_in_days" value="${d.expires_in_days}"></div>
                 <div data-field><label for="f-font">Font</label><select id="f-font" name="font">${CONTRACT_FONT_NAMES.map((f) => html`<option value="${f}" ${d.font === f ? "selected" : ""}>${CONTRACT_FONTS[f].label}</option>`)}</select></div>
               </div>
+              <input type="hidden" name="reminders_field" value="1">
+              <label class="check"><input type="checkbox" name="reminders" ${d.reminders ? "checked" : ""}> Remind signers every 3 business days</label>
               ${docFolders.length ? html`<div data-field><label for="f-folder">Folder</label>${folderSelect("f-folder", docFolders, d.folder?.id)}</div>` : ""}
               <h3 class="panel-sub">About</h3>${about}
             </div>
@@ -613,6 +616,8 @@ export function createAdmin(ctx: Ctx) {
         ...(str(b, "title") ? { title: str(b, "title") } : {}),
         ...(str(b, "expires_in_days") ? { expires_in_days: Number(str(b, "expires_in_days")) } : {}),
         ...(str(b, "font") ? { font: str(b, "font") } : {}),
+        // Only the draft's Settings tab has the checkbox. The Markdown editor's form leaves it as it is.
+        ...("reminders_field" in b ? { reminders: str(b, "reminders") === "on" } : {}),
       });
       if ("folder_id" in b && (str(b, "folder_id") || null) !== row.folder_id) await docs.moveDocument(ctx, c.get("user"), id, str(b, "folder_id") || null);
       return c.redirect(`/documents/${id}?msg=saved`);
@@ -903,6 +908,7 @@ export function createAdmin(ctx: Ctx) {
           <div data-field><label for="f-timezone">Timezone</label><input id="f-timezone" type="text" name="timezone" value="${account.config.timezone}"></div>
           <div data-field><label for="f-locale">Locale</label><input id="f-locale" type="text" name="locale" value="${account.config.locale}"></div>
         </div>
+        <label class="check"><input type="checkbox" name="reminders" ${account.config.reminders ? "checked" : ""}> Remind signers every 3 business days <span class="muted">· default for new documents. Reminders reuse the signer's link.</span></label>
         <label class="check"><input type="checkbox" name="attach_zip" ${account.config.attach_zip ? "checked" : ""}> Attach the evidence ZIP to completion emails (the PDF is always attached)</label>
         <button type="submit" style="margin-top:12px">Save</button>
       </form>
@@ -977,6 +983,7 @@ export function createAdmin(ctx: Ctx) {
           timezone: str(b, "timezone").trim() || "UTC",
           locale: str(b, "locale").trim() || "en-US",
           attach_zip: str(b, "attach_zip") === "on",
+          reminders: str(b, "reminders") === "on",
         },
       });
       return c.redirect("/settings?msg=saved");

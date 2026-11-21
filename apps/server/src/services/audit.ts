@@ -42,6 +42,7 @@ const DOC_TYPES: Record<string, string> = {
   "signer.signed": "signed",
   "signer.declined": "declined",
   "signer.link_resent": "resent a signing link",
+  "signer.reminded": "sent a reminder",
   "document.signed": "everyone signed",
   "document.finalized": "package ready",
   "document.expired": "expired",

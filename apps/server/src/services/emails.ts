@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isAwaitingSigner, isOpenStatus, SignedError } from "@signed-md/core";
+import { isAwaitingSigner, isOpenStatus, reminderLabel, SignedError } from "@signed-md/core";
 import type { Ctx } from "../context.ts";
 import { unseal } from "../crypto.ts";
 import { getAccount } from "./accounts.ts";
@@ -20,6 +20,10 @@ export interface EmailJob {
   reset_id?: string;
   signer_id?: string;
   link?: string;
+  /** Reminders: which one this is (1 = first), for the subject. */
+  reminder?: number;
+  /** Reminders: true when the email carries a new link (a manual resend). Automatic ones reuse the link. */
+  new_link?: boolean;
 }
 
 async function adminEmails(ctx: Ctx): Promise<string[]> {
@@ -155,9 +159,14 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
       if (!signer || !job.link) throw new Error("signing email without signer or link");
       // Do not send stale links: the signer may have signed, or the document may be closed or past its deadline.
       if (!stillSigning(doc) || !isAwaitingSigner(signer.status)) return;
+      // A newer link replaced this one (a manual resend): its own email carries the working link.
+      if (signer.link_sealed && signer.link_sealed !== job.link) return;
       const link = unseal(ctx.keys.serverSecret, job.link);
       const reminder = job.kind === "reminder";
-      msg(signer.email, `${reminder ? "Reminder: " : ""}Please sign: ${doc.title}`, {
+      // Jobs queued before numbered reminders existed were manual resends with a new link.
+      const newLink = reminder && job.new_link !== false;
+      const subject = reminder ? `${reminderLabel(job.reminder ?? 1)}: Please sign: ${doc.title}` : `Please sign: ${doc.title}`;
+      msg(signer.email, subject, {
         icon: "document",
         person: sender,
         headline: `${senderName} sent you a document to review and sign.`,
@@ -167,7 +176,7 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
         // The sender's message replaces the standard line, as in familiar e-signature emails.
         paragraphs: [
           ...(doc.signer_message ? [] : [`Hi ${signer.name}, please review and sign "${doc.title}". It takes a few minutes and works on your phone.`]),
-          ...(reminder ? ["This is a new link. Any earlier link for this document no longer works."] : []),
+          ...(newLink ? ["This is a new link. Any earlier link for this document no longer works."] : []),
         ],
         signers: signerPeople,
         details: [
@@ -180,14 +189,20 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
     }
     case "last_signer": {
       if (!signer || !isAwaitingSigner(signer.status) || !stillSigning(doc)) return;
+      // The signer's link is kept sealed, so this email can carry it. Older documents have none.
+      const link = signer.link_sealed ? unseal(ctx.keys.serverSecret, signer.link_sealed) : null;
       msg(signer.email, `Waiting for you: ${doc.title}`, {
         icon: "bell",
         person: sender,
         headline: `Everyone else has signed. Only your signature is missing.`,
+        ...(link ? { button: { label: "Review document", url: link } } : {}),
         paragraphs: [
           `Hi ${signer.name},`,
-          `Everyone else has signed "${doc.title}". Please use the "Review document" link in the earlier email from ${account.name}. If you can't find it, reply to this email and ask for a new link.`,
+          link
+            ? `Everyone else has signed "${doc.title}". It's the same link as in the earlier email from ${account.name}.`
+            : `Everyone else has signed "${doc.title}". Please use the "Review document" link in the earlier email from ${account.name}. If you can't find it, reply to this email and ask for a new link.`,
         ],
+        ...(link ? { security: true } : {}),
         details: [["Document", doc.title], ...(doc.expires_at ? ([["Please sign by", longDate(doc.expires_at, doc.timezone)]] as [string, string][]) : [])],
       });
       break;

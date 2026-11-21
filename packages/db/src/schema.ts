@@ -184,6 +184,8 @@ export interface DocumentTable {
   font: string;
   /** Message shown to signers in the signing email. Set when the document is sent. */
   signer_message: string | null;
+  /** 1: remind signers who haven't signed every 3 business days (in the document's timezone). 0: off. */
+  reminders: number;
   created_by: string;
   approved_revision: string | null;
   approved_by: string | null;
@@ -209,6 +211,14 @@ export interface SignerTable {
   email: string;
   signing_order: number;
   token_hash: string | null;
+  /**
+   * The signing link, sealed with the server secret (AES-256-GCM), so automatic reminders can resend
+   * the same link. Cleared when the link stops working. Only a manual resend makes a new link.
+   */
+  link_sealed: string | null;
+  /** Reminders sent so far, automatic and manual. Numbers the subject: REMINDER, 2ND REMINDER, ... */
+  reminders_sent: number;
+  last_reminded_at: string | null;
   status: "pending" | "notified" | "viewed" | "signed" | "declined";
   decline_reason: string | null;
   notified_at: string | null;

@@ -184,6 +184,7 @@ Content-Type: application/json
 
 - `values` holds template values. Keys are written without the `$` prefix.
 - `font` is `"serif"` or `"sans-serif"`, for the PDF and the signing page. Without it, the account default (Settings → Branding) is used. It is part of the revision.
+- `reminders` is `true` or `false`. When on, signers who haven't signed get a reminder email every 3 business days (Monday to Friday in the document's timezone), with the same link as their first email. Without it, the account default (Settings → Account) is used. It is part of the revision. Each signer in the response has `reminders_sent` and `last_reminded_at`.
 - `signers` lists every signer. Each `key` must match the signer keys used in the template. Signers with the same `order` sign in parallel; the next group is notified when the current group is done. Order `0` means any order (everyone signs at once). Use it for every signer or none: a mix of `0` and numbers is refused.
 - Currency values are decimal strings.
 
@@ -312,7 +313,9 @@ POST /v1/documents/doc_123/revoke
 POST /v1/documents/doc_123/signers/client1/resend
 ```
 
-Sends a fresh link to a signer who has been notified but has not signed. Rate limited.
+Sends a new link to a signer who has been notified but has not signed. The old link stops working, so use it when a link was lost or forwarded. Rate limited to one a minute.
+
+A resend counts as a reminder: the email's subject is numbered like automatic reminders ("REMINDER: …", "2ND REMINDER: …"), and the next automatic reminder comes 3 business days later, with the new link.
 
 ### Archive
 

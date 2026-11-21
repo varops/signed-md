@@ -18,6 +18,8 @@ export interface AccountConfig {
   locale: string;
   /** Attach the completed ZIP to completion emails (the PDF is always attached). */
   attach_zip: boolean;
+  /** Default for new documents: remind signers who haven't signed every 3 business days. */
+  reminders: boolean;
   /** Minimal branding: a logo and a default message to signers. */
   branding: Branding;
 }
@@ -49,6 +51,9 @@ const DEFAULTS: Omit<AccountConfig, "webhook_secret"> = {
   timezone: "UTC",
   locale: "en-US",
   attach_zip: false,
+  // Off for accounts created before reminders existed, so their signers don't get new emails unasked.
+  // New accounts start with reminders on (see setup).
+  reminders: false,
   branding: { logo: null, email_message: "", banner_color: "#1c1917", avatars: false, contract_font: "serif" },
 };
 
@@ -76,7 +81,7 @@ export async function setup(
     if (existing) throw new SignedError("PERMISSION_DENIED", "Signed.md is already set up");
     const accountId = newId("acct");
     const userId = newId("usr");
-    const config: AccountConfig = { ...DEFAULTS, webhook_secret: newWebhookSecret() };
+    const config: AccountConfig = { ...DEFAULTS, reminders: true, webhook_secret: newWebhookSecret() };
     await trx
       .insertInto("accounts")
       .values({ id: accountId, name: input.accountName.trim() || "My company", config: JSON.stringify(config), created_at: now() })
@@ -155,6 +160,7 @@ export function accountView(a: Account) {
       webhook_url: a.config.webhook_url,
       inline_documents: a.config.inline_documents,
       default_expiry_days: a.config.default_expiry_days,
+      reminders: a.config.reminders,
       timezone: a.config.timezone,
       locale: a.config.locale,
     },

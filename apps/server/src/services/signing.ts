@@ -362,7 +362,7 @@ export async function submitSignature(
     for (const v of values) {
       await trx.updateTable("fields").set({ value: JSON.stringify(v.value), completed_at: t }).where("id", "=", v.id).execute();
     }
-    await trx.updateTable("signers").set({ status: signerMachine.next(signer.status, "sign"), signed_at: t, consented_at: signer.consented_at ?? t }).where("id", "=", signer.id).execute();
+    await trx.updateTable("signers").set({ status: signerMachine.next(signer.status, "sign"), signed_at: t, consented_at: signer.consented_at ?? t, link_sealed: null }).where("id", "=", signer.id).execute();
 
     const actor = signerActor(signer);
     if (!signer.consented_at) {
@@ -422,8 +422,8 @@ export async function declineDocument(ctx: Ctx, token: string, reason: string | 
     const t = now();
     const why = reason?.trim().slice(0, 1000) || null;
     await trx.updateTable("documents").set({ status, updated_at: t }).where("id", "=", doc.id).execute();
-    await trx.updateTable("signers").set({ status: signerStatus, declined_at: t, decline_reason: why }).where("id", "=", signer.id).execute();
-    await trx.updateTable("signers").set({ token_hash: null }).where("document_id", "=", doc.id).where("id", "!=", signer.id).execute();
+    await trx.updateTable("signers").set({ status: signerStatus, declined_at: t, decline_reason: why, link_sealed: null }).where("id", "=", signer.id).execute();
+    await trx.updateTable("signers").set({ token_hash: null, link_sealed: null }).where("document_id", "=", doc.id).where("id", "!=", signer.id).execute();
     await appendEvent(trx, doc.id, "signer.declined", signerActor(signer), { signer: signer.key, reason: why, ...meta });
     await emitWebhook(ctx, trx, { ...doc, status }, "document.declined", {
       signer: { key: signer.key, name: signer.name, email: signer.email },
@@ -447,7 +447,7 @@ export async function expireDocuments(ctx: Ctx): Promise<number> {
       if (!documentMachine.can(doc.status, "expire")) return;
       const status = transition(doc.status, "expire");
       await trx.updateTable("documents").set({ status, updated_at: now() }).where("id", "=", id).execute();
-      await trx.updateTable("signers").set({ token_hash: null }).where("document_id", "=", id).execute();
+      await trx.updateTable("signers").set({ token_hash: null, link_sealed: null }).where("document_id", "=", id).execute();
       await appendEvent(trx, id, "document.expired", { kind: "system", id: "system", label: "Signed.md" }, { expires_at: doc.expires_at });
       await enqueueJob(trx, "email", { kind: "expired", document_id: id });
     });

@@ -55,6 +55,8 @@ export interface CreateDocumentInput {
   metadata?: Record<string, unknown>;
   /** "serif" or "sans-serif". Defaults to the account's contract font. */
   font?: string;
+  /** Remind signers who haven't signed every 3 business days. Defaults to the account setting. */
+  reminders?: boolean;
   auto_send?: boolean;
   approved_by?: string;
   /** A document folder to file it in. Organises only: not part of the revision. */
@@ -73,6 +75,7 @@ export interface UpdateDocumentInput {
   webhook_url?: string | null;
   metadata?: Record<string, unknown>;
   font?: string;
+  reminders?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,9 +104,17 @@ function signerInputs(rows: SignerRow[]): SignerInput[] {
   return rows.map((s) => ({ key: s.key, name: s.name, email: s.email, order: Number(s.signing_order) }));
 }
 
-function settingsOf(doc: Pick<DocRow, "title" | "expires_in_days" | "timezone" | "locale" | "font">) {
-  // The font changes what signers see, so it is part of the revision a person approves.
-  return { title: doc.title, expires_in_days: Number(doc.expires_in_days), timezone: doc.timezone, locale: doc.locale, font: doc.font };
+function settingsOf(doc: Pick<DocRow, "title" | "expires_in_days" | "timezone" | "locale" | "font" | "reminders">) {
+  // The font changes what signers see, and reminders change how it's sent, so both are part of the
+  // revision a person approves. Reminders only count when on, so older drafts keep their revision.
+  return {
+    title: doc.title,
+    expires_in_days: Number(doc.expires_in_days),
+    timezone: doc.timezone,
+    locale: doc.locale,
+    font: doc.font,
+    ...(Number(doc.reminders) ? { reminders: true } : {}),
+  };
 }
 
 /** Re-run parsing and validation for a stored draft. Pure computation over stored inputs. */
@@ -178,6 +189,9 @@ async function writeSigners(trx: Transaction<Database>, documentId: string, sign
         email: s.email.trim().toLowerCase(),
         signing_order: s.order ?? 1,
         token_hash: null,
+        link_sealed: null,
+        reminders_sent: 0,
+        last_reminded_at: null,
         status: "pending",
         decline_reason: null,
         notified_at: null,
@@ -249,6 +263,7 @@ export async function createDocument(ctx: Ctx, actor: Actor, input: CreateDocume
     owner_user_id: ownerId,
     // Saved on the document, so a later change to the account default doesn't change it.
     font: input.font ?? account.config.branding.contract_font,
+    reminders: (input.reminders ?? account.config.reminders) ? 1 : 0,
     signer_message: null,
     created_by: actorRef(actor),
     approved_revision: null,
@@ -330,6 +345,7 @@ export async function updateDocument(ctx: Ctx, actor: Actor, id: string, input: 
       timezone: input.timezone ?? doc.timezone,
       locale: input.locale ?? doc.locale,
       font: input.font ?? doc.font,
+      reminders: input.reminders === undefined ? doc.reminders : input.reminders ? 1 : 0,
       webhook_url: input.webhook_url === undefined ? doc.webhook_url : input.webhook_url,
       metadata: input.metadata ? JSON.stringify(input.metadata) : doc.metadata,
       updated_at: now(),
@@ -562,19 +578,32 @@ export async function activateNextGroup(ctx: Ctx, trx: Transaction<Database>, do
   return notified;
 }
 
-/** Create a new signing token for a signer (replacing any old one) and queue the email that carries it. */
+/**
+ * Create a new signing link for a signer (replacing any old one) and queue the email that carries it.
+ * "reminder" is a manual resend: it counts as a reminder, so the next automatic one waits 3 business days.
+ */
 export async function issueToken(
   ctx: Ctx,
   trx: Transaction<Database>,
   documentId: string,
   signer: SignerRow,
-  emailKind: "signing_request" | "reminder" | "last_signer",
+  emailKind: "signing_request" | "reminder",
 ): Promise<void> {
   const token = randomToken(32);
   const t = now();
+  // The raw token only exists sealed (in the signer row and the email job), and in the email itself.
+  const link = seal(ctx.keys.serverSecret, `${ctx.config.publicUrl}/s/${token}`);
+  const reminder = emailKind === "reminder";
+  const number = reminder ? Number(signer.reminders_sent) + 1 : 0;
   await trx
     .updateTable("signers")
-    .set({ token_hash: sha256(token), status: signerMachine.next(signer.status, "notify"), notified_at: signer.notified_at ?? t })
+    .set({
+      token_hash: sha256(token),
+      link_sealed: link,
+      status: signerMachine.next(signer.status, "notify"),
+      notified_at: signer.notified_at ?? t,
+      ...(reminder ? { reminders_sent: number, last_reminded_at: t } : {}),
+    })
     .where("id", "=", signer.id)
     .execute();
   await appendEvent(trx, documentId, "signer.notified", { kind: "system", id: "system", label: "Signed.md" }, {
@@ -586,8 +615,8 @@ export async function issueToken(
     kind: emailKind,
     document_id: documentId,
     signer_id: signer.id,
-    // The raw token only ever exists sealed in the job, and in the email itself.
-    link: seal(ctx.keys.serverSecret, `${ctx.config.publicUrl}/s/${token}`),
+    link,
+    ...(reminder ? { reminder: number, new_link: true } : {}),
   });
 }
 
@@ -606,7 +635,7 @@ export async function revokeDocument(ctx: Ctx, actor: Actor, id: string, reason?
       .where("id", "=", id)
       .execute();
     const signers = await loadSigners(trx, id);
-    await trx.updateTable("signers").set({ token_hash: null }).where("document_id", "=", id).execute();
+    await trx.updateTable("signers").set({ token_hash: null, link_sealed: null }).where("document_id", "=", id).execute();
     await appendEvent(trx, id, "document.revoked", actor, { reason: reason ?? null });
     for (const s of signers) {
       if (s.notified_at && s.status !== "signed") {
@@ -732,6 +761,9 @@ export interface DocumentView {
     signed_at: string | null;
     declined_at: string | null;
     decline_reason: string | null;
+    /** Reminders sent so far, automatic and manual. */
+    reminders_sent: number;
+    last_reminded_at: string | null;
   }[];
   current_signing_group: number | null;
   outstanding: { signer: string; action: "sign" }[];
@@ -745,6 +777,8 @@ export interface DocumentView {
   locale: string;
   webhook_url: string | null;
   font: ContractFont;
+  /** Signers who haven't signed get a reminder every 3 business days. */
+  reminders: boolean;
   message: string | null;
   metadata: Record<string, unknown>;
   archived: boolean;
@@ -801,6 +835,8 @@ export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], 
       signed_at: s.signed_at,
       declined_at: s.declined_at,
       decline_reason: s.decline_reason,
+      reminders_sent: Number(s.reminders_sent),
+      last_reminded_at: s.last_reminded_at,
     })),
     current_signing_group: currentGroup,
     outstanding: active ? signers.filter((s) => isAwaitingSigner(s.status)).map((s) => ({ signer: s.key, action: "sign" as const })) : [],
@@ -821,6 +857,7 @@ export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], 
     locale: doc.locale,
     webhook_url: doc.webhook_url,
     font: fontOf(doc.font),
+    reminders: Number(doc.reminders) === 1,
     message: doc.signer_message,
     metadata: JSON.parse(doc.metadata) as Record<string, unknown>,
     archived: doc.archived_at !== null,

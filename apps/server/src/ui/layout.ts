@@ -305,6 +305,7 @@ const EVENT_ICONS: Record<string, [keyof typeof ICONS, Tone?]> = {
   "document.expired": ["clock", "warning"],
   "signer.notified": ["mail"],
   "signer.link_resent": ["mail"],
+  "signer.reminded": ["mail"],
   "signer.viewed": ["eye"],
   "signer.downloaded_review_copy": ["file"],
   "signer.consented": ["consent"],

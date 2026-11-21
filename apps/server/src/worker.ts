@@ -3,6 +3,7 @@ import type { Ctx } from "./context.ts";
 import { log } from "./log.ts";
 import { type EmailJob, sendEmailJob } from "./services/emails.ts";
 import { finalizeDocument } from "./services/finalize.ts";
+import { sendReminders } from "./services/reminders.ts";
 import { expireDocuments } from "./services/signing.ts";
 import { deliverWebhook, markWebhookFailed } from "./services/webhooks.ts";
 
@@ -44,7 +45,7 @@ export interface WorkerHandle {
   stop(): Promise<void>;
 }
 
-/** In-process worker loop. Also sweeps expired documents every minute. */
+/** In-process worker loop. Every minute it also expires overdue documents and sends due reminders. */
 export function startWorker(ctx: Ctx): WorkerHandle {
   let stopped = false;
   let lastSweep = 0;
@@ -55,6 +56,8 @@ export function startWorker(ctx: Ctx): WorkerHandle {
           lastSweep = Date.now();
           const n = await expireDocuments(ctx);
           if (n) log.info("expired documents", { count: n });
+          const r = await sendReminders(ctx);
+          if (r) log.info("sent reminders", { count: r });
         }
         const ran = await runOneJob(ctx);
         if (!ran) await new Promise((r) => setTimeout(r, ctx.config.workerIntervalMs));

@@ -192,6 +192,7 @@ Template versions are immutable once created. Approval changes only the approval
 - Owner user ID (the sender)
 - Font family: `serif` or `sans-serif`, saved from the account default at creation unless given. The faces are set in `services/fonts.ts`: STIX Two Text (serif, set 0.5% tighter) and Arimo (sans-serif, the same metrics as Arial), both bundled under the OFL.
 - Message to signers
+- Reminders: on or off, saved from the account default at creation unless given. Part of the revision when on.
 - Source: `template` or `inline`
 - Inline approval (user and timestamp), when the account requires it
 - Approved revision and approved by
@@ -304,6 +305,18 @@ Every status in Signed.md has a transition table in `packages/core/src/state.ts`
 | Job | `pending`, `running`, `done`, `failed` | claim, complete, retry, fail – only by the current claim |
 
 When a signing group completes, the next group (by `order`) is notified in the same transaction that records the last signature of the current group.
+
+### Reminders
+
+When a document has reminders on, each signer who has a link and hasn't signed or declined gets a reminder every 3 business days (`services/reminders.ts`):
+
+- Business days are Monday to Friday in the document's timezone. Public holidays are not skipped. Reminders are only sent on business days.
+- The 3 days count from the signer's signing email or their last reminder, automatic or manual.
+- Reminders reuse the signer's link. It is kept sealed with the server secret (AES-256-GCM) in `signers.link_sealed`, and cleared when the link stops working (signed, declined, revoked, expired). Documents sent before this existed get a new link instead.
+- Subjects are numbered: "REMINDER: Please sign: …", then "2ND REMINDER: …", "3RD REMINDER: …".
+- A manual resend makes a new link, counts as a reminder and restarts the 3 days.
+- Each reminder adds a `signer.reminded` event with its number. The update is guarded by the signer's reminder count, so two workers can't send the same reminder.
+- An instance that was stopped catches up with at most one reminder per signer when it starts again.
 
 ## 6. Markdown field engine
 
@@ -500,8 +513,9 @@ Use database-backed jobs for:
 - Generating final packages.
 - Retrying failed operations.
 - Scheduled expiry.
+- Reminders.
 
-The worker runs in the same process.
+The worker runs in the same process. Every minute it also expires overdue documents and sends due reminders.
 
 On SQLite, a single worker claims jobs with an atomic update. On PostgreSQL, workers claim jobs with `FOR UPDATE SKIP LOCKED`. The job table is the same in both.
 

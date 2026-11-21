@@ -39,6 +39,7 @@ export const CreateDocumentSchema = z
     webhook_url: z.string().url().nullable().optional(),
     metadata: Metadata.optional(),
     font: z.enum(["serif", "sans-serif"]).optional().openapi({ description: "Contract font family. Defaults to the account's setting (Settings → Branding)." }),
+    reminders: z.boolean().optional().openapi({ description: "Email signers who haven't signed a reminder every 3 business days, with the same link. Defaults to the account's setting." }),
     auto_send: z.boolean().optional().openapi({ description: "Send immediately if valid. Only for workflows where sending was already authorised." }),
     approved_by: z.string().max(500).optional().openapi({ description: "Recorded with auto_send." }),
     folder_id: z.string().nullable().optional().openapi({ description: "A document folder to file it in (GET /v1/folders?kind=document)." }),
@@ -58,6 +59,7 @@ export const UpdateDocumentSchema = z
     webhook_url: z.string().url().nullable().optional(),
     metadata: Metadata.optional(),
     font: z.enum(["serif", "sans-serif"]).optional(),
+    reminders: z.boolean().optional(),
   })
   .openapi("UpdateDocument");
 
@@ -95,6 +97,8 @@ export const DocumentSchema = z
         signed_at: z.string().nullable(),
         declined_at: z.string().nullable(),
         decline_reason: z.string().nullable(),
+        reminders_sent: z.number().openapi({ description: "Reminders sent so far, automatic and manual." }),
+        last_reminded_at: z.string().nullable(),
       }),
     ),
     current_signing_group: z.number().nullable(),
@@ -109,6 +113,7 @@ export const DocumentSchema = z
     locale: z.string(),
     webhook_url: z.string().nullable(),
     font: z.enum(["serif", "sans-serif"]),
+    reminders: z.boolean().openapi({ description: "Signers who haven't signed get a reminder every 3 business days (Monday to Friday in the document's timezone)." }),
     message: z.string().nullable(),
     metadata: z.record(z.string(), z.unknown()),
     archived: z.boolean(),
@@ -237,6 +242,7 @@ export const AccountSchema = z
       webhook_url: z.string().nullable(),
       inline_documents: z.enum(["allowed", "needs_approval", "disabled"]),
       default_expiry_days: z.number(),
+      reminders: z.boolean().openapi({ description: "Default for new documents." }),
       timezone: z.string(),
       locale: z.string(),
     }),

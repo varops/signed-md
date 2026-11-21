@@ -6,6 +6,15 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ## [Unreleased]
 
+### Added
+
+- Automatic reminders. Signers who haven't signed get a reminder every 3 business days (Monday to Friday in the document's timezone), with the same link as their first email. Subjects are numbered: "REMINDER: …", "2ND REMINDER: …", and so on. It's an account default (Settings → Account) and a per-document setting (`reminders` in REST and MCP), and part of the revision. New installations start with reminders on. Existing ones stay off until an owner turns them on.
+- The "only your signature is missing" email now carries the signer's link.
+
+### Changed
+
+- A manual resend counts as a reminder: its subject is numbered, and the next automatic reminder waits 3 business days.
+
 ## [1.0.0] – 2026-11-20
 
 The first public release of Signed.md: AI-native document signing you host yourself.
