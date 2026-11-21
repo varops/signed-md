@@ -6,14 +6,24 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ## [Unreleased]
 
+Signed.md now chases signatures for you. Signers who haven't signed get reminder emails with the same link as their first email, until they sign, decline, or the document expires.
+
+### Before you upgrade
+
+- Two database migrations run at start (`009_reminders`, `010_deadline_reminders`). They only add columns.
+- Reminders stay off on existing installations until an owner turns them on in Settings → Account. New installations start with them on. Each document keeps its own setting.
+- To reuse the same link, Signed.md now keeps each signer's link encrypted with the server secret (AES-256-GCM) until it stops working. Documents sent before the upgrade have no stored link: their first reminder sends a new one, and the old link stops working.
+
 ### Added
 
-- Automatic reminders. Signers who haven't signed get a reminder every 3 business days (Monday to Friday in the document's timezone), and one 24 hours and one 1 hour before the deadline, with the same link as their first email. Subjects are numbered: "REMINDER: …", "2ND REMINDER: …", and so on. It's an account default (Settings → Account) and a per-document setting (`reminders` in REST and MCP), and part of the revision. New installations start with reminders on. Existing ones stay off until an owner turns them on.
+- Automatic reminders. Signers who haven't signed get a reminder every 3 business days (Monday to Friday in the document's timezone), while the deadline is at least 4 days away. They also get one 24 hours and one 1 hour before the deadline, on any day. Reminders reuse the link from the first email. Subjects are numbered: "REMINDER: …", "2ND REMINDER: …", and so on, and the last two end with "– expires in 24 hours" or "– expires in 1 hour".
+- Reminders are an account default (Settings → Account) and a per-document setting (`reminders` in REST and MCP). The setting is part of the revision, so changing it needs a new preview.
+- Each reminder is recorded in the evidence log as a `signer.reminded` event. The document page shows how many reminders each signer has had, and the API returns `reminders_sent` and `last_reminded_at` for each signer.
 - The "only your signature is missing" email now carries the signer's link.
 
 ### Changed
 
-- A manual resend counts as a reminder: its subject is numbered, and the next automatic reminder waits 3 business days.
+- A manual resend counts as a reminder: its subject is numbered, and the next automatic reminder waits 3 business days. A resend still makes a new link and the old one stops working, so use it for lost or forwarded links, not as a nudge.
 
 ## [1.0.0] – 2026-11-20
 
