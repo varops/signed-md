@@ -110,7 +110,7 @@ export function buildMcpServer(ctx: Ctx, actor: Actor): McpServer {
         metadata: z.record(z.string(), z.unknown()).optional(),
         webhook_url: z.string().optional(),
         font: z.enum(["serif", "sans-serif"]).optional().describe("Contract font family. Defaults to the account's setting."),
-        reminders: z.boolean().optional().describe("Email signers who haven't signed a reminder every 3 business days, with the same link. Defaults to the account's setting."),
+        reminders: z.boolean().optional().describe("Email signers who haven't signed a reminder every 3 business days and 24 hours and 1 hour before the deadline, with the same link. Defaults to the account's setting."),
         folder_id: z.string().optional().describe("A document folder to file it in (signed_list_folders)"),
       },
     },

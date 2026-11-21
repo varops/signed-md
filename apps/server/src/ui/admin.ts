@@ -484,7 +484,7 @@ export function createAdmin(ctx: Ctx) {
       <dt>Source</dt><dd>${d.template ? html`<a href="/templates/${d.template.id}">template v${d.template.version}</a>${d.source === "inline" ? html` <span class="muted">· text edited</span>` : ""}` : "inline"}</dd>
       <dt>Revision</dt><dd class="mono">${d.revision.slice(0, 20)}…</dd>
       ${editable ? "" : html`<dt>Font</dt><dd>${CONTRACT_FONTS[d.font].label}</dd>`}
-      ${editable ? "" : html`<dt>Reminders</dt><dd>${d.reminders ? "Every 3 business days" : "Off"}</dd>`}
+      ${editable ? "" : html`<dt>Reminders</dt><dd>${d.reminders ? "Every 3 business days, and 24 hours and 1 hour before the deadline" : "Off"}</dd>`}
       ${d.approved_by ? html`<dt>Approved by</dt><dd>${d.approved_by}</dd>` : ""}
       ${d.message ? html`<dt>Message</dt><dd>${d.message}</dd>` : ""}
       <dt>Created</dt><dd>${when(d.created_at)}</dd>
@@ -518,7 +518,7 @@ export function createAdmin(ctx: Ctx) {
                 <div data-field><label for="f-font">Font</label><select id="f-font" name="font">${CONTRACT_FONT_NAMES.map((f) => html`<option value="${f}" ${d.font === f ? "selected" : ""}>${CONTRACT_FONTS[f].label}</option>`)}</select></div>
               </div>
               <input type="hidden" name="reminders_field" value="1">
-              <label class="check"><input type="checkbox" name="reminders" ${d.reminders ? "checked" : ""}> Remind signers every 3 business days</label>
+              <label class="check"><input type="checkbox" name="reminders" ${d.reminders ? "checked" : ""}> Remind signers every 3 business days, and 24 hours and 1 hour before the deadline</label>
               ${docFolders.length ? html`<div data-field><label for="f-folder">Folder</label>${folderSelect("f-folder", docFolders, d.folder?.id)}</div>` : ""}
               <h3 class="panel-sub">About</h3>${about}
             </div>
@@ -908,7 +908,7 @@ export function createAdmin(ctx: Ctx) {
           <div data-field><label for="f-timezone">Timezone</label><input id="f-timezone" type="text" name="timezone" value="${account.config.timezone}"></div>
           <div data-field><label for="f-locale">Locale</label><input id="f-locale" type="text" name="locale" value="${account.config.locale}"></div>
         </div>
-        <label class="check"><input type="checkbox" name="reminders" ${account.config.reminders ? "checked" : ""}> Remind signers every 3 business days <span class="muted">· default for new documents. Reminders reuse the signer's link.</span></label>
+        <label class="check"><input type="checkbox" name="reminders" ${account.config.reminders ? "checked" : ""}> Remind signers every 3 business days, and 24 hours and 1 hour before the deadline <span class="muted">· default for new documents. Reminders reuse the signer's link.</span></label>
         <label class="check"><input type="checkbox" name="attach_zip" ${account.config.attach_zip ? "checked" : ""}> Attach the evidence ZIP to completion emails (the PDF is always attached)</label>
         <button type="submit" style="margin-top:12px">Save</button>
       </form>

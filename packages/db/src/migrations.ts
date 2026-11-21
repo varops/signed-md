@@ -338,6 +338,13 @@ const m009: Migration = {
   },
 };
 
+/** Reminders 24 hours and 1 hour before the deadline: which ones each signer has had. */
+const m010: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema.alterTable("signers").addColumn("deadline_reminders", "integer", (c) => c.notNull().defaultTo(0)).execute();
+  },
+};
+
 export const migrations: Record<string, Migration> = {
   "001_initial": m001,
   "002_signer_message": m002,
@@ -348,6 +355,7 @@ export const migrations: Record<string, Migration> = {
   "007_folders": m007,
   "008_password_resets": m008,
   "009_reminders": m009,
+  "010_deadline_reminders": m010,
 };
 
 export const migrationProvider: MigrationProvider = {

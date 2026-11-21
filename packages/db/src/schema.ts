@@ -219,6 +219,8 @@ export interface SignerTable {
   /** Reminders sent so far, automatic and manual. Numbers the subject: REMINDER, 2ND REMINDER, ... */
   reminders_sent: number;
   last_reminded_at: string | null;
+  /** Reminders before the deadline sent so far: 1 after the 24-hour one, 2 after the 1-hour one. */
+  deadline_reminders: number;
   status: "pending" | "notified" | "viewed" | "signed" | "declined";
   decline_reason: string | null;
   notified_at: string | null;

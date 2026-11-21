@@ -192,6 +192,7 @@ async function writeSigners(trx: Transaction<Database>, documentId: string, sign
         link_sealed: null,
         reminders_sent: 0,
         last_reminded_at: null,
+        deadline_reminders: 0,
         status: "pending",
         decline_reason: null,
         notified_at: null,
@@ -588,6 +589,7 @@ export async function issueToken(
   documentId: string,
   signer: SignerRow,
   emailKind: "signing_request" | "reminder",
+  expiresInHours: number | null = null,
 ): Promise<void> {
   const token = randomToken(32);
   const t = now();
@@ -617,6 +619,7 @@ export async function issueToken(
     signer_id: signer.id,
     link,
     ...(reminder ? { reminder: number, new_link: true } : {}),
+    ...(expiresInHours !== null ? { expires_in_hours: expiresInHours } : {}),
   });
 }
 

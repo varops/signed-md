@@ -8,7 +8,7 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ### Added
 
-- Automatic reminders. Signers who haven't signed get a reminder every 3 business days (Monday to Friday in the document's timezone), with the same link as their first email. Subjects are numbered: "REMINDER: …", "2ND REMINDER: …", and so on. It's an account default (Settings → Account) and a per-document setting (`reminders` in REST and MCP), and part of the revision. New installations start with reminders on. Existing ones stay off until an owner turns them on.
+- Automatic reminders. Signers who haven't signed get a reminder every 3 business days (Monday to Friday in the document's timezone), and one 24 hours and one 1 hour before the deadline, with the same link as their first email. Subjects are numbered: "REMINDER: …", "2ND REMINDER: …", and so on. It's an account default (Settings → Account) and a per-document setting (`reminders` in REST and MCP), and part of the revision. New installations start with reminders on. Existing ones stay off until an owner turns them on.
 - The "only your signature is missing" email now carries the signer's link.
 
 ### Changed

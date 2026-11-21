@@ -308,15 +308,16 @@ When a signing group completes, the next group (by `order`) is notified in the s
 
 ### Reminders
 
-When a document has reminders on, each signer who has a link and hasn't signed or declined gets a reminder every 3 business days (`services/reminders.ts`):
+When a document has reminders on, each signer who has a link and hasn't signed or declined gets a reminder every 3 business days, and one 24 hours and one 1 hour before the deadline (`services/reminders.ts`):
 
-- Business days are Monday to Friday in the document's timezone. Public holidays are not skipped. Reminders are only sent on business days.
+- Business days are Monday to Friday in the document's timezone. Public holidays are not skipped. Regular reminders are only sent on business days, and only while the deadline is at least 4 days away, so the 24-hour reminder never comes a day after a regular one.
+- The 24-hour and 1-hour reminders go out on any day. Their subject ends with "– expires in 24 hours" or "– expires in 1 hour", and the email gives the deadline's date and time. Each is skipped when the signer's signing email or last reminder came after it was due, so a document sent with less than 24 hours left gets no 24-hour reminder. `signers.deadline_reminders` records which ones went out.
 - The 3 days count from the signer's signing email or their last reminder, automatic or manual.
 - Reminders reuse the signer's link. It is kept sealed with the server secret (AES-256-GCM) in `signers.link_sealed`, and cleared when the link stops working (signed, declined, revoked, expired). Documents sent before this existed get a new link instead.
 - Subjects are numbered: "REMINDER: Please sign: …", then "2ND REMINDER: …", "3RD REMINDER: …".
 - A manual resend makes a new link, counts as a reminder and restarts the 3 days.
-- Each reminder adds a `signer.reminded` event with its number. The update is guarded by the signer's reminder count, so two workers can't send the same reminder.
-- An instance that was stopped catches up with at most one reminder per signer when it starts again.
+- Each reminder adds a `signer.reminded` event with its number, and `hours_before_expiry` for the two before the deadline. The update is guarded by the signer's reminder count, so two workers can't send the same reminder.
+- An instance that was stopped catches up with at most one reminder per signer when it starts again. If it wakes up in the last hour, only the 1-hour reminder goes out.
 
 ## 6. Markdown field engine
 

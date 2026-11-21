@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { addBusinessDays, isBusinessDay, reminderLabel } from "@signed-md/core";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { getAccount, updateAccount } from "../src/services/accounts.ts";
 import { createDocument, getDocument, previewDocument, resendToSigner, sendDocument, updateDocument } from "../src/services/documents.ts";
 import { listEvents } from "../src/services/events.ts";
@@ -49,6 +49,7 @@ describe("automatic reminders", async () => {
       .map((f) => JSON.parse(readFileSync(join(dataDir, "outbox", f), "utf8")) as { to: string; subject: string; text: string; created_at: string })
       .filter((m) => m.to === to)
       .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const lastReminder = (to: string) => mails(to).filter((m) => m.subject.includes("REMINDER")).at(-1)!;
   const reminders = (to: string) => mails(to).filter((m) => m.subject.includes("REMINDER")).length;
   const linkIn = (text: string) => /\/s\/([A-Za-z0-9_-]+)/.exec(text)![1]!;
 
@@ -194,5 +195,75 @@ describe("automatic reminders", async () => {
     expect(reminder.subject).toBe("REMINDER: Please sign: NDA");
     expect(reminder.text).toContain("This is a new link");
     expect(linkIn(reminder.text)).not.toBe(original);
+  });
+
+  describe("before the deadline", () => {
+    const deadline = async (email: string, expires: string, notified = "2026-11-02T10:00:00.000Z") => {
+      const doc = await sentDocument(email);
+      await ctx.db.updateTable("documents").set({ expires_at: expires }).where("id", "=", doc.id).execute();
+      await ctx.db.updateTable("signers").set({ notified_at: notified }).where("document_id", "=", doc.id).execute();
+      return doc;
+    };
+    // The email worker checks the deadline against the clock, so the clock follows the test.
+    const send = async (iso: string) => {
+      vi.useFakeTimers({ toFake: ["Date"], now: at(iso) });
+      try {
+        await sendReminders(ctx, at(iso));
+        await drainJobs(ctx);
+      } finally {
+        vi.useRealTimers();
+      }
+    };
+
+    it("go out 24 hours and 1 hour before it, after the regular ones stop", async () => {
+      const doc = await deadline("dl@client.example", "2026-11-16T17:00:00.000Z"); // Monday 17:00
+      const link = linkIn(mails("dl@client.example")[0]!.text);
+      await send("2026-11-05T10:00:00Z"); // regular, Thursday
+      await send("2026-11-10T10:00:00Z"); // regular, Tuesday: 6 days before the deadline
+      expect(reminders("dl@client.example")).toBe(2);
+      await send("2026-11-13T10:00:00Z"); // the next regular one is due Friday, but the deadline is under 4 days away
+      expect(reminders("dl@client.example")).toBe(2);
+      await send("2026-11-15T16:59:00Z");
+      expect(reminders("dl@client.example")).toBe(2);
+      await send("2026-11-15T17:00:00Z"); // Sunday: 24 hours before
+      await send("2026-11-15T17:30:00Z");
+      let m = mails("dl@client.example").filter((x) => x.subject.includes("REMINDER"));
+      expect(m).toHaveLength(3);
+      expect(m[2]!.subject).toBe("3RD REMINDER: Please sign: NDA – expires in 24 hours");
+      expect(m[2]!.text).toContain("expires in about 24 hours");
+      expect(linkIn(m[2]!.text)).toBe(link);
+      await send("2026-11-16T15:59:00Z");
+      expect(reminders("dl@client.example")).toBe(3);
+      await send("2026-11-16T16:00:00Z");
+      await send("2026-11-16T16:30:00Z");
+      m = mails("dl@client.example").filter((x) => x.subject.includes("REMINDER"));
+      expect(m).toHaveLength(4);
+      expect(m[3]!.subject).toBe("4TH REMINDER: Please sign: NDA – expires in 1 hour");
+      expect(linkIn(m[3]!.text)).toBe(link);
+      const events = await listEvents(ctx.db, doc.id);
+      expect(events.filter((e) => e.type === "signer.reminded").map((e) => e.data.hours_before_expiry ?? null)).toEqual([null, null, 24, 1]);
+    });
+
+    it("also go out on weekends", async () => {
+      await deadline("dlwk@client.example", "2026-11-15T12:00:00.000Z", "2026-11-12T10:00:00.000Z"); // Sunday noon
+      await send("2026-11-14T12:00:00Z"); // Saturday
+      expect(lastReminder("dlwk@client.example").subject).toBe("REMINDER: Please sign: NDA – expires in 24 hours");
+    });
+
+    it("skip the 24-hour one when the document was sent with less time left", async () => {
+      await deadline("dlshort@client.example", "2026-11-13T09:00:00.000Z", "2026-11-12T10:00:00.000Z");
+      await send("2026-11-12T10:30:00Z");
+      expect(reminders("dlshort@client.example")).toBe(0);
+      await send("2026-11-13T08:00:00Z");
+      expect(lastReminder("dlshort@client.example").subject).toBe("REMINDER: Please sign: NDA – expires in 1 hour");
+    });
+
+    it("send only the 1-hour one when an instance wakes up late", async () => {
+      await deadline("dllate@client.example", "2026-11-13T17:00:00.000Z", "2026-11-11T10:00:00.000Z");
+      await send("2026-11-13T16:30:00Z");
+      await send("2026-11-13T16:45:00Z");
+      expect(reminders("dllate@client.example")).toBe(1);
+      expect(lastReminder("dllate@client.example").subject).toContain("expires in 1 hour");
+    });
   });
 });

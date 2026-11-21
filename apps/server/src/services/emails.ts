@@ -24,6 +24,8 @@ export interface EmailJob {
   reminder?: number;
   /** Reminders: true when the email carries a new link (a manual resend). Automatic ones reuse the link. */
   new_link?: boolean;
+  /** A reminder before the deadline: 24 or 1. */
+  expires_in_hours?: number;
 }
 
 async function adminEmails(ctx: Ctx): Promise<string[]> {
@@ -39,6 +41,10 @@ function stillSigning(doc: { status: Parameters<typeof isOpenStatus>[0]; expires
 function longDate(iso: string | null, tz: string): string {
   if (!iso) return "–";
   return new Intl.DateTimeFormat("en-GB", { dateStyle: "long", timeZone: tz }).format(new Date(iso));
+}
+
+function longDateTime(iso: string, tz: string): string {
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: tz, timeZoneName: "short" }).format(new Date(iso));
 }
 
 /** The small Signed.md logo for the footer, while "Powered by Signed.md" is on. */
@@ -165,7 +171,11 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
       const reminder = job.kind === "reminder";
       // Jobs queued before numbered reminders existed were manual resends with a new link.
       const newLink = reminder && job.new_link !== false;
-      const subject = reminder ? `${reminderLabel(job.reminder ?? 1)}: Please sign: ${doc.title}` : `Please sign: ${doc.title}`;
+      const hours = reminder && doc.expires_at ? job.expires_in_hours : undefined;
+      const left = hours === undefined ? "" : hours === 1 ? "1 hour" : `${hours} hours`;
+      const subject = reminder
+        ? `${reminderLabel(job.reminder ?? 1)}: Please sign: ${doc.title}${left ? ` – expires in ${left}` : ""}`
+        : `Please sign: ${doc.title}`;
       msg(signer.email, subject, {
         icon: "document",
         person: sender,
@@ -176,6 +186,7 @@ export async function sendEmailJob(ctx: Ctx, job: EmailJob): Promise<void> {
         // The sender's message replaces the standard line, as in familiar e-signature emails.
         paragraphs: [
           ...(doc.signer_message ? [] : [`Hi ${signer.name}, please review and sign "${doc.title}". It takes a few minutes and works on your phone.`]),
+          ...(left ? [`This document expires in about ${left}, on ${longDateTime(doc.expires_at!, doc.timezone)}. After that it can no longer be signed.`] : []),
           ...(newLink ? ["This is a new link. Any earlier link for this document no longer works."] : []),
         ],
         signers: signerPeople,

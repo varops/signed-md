@@ -184,7 +184,7 @@ Content-Type: application/json
 
 - `values` holds template values. Keys are written without the `$` prefix.
 - `font` is `"serif"` or `"sans-serif"`, for the PDF and the signing page. Without it, the account default (Settings → Branding) is used. It is part of the revision.
-- `reminders` is `true` or `false`. When on, signers who haven't signed get a reminder email every 3 business days (Monday to Friday in the document's timezone), with the same link as their first email. Without it, the account default (Settings → Account) is used. It is part of the revision. Each signer in the response has `reminders_sent` and `last_reminded_at`.
+- `reminders` is `true` or `false`. When on, signers who haven't signed get a reminder email every 3 business days (Monday to Friday in the document's timezone), plus one 24 hours and one 1 hour before the deadline, with the same link as their first email. Without it, the account default (Settings → Account) is used. It is part of the revision. Each signer in the response has `reminders_sent` and `last_reminded_at`.
 - `signers` lists every signer. Each `key` must match the signer keys used in the template. Signers with the same `order` sign in parallel; the next group is notified when the current group is done. Order `0` means any order (everyone signs at once). Use it for every signer or none: a mix of `0` and numbers is refused.
 - Currency values are decimal strings.
 
