@@ -130,6 +130,31 @@ export function dueReminder(s: SignerState, doc: { timezone: string; expires_at:
   return next.getTime() <= t ? { stage: 0, hours: null } : null;
 }
 
+/**
+ * The earliest moment a reminder could be due for this signer, at or after `at`, or null when none
+ * will be. `sendReminders` decides at that moment, so this may be early, never late.
+ */
+export function nextReminderAt(s: SignerState, doc: { timezone: string; expires_at: string | null }, at: Date): Date | null {
+  if (!signerMachine.can(s.status as never, "sign") || !s.token_hash) return null;
+  const lastContact = latest(s.notified_at, s.last_reminded_at);
+  if (!lastContact) return null;
+  const t = at.getTime();
+  const end = doc.expires_at ? Date.parse(doc.expires_at) : null;
+  if (end !== null && t >= end) return null;
+  const candidates: number[] = [];
+  if (end !== null) {
+    for (const r of DEADLINE_REMINDERS) {
+      const from = end - r.hours * HOUR;
+      if (Number(s.deadline_reminders) < r.stage && lastContact < from) candidates.push(Math.max(from, t));
+    }
+  }
+  // A regular reminder that is overdue waits for the next business day in the document's timezone.
+  let regular = Math.max(addBusinessDays(new Date(lastContact), REMINDER_INTERVAL_DAYS, doc.timezone).getTime(), t);
+  while (!isBusinessDay(new Date(regular), doc.timezone)) regular += HOUR;
+  if (end === null || regular <= end - QUIET_BEFORE_DEADLINE_DAYS * 24 * HOUR) candidates.push(regular);
+  return candidates.length ? new Date(Math.min(...candidates)) : null;
+}
+
 function latest(a: string | null, b: string | null): number | null {
   const times = [a, b].filter((x): x is string => x !== null).map(Date.parse);
   return times.length ? Math.max(...times) : null;

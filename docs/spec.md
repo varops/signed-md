@@ -518,6 +518,8 @@ Use database-backed jobs for:
 
 The worker runs in the same process. Every minute it also expires overdue documents and sends due reminders.
 
+After each sweep, and once more when the server stops, the worker writes `DATA_DIR/next-work-at` (`services/schedule.ts`): the next time it has work, as an ISO timestamp, or an empty file when nothing is planned. The time is the earliest of the next due or retried job, the next document to expire and the next reminder. It may be early, never late. It is the current time when work is already due. A disabled account writes an empty file. `node apps/server/src/cli.ts next-work` prints the same time.
+
 On SQLite, a single worker claims jobs with an atomic update. On PostgreSQL, workers claim jobs with `FOR UPDATE SKIP LOCKED`. The job table is the same in both.
 
 Use bounded retries with backoff.

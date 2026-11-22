@@ -6,6 +6,7 @@
  *   node apps/server/src/cli.ts backup ./backups/2026-11-01
  *   node apps/server/src/cli.ts test-email you@acme.com
  *   node apps/server/src/cli.ts reset-password someone@acme.com
+ *   node apps/server/src/cli.ts next-work
  *
  * Uses the same environment variables as the server (DATA_DIR, DATABASE_URL, ...).
  */
@@ -18,6 +19,7 @@ import { getAccount, isSetUp, setup } from "./services/accounts.ts";
 import { createApiKey } from "./services/auth.ts";
 import { renderEmail } from "./services/emailtemplate.ts";
 import { passwordResetLink } from "./services/passwordreset.ts";
+import { nextWorkAt } from "./services/schedule.ts";
 
 function arg(args: string[], name: string): string | undefined {
   const i = args.indexOf(`--${name}`);
@@ -32,7 +34,8 @@ async function main(argv: string[]): Promise<number> {
   api-key [--label <label>] [--user <email>]                                       Create an API key for a user (default: the first owner)
   backup <directory>                                              Copy the database, signing keys, and files
   test-email <address>                                            Send a test email with the SMTP_* settings
-  reset-password <email>                                          Print a one-time link (1 hour) to choose a new password`);
+  reset-password <email>                                          Print a one-time link (1 hour) to choose a new password
+  next-work                                                       Print when the worker next has work (ISO time), or "none"`);
     return 0;
   }
   const ctx = await createContext();
@@ -47,6 +50,11 @@ async function main(argv: string[]): Promise<number> {
         if (await isSetUp(ctx)) throw new Error("Already set up");
         await setup(ctx, { accountName: account, email, ...(password ? { password } : {}), ...(name ? { name } : {}) });
         console.log(`Created account "${account}" with administrator ${email}.`);
+        return 0;
+      }
+      case "next-work": {
+        const next = ctx.config.active ? await nextWorkAt(ctx) : null;
+        console.log(next ? next.toISOString() : "none");
         return 0;
       }
       case "api-key": {

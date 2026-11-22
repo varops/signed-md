@@ -6,6 +6,10 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ## [Unreleased]
 
+### Added
+
+- For platforms that stop idle containers: the server writes the next time its background worker has work (a job, an expiry or a reminder) to `DATA_DIR/next-work-at`, every minute and when it stops, so the platform can start it again in time. `cli.ts next-work` prints it. See "Stopping idle instances" in the self-hosting guide.
+
 ## [1.1.1] – 2026-11-21
 
 A small release for the verifier. `npx signed-md verify` now works from npm, and the package has a proper README.

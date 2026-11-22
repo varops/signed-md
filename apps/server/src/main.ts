@@ -4,6 +4,7 @@ import { startDbBackup } from "./backup.ts";
 import { createContext } from "./bootstrap.ts";
 import { ConfigError, loadConfig } from "./config.ts";
 import { log } from "./log.ts";
+import { writeNextWorkAt } from "./services/schedule.ts";
 import { startWorker } from "./worker.ts";
 
 async function main() {
@@ -33,6 +34,7 @@ async function main() {
     log.info("shutting down", { signal });
     server.close();
     await worker?.stop();
+    if (!worker) await writeNextWorkAt(ctx);
     // Last snapshot after the worker's final writes, so a stopped container is fully backed up.
     await backup?.stop();
     await ctx.close();

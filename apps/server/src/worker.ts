@@ -4,6 +4,7 @@ import { log } from "./log.ts";
 import { type EmailJob, sendEmailJob } from "./services/emails.ts";
 import { finalizeDocument } from "./services/finalize.ts";
 import { sendReminders } from "./services/reminders.ts";
+import { writeNextWorkAt } from "./services/schedule.ts";
 import { expireDocuments } from "./services/signing.ts";
 import { deliverWebhook, markWebhookFailed } from "./services/webhooks.ts";
 
@@ -45,10 +46,14 @@ export interface WorkerHandle {
   stop(): Promise<void>;
 }
 
-/** In-process worker loop. Every minute it also expires overdue documents and sends due reminders. */
+/**
+ * In-process worker loop. Every minute it also expires overdue documents, sends due reminders and
+ * writes DATA_DIR/next-work-at (see services/schedule.ts). It writes that file once more on stop.
+ */
 export function startWorker(ctx: Ctx): WorkerHandle {
   let stopped = false;
   let lastSweep = 0;
+  let nextWork: string | null = null;
   const loop = (async () => {
     while (!stopped) {
       try {
@@ -58,6 +63,7 @@ export function startWorker(ctx: Ctx): WorkerHandle {
           if (n) log.info("expired documents", { count: n });
           const r = await sendReminders(ctx);
           if (r) log.info("sent reminders", { count: r });
+          nextWork = await writeNextWorkAt(ctx, nextWork);
         }
         const ran = await runOneJob(ctx);
         if (!ran) await new Promise((r) => setTimeout(r, ctx.config.workerIntervalMs));
@@ -71,6 +77,8 @@ export function startWorker(ctx: Ctx): WorkerHandle {
     async stop() {
       stopped = true;
       await loop;
+      // The last word before the instance stops: when it next needs to run.
+      await writeNextWorkAt(ctx);
     },
   };
 }

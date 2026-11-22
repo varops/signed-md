@@ -188,6 +188,16 @@ Signed.md builds links as `https://<UNAVATAR_DOMAIN>/<email>?fallback=<ui-avatar
 
 `GET /health` returns `200` with `{"status":"ok"}` when the database is reachable. The Docker image has a built-in health check.
 
+## Stopping idle instances
+
+The background worker only runs while the server runs. If your platform stops idle containers (scale to zero), start the container again in time for its next job:
+
+- When the server stops (`SIGTERM`), it writes the next time it has work to `DATA_DIR/next-work-at`, as an ISO timestamp, or an empty file when nothing is planned. It also updates the file every minute while it runs.
+- Read the file from the stopped container's volume, for example with `docker cp`, and start the container at that time. When it starts, it catches up with what is due.
+- `node apps/server/src/cli.ts next-work` prints the same time.
+
+Without this, retries, expiry notices and reminders wait until the next request wakes the instance. Expired links are refused either way.
+
 ## Security notes
 
 - API keys are stored hashed. Signing tokens are 256-bit, single-signer, stored hashed, and expire with the document.
