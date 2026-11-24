@@ -8,11 +8,14 @@ import { randomToken } from "../crypto.ts";
 import { hashPassword } from "./auth.ts";
 
 export type InlineDocumentsSetting = "allowed" | "needs_approval" | "disabled";
+/** `needs_approval`: an agent (API key, REST or MCP) can send a document only after a person approves that exact revision in the web UI. */
+export type AgentSendsSetting = "allowed" | "needs_approval";
 
 export interface AccountConfig {
   webhook_url: string | null;
   webhook_secret: string;
   inline_documents: InlineDocumentsSetting;
+  agent_sends: AgentSendsSetting;
   default_expiry_days: number;
   timezone: string;
   locale: string;
@@ -47,6 +50,7 @@ export interface Account {
 const DEFAULTS: Omit<AccountConfig, "webhook_secret"> = {
   webhook_url: null,
   inline_documents: "allowed",
+  agent_sends: "allowed",
   default_expiry_days: 14,
   timezone: "UTC",
   locale: "en-US",
@@ -129,7 +133,12 @@ export async function updateAccount(
 ): Promise<Account> {
   requirePermission(actor, "settings.manage");
   const acct = await getAccount(ctx);
+  // The approval rules guard against agents, so only a person in the web UI can change them.
+  if (actor.kind !== "user" && (patch.config?.inline_documents !== undefined || patch.config?.agent_sends !== undefined)) {
+    throw new SignedError("PERMISSION_DENIED", "Approval settings can only be changed by a person in the Signed.md web UI");
+  }
   const config = { ...acct.config, ...patch.config };
+  if (!["allowed", "needs_approval"].includes(config.agent_sends)) throw new SignedError("INVALID_REQUEST", "agent_sends must be allowed or needs_approval");
   if (config.webhook_url) {
     const { assertWebhookUrlShape } = await import("./webhooks.ts");
     assertWebhookUrlShape(ctx, config.webhook_url);
@@ -159,6 +168,7 @@ export function accountView(a: Account) {
     settings: {
       webhook_url: a.config.webhook_url,
       inline_documents: a.config.inline_documents,
+      agent_sends: a.config.agent_sends,
       default_expiry_days: a.config.default_expiry_days,
       reminders: a.config.reminders,
       timezone: a.config.timezone,

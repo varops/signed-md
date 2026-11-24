@@ -8,6 +8,8 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ### Added
 
+- A new setting, "Sending by agents", in Settings. With "Need approval in the UI", an agent (an API key, over REST or MCP) can prepare a document but can't send it until a person approves that exact version on the document page. Sending fails with `DOCUMENT_NOT_APPROVED` until then, and any edit needs a new approval. People can still send from the web UI as before. The default is unchanged: agents send after the user approves in chat. The approval settings can now only be changed in the web UI, never with an API key.
+
 - For platforms that stop idle containers: the server writes the next time its background worker has work (a job, an expiry or a reminder) to `DATA_DIR/next-work-at`, every minute and when it stops, so the platform can start it again in time. `cli.ts next-work` prints it. See "Stopping idle instances" in the self-hosting guide.
 
 ## [1.1.1] – 2026-11-21

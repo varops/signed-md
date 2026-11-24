@@ -107,6 +107,10 @@ export const DocumentSchema = z
     approved_revision: z.string().nullable(),
     approved_by: z.string().nullable(),
     inline_approval: z.object({ required: z.boolean(), approved: z.boolean(), approved_at: z.string().nullable() }).nullable(),
+    send_approval: z
+      .object({ required: z.boolean(), approved: z.boolean(), approved_at: z.string().nullable() })
+      .nullable()
+      .openapi({ description: "Drafts only, when the account requires a person to approve agent sends. Ask the user to approve it in the web UI (links.ui), then send." }),
     expires_in_days: z.number(),
     expires_at: z.string().nullable(),
     timezone: z.string(),
@@ -241,6 +245,7 @@ export const AccountSchema = z
     settings: z.object({
       webhook_url: z.string().nullable(),
       inline_documents: z.enum(["allowed", "needs_approval", "disabled"]),
+      agent_sends: z.enum(["allowed", "needs_approval"]).openapi({ description: "needs_approval: API keys (REST and MCP) can send a document only after a person approves that revision in the web UI." }),
       default_expiry_days: z.number(),
       reminders: z.boolean().openapi({ description: "Default for new documents." }),
       timezone: z.string(),

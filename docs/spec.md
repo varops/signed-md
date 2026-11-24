@@ -427,6 +427,15 @@ The account setting `inline_documents` is `allowed` (default), `needs_approval`,
 - `needs_approval`: sending fails with `DOCUMENT_NOT_APPROVED` until a user approves the exact revision in the UI.
 - `disabled`: creating a document with `content` fails with `INLINE_DISABLED`.
 
+### Sending by agents
+
+The account setting `agent_sends` is `allowed` (default) or `needs_approval`.
+
+- `allowed`: an agent sends after the user approves the previewed revision, for example in chat. The server checks the revision but can't check who approved it (`approved_by` is a statement from the caller).
+- `needs_approval`: an API key (REST or MCP) can send a document only after a person approves that exact revision in the web UI. Until then, sending fails with `DOCUMENT_NOT_APPROVED`, and `auto_send` leaves the document as a draft. Any edit changes the revision, so the approval no longer applies. Anyone who can manage the document can approve it, and the event `document.send_approved` is recorded. Approving an inline document also approves sending it. A person who sends from the web UI needs no separate approval.
+
+Both approval settings can only be changed by a person in the web UI, never with an API key.
+
 In the web UI, a person who manages a template draft can choose "Edit text". After a warning, the draft becomes an inline document (`source: inline`) and its text can change. The template version stays as its starting point, the event `document.converted_to_inline` is recorded, and the inline rules above apply from then on. There is no API or MCP path for this, and it is not offered when inline documents are disabled.
 
 ## 8. Signing security

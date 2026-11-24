@@ -295,6 +295,7 @@ const EVENT_ICONS: Record<string, [keyof typeof ICONS, Tone?]> = {
   "document.updated": ["pencil"],
   "document.approved": ["ok", "success"],
   "document.inline_approved": ["ok", "success"],
+  "document.send_approved": ["ok", "success"],
   "document.converted_to_inline": ["pencil", "warning"],
   "document.sent": ["send"],
   "document.revoked": ["ban", "danger"],

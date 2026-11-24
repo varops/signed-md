@@ -192,6 +192,10 @@ export interface DocumentTable {
   inline_approved_by: string | null;
   inline_approved_at: string | null;
   inline_approved_revision: string | null;
+  /** A person approved this revision in the web UI, so an agent may send it (account setting `agent_sends`). */
+  send_approved_by: string | null;
+  send_approved_at: string | null;
+  send_approved_revision: string | null;
   created_at: string;
   updated_at: string;
   sent_at: string | null;

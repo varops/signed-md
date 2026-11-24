@@ -6,7 +6,7 @@ import type { Actor, Ctx } from "../context.ts";
 import { safeEqual } from "../crypto.ts";
 import { WEBHOOK_EVENTS } from "../http/api.ts";
 import { clientIp, rateLimit } from "../http/ratelimit.ts";
-import { getAccount, isSetUp, newWebhookSecret, setup, updateAccount, type InlineDocumentsSetting } from "../services/accounts.ts";
+import { getAccount, isSetUp, newWebhookSecret, setup, updateAccount, type AgentSendsSetting, type InlineDocumentsSetting } from "../services/accounts.ts";
 import { type LimitHit, limitReached, remaining } from "../services/usage.ts";
 import { IMPORT_ACCEPT, importDocument } from "../services/imports.ts";
 import { changePassword, createApiKey, csrfToken, listApiKeys, login, revokeApiKey, SESSION_SECONDS, sessionActor, sessionCookie } from "../services/auth.ts";
@@ -463,7 +463,14 @@ export function createAdmin(ctx: Ctx) {
                     <div data-field><label for="f-approved_by">Approved by</label><input id="f-approved_by" type="text" name="approved_by" value="${user.label}"></div>
                   </details>
                   <button type="submit" class="w-full main-action">Send for signature</button>
-                  <p class="tiny muted" style="margin:6px 0 0">You're approving revision <code>${preview!.revision.slice(0, 16)}…</code>, the pages you see. Any edit needs a new look.</p></form>`
+                  <p class="tiny muted" style="margin:6px 0 0">You're approving revision <code>${preview!.revision.slice(0, 16)}…</code>, the pages you see. Any edit needs a new look.</p></form>
+                  ${d.send_approval
+                    ? d.send_approval.approved
+                      ? html`<p class="small" style="margin:10px 0 0">${icon("ok")} Approved. An agent can now send this revision.</p>`
+                      : html`<form method="post" action="/documents/${d.id}/approve-send" style="margin-top:10px">${csrfInput(csrf)}<input type="hidden" name="revision" value="${preview!.revision}">
+                          <button type="submit" class="outline w-full">Approve for the agent to send</button>
+                          <p class="tiny muted" style="margin:6px 0 0">Agents can't send on this account until a person approves the document here.</p></form>`
+                    : ""}`
             : html`<p class="small muted">Fix the problems shown on the document, then send.</p>`}
         </section>`
       : html`<section class="panel-block row-stretch" aria-labelledby="status"><h2 id="status">${d.status === "finalized" ? "Signed" : active ? `${signedCount} of ${d.signers.length} signed` : badge(d.status)}</h2>
@@ -649,6 +656,11 @@ export function createAdmin(ctx: Ctx) {
   action("/documents/:id/approve-inline", async (c, b) => {
     const id = c.req.param("id")!;
     await docs.approveInlineDocument(ctx, c.get("user"), id, str(b, "revision"));
+    return `/documents/${id}?msg=approved`;
+  });
+  action("/documents/:id/approve-send", async (c, b) => {
+    const id = c.req.param("id")!;
+    await docs.approveSending(ctx, c.get("user"), id, str(b, "revision"));
     return `/documents/${id}?msg=approved`;
   });
   action("/documents/:id/revoke", async (c, b) => {
@@ -903,6 +915,9 @@ export function createAdmin(ctx: Ctx) {
         <div data-field><label for="f-account-name">Company name</label><input id="f-account-name" type="text" name="name" value="${account.name}"></div>
         <div data-field><label for="f-inline_documents">Inline documents <span class="muted">· documents written without an approved template</span></label>
           <select id="f-inline_documents" name="inline_documents">${(["allowed", "needs_approval", "disabled"] as const).map((o) => html`<option value="${o}" ${account.config.inline_documents === o ? "selected" : ""}>${{ allowed: "Allowed", needs_approval: "Need approval in the UI", disabled: "Disabled" }[o]}</option>`)}</select></div>
+        <div data-field><label for="f-agent_sends">Sending by agents <span class="muted">· API keys, over REST or MCP</span></label>
+          <select id="f-agent_sends" name="agent_sends" aria-describedby="agent_sends-hint">${(["allowed", "needs_approval"] as const).map((o) => html`<option value="${o}" ${account.config.agent_sends === o ? "selected" : ""}>${{ allowed: "Allowed after the user approves in chat", needs_approval: "Need approval in the UI" }[o]}</option>`)}</select>
+          <small data-hint id="agent_sends-hint">With approval in the UI, an agent can prepare a document but can't send it until a person approves that exact version here.</small></div>
         <div class="inline-fields" style="grid-template-columns:1fr 1fr 1fr">
           <div data-field><label for="f-default_expiry_days">Default expiry (days)</label><input id="f-default_expiry_days" type="number" min="1" max="365" name="default_expiry_days" value="${account.config.default_expiry_days}"></div>
           <div data-field><label for="f-timezone">Timezone</label><input id="f-timezone" type="text" name="timezone" value="${account.config.timezone}"></div>
@@ -979,6 +994,7 @@ export function createAdmin(ctx: Ctx) {
         name: str(b, "name"),
         config: {
           inline_documents: str(b, "inline_documents") as InlineDocumentsSetting,
+          agent_sends: str(b, "agent_sends") as AgentSendsSetting,
           default_expiry_days: Number(str(b, "default_expiry_days")),
           timezone: str(b, "timezone").trim() || "UTC",
           locale: str(b, "locale").trim() || "en-US",

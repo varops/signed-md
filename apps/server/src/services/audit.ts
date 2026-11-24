@@ -36,6 +36,7 @@ const DOC_TYPES: Record<string, string> = {
   "document.archived": "archived",
   "document.unarchived": "unarchived",
   "document.inline_approved": "approved the inline document",
+  "document.send_approved": "approved it for the agent to send",
   "document.converted_to_inline": "turned a template draft into an inline document to edit its text",
   "signer.viewed": "opened",
   "signer.downloaded_review_copy": "downloaded a copy for review",

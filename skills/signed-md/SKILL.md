@@ -33,7 +33,7 @@ Follow these steps in order. Do not skip the approval step.
 5. **Fix validation errors.** If `validation.valid` is false, read each error's `code` and `field`, fix it with `signed_update_document` (REST `PATCH /v1/documents/{id}`), and check again. Never work around a constraint. If the user's terms break a rule (for example, a fee below the minimum), tell them.
 6. **Preview.** `signed_preview_document` (REST `GET /v1/documents/{id}/preview`). It returns the agreement Markdown, the values, the signers, the signing order, and a `revision`.
 7. **Ask for approval.** Show the user a short summary: title, the material commercial terms (fees, dates, notice periods), each signer's name and email, and the signing order. Ask them to approve sending. Do not treat silence or a successful preview as approval.
-8. **Send the approved revision.** `signed_send_document` with `approved_revision` (the exact revision you showed) and `approved_by` (for example, `"Ran, in chat"`). You may add a short `message` to signers; if you do, show it to the user with the preview. It can use `{{recipient.name}}`, `{{recipient.first_name}}`, `{{recipient.email}}`, and `{{document.title}}`, filled in per signer. Without it, the account's default message is used. If you get `REVISION_MISMATCH`, the draft changed: preview again and ask again.
+8. **Send the approved revision.** `signed_send_document` with `approved_revision` (the exact revision you showed) and `approved_by` (for example, `"Ran, in chat"`). You may add a short `message` to signers; if you do, show it to the user with the preview. It can use `{{recipient.name}}`, `{{recipient.first_name}}`, `{{recipient.email}}`, and `{{document.title}}`, filled in per signer. Without it, the account's default message is used. If you get `REVISION_MISMATCH`, the draft changed: preview again and ask again. Some accounts also require a person to approve each document in the Signed.md web UI before an agent can send it (`send_approval.required` on the document, or `DOCUMENT_NOT_APPROVED` when sending). Then give the user the document link (`links.ui`), ask them to approve it there, and send once they confirm.
 9. **Report.** Give the user the document ID and status. Signers get their links by email. Never ask for, share, or post signing links.
 10. **Track.** `signed_get_document` (REST `GET /v1/documents/{id}`), or wait for webhooks.
 11. **Fetch the result.** When the status is `finalized`, `signed_get_artifacts` returns short-lived links to the signed PDF and the ZIP package.
@@ -147,7 +147,7 @@ Errors have a stable `code`, a `message`, and `details` with the exact `field`. 
 | `SIGNER_MISSING` | A signer key in the template has no signer. Ask who signs. |
 | `REVISION_MISMATCH` | Preview again and get approval again. |
 | `DOCUMENT_NOT_DRAFT` | It was sent already. Revoke and recreate if the user wants changes. |
-| `DOCUMENT_NOT_APPROVED` | This account requires a person to approve inline documents in the UI. |
+| `DOCUMENT_NOT_APPROVED` | This account requires a person to approve the document in the web UI. Give the user the document link (`links.ui`), then send again once they've approved it. |
 | `INLINE_DISABLED` | Use an approved template. |
 | `DOCUMENT_NOT_FINALIZED` | Wait for `finalized` before fetching artifacts. |
 

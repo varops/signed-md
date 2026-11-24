@@ -202,6 +202,7 @@ Without this, retries, expiry notices and reminders wait until the next request 
 
 - API keys are stored hashed. Signing tokens are 256-bit, single-signer, stored hashed, and expire with the document.
 - Template approval is only possible in the web UI by a logged-in person. API keys and MCP cannot approve.
+- To require a person's approval for every document an agent sends, set "Sending by agents" to "Need approval in the UI" in Settings.
 - Webhook targets must be public `https://` URLs. The resolved IP is checked at connect time, which blocks DNS rebinding.
 - Markdown is sanitised. Raw HTML in templates is dropped. Values are escaped before rendering.
 - Email access is not identity verification. The evidence and the PDF say so.

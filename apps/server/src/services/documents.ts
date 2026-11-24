@@ -20,7 +20,7 @@ import { type Database, type DocumentTable, enqueueJob, newId, now, type SignerT
 import type { Kysely, Selectable, Transaction } from "kysely";
 import { type Actor, actorRef, type Ctx } from "../context.ts";
 import { randomToken, seal, sha256 } from "../crypto.ts";
-import { getAccount } from "./accounts.ts";
+import { type AccountConfig, getAccount } from "./accounts.ts";
 import { can, requireManageDocument, requirePermission, requireReadDocument, userIdOf } from "./permissions.ts";
 import { userById } from "./team.ts";
 import { CONTRACT_FONT_NAMES, type ContractFont, fontOf, isContractFont } from "./fonts.ts";
@@ -272,6 +272,9 @@ export async function createDocument(ctx: Ctx, actor: Actor, input: CreateDocume
     inline_approved_by: null,
     inline_approved_at: null,
     inline_approved_revision: null,
+    send_approved_by: null,
+    send_approved_at: null,
+    send_approved_revision: null,
     created_at: t,
     updated_at: t,
     sent_at: null,
@@ -300,6 +303,12 @@ export async function createDocument(ctx: Ctx, actor: Actor, input: CreateDocume
   if (input.auto_send) {
     if (!prepared.valid) {
       throw new SignedError(prepared.issues[0]!.code, "Document was created as a draft but cannot be auto-sent because it is not valid", prepared.issues);
+    }
+    if (actor.kind === "apikey" && account.config.agent_sends === "needs_approval") {
+      throw new SignedError(
+        "DOCUMENT_NOT_APPROVED",
+        `Document ${id} was created as a draft but cannot be auto-sent: this account requires a person to approve it in the Signed.md web UI first (${ctx.config.publicUrl}/documents/${id}).`,
+      );
     }
     return sendDocument(ctx, actor, id, {
       approved_revision: prepared.revision,
@@ -374,13 +383,18 @@ export interface ValidationResult {
   warnings: Issue[];
 }
 
-function warningsFor(ctx: { inlineSetting: string }, doc: DocRow): Issue[] {
+type ApprovalSettings = Pick<AccountConfig, "inline_documents" | "agent_sends">;
+
+function warningsFor(settings: ApprovalSettings, doc: DocRow): Issue[] {
   const w: Issue[] = [];
   if (doc.source_kind === "inline") {
     w.push({ code: "INVALID_REQUEST", message: "Inline document: no approved template protects this legal language." });
-    if (ctx.inlineSetting === "needs_approval" && doc.inline_approved_revision !== doc.revision) {
+    if (settings.inline_documents === "needs_approval" && doc.inline_approved_revision !== doc.revision) {
       w.push({ code: "DOCUMENT_NOT_APPROVED", message: "This account requires a person to approve inline documents in the web UI before sending." });
     }
+  }
+  if (settings.agent_sends === "needs_approval" && doc.send_approved_revision !== doc.revision) {
+    w.push({ code: "DOCUMENT_NOT_APPROVED", message: "This account requires a person to approve each document in the web UI before an agent can send it." });
   }
   return w;
 }
@@ -390,7 +404,7 @@ export async function validateDocument(ctx: Ctx, actor: Actor, id: string): Prom
   requireReadDocument(actor, doc);
   const account = await getAccount(ctx);
   const prepared = prepareFrom(doc, signerInputs(await loadSigners(ctx.db, id)));
-  return { valid: prepared.valid, revision: prepared.revision, errors: prepared.issues, warnings: warningsFor({ inlineSetting: account.config.inline_documents }, doc) };
+  return { valid: prepared.valid, revision: prepared.revision, errors: prepared.issues, warnings: warningsFor(account.config, doc) };
 }
 
 export interface PreviewResult extends ValidationResult {
@@ -444,7 +458,7 @@ export async function previewDocument(ctx: Ctx, actor: Actor, id: string): Promi
     valid: prepared.valid,
     revision: prepared.revision,
     errors: prepared.issues,
-    warnings: warningsFor({ inlineSetting: account.config.inline_documents }, doc),
+    warnings: warningsFor(account.config, doc),
     markdown: prepared.content,
     html: renderHtml(prepared.content, {
       fields,
@@ -506,6 +520,14 @@ export async function sendDocument(
       if (account.config.inline_documents === "needs_approval" && doc.inline_approved_revision !== prepared.revision) {
         throw new SignedError("DOCUMENT_NOT_APPROVED", "A person must approve this inline document in the Signed.md web UI before it can be sent.");
       }
+    }
+    // Agents can't send until a person approves this exact revision in the web UI. A person sending
+    // in the web UI is the approval.
+    if (actor.kind === "apikey" && account.config.agent_sends === "needs_approval" && doc.send_approved_revision !== prepared.revision) {
+      throw new SignedError(
+        "DOCUMENT_NOT_APPROVED",
+        `A person must approve this document in the Signed.md web UI before an agent can send it. Ask the user to open ${ctx.config.publicUrl}/documents/${id} and approve it, then send again.`,
+      );
     }
 
     const t = now();
@@ -707,10 +729,39 @@ export async function approveInlineDocument(ctx: Ctx, actor: Actor, id: string, 
     if (doc.revision !== revision) throw new SignedError("REVISION_MISMATCH", "The draft changed. Review it again.");
     await trx
       .updateTable("documents")
-      .set({ inline_approved_by: actorRef(actor), inline_approved_at: now(), inline_approved_revision: revision })
+      // Approving the text also approves sending it.
+      .set({
+        inline_approved_by: actorRef(actor),
+        inline_approved_at: now(),
+        inline_approved_revision: revision,
+        send_approved_by: actorRef(actor),
+        send_approved_at: now(),
+        send_approved_revision: revision,
+      })
       .where("id", "=", id)
       .execute();
     await appendEvent(trx, id, "document.inline_approved", actor, { revision });
+  });
+  return getDocument(ctx, actor, id);
+}
+
+/**
+ * UI only: a person approves this revision, so an agent can send it when the account requires
+ * approval for agent sends. Anyone who can manage the document can approve it.
+ */
+export async function approveSending(ctx: Ctx, actor: Actor, id: string, revision: string): Promise<DocumentView> {
+  if (actor.kind !== "user") throw new SignedError("PERMISSION_DENIED", "Only a person can approve sending, in the Signed.md web UI");
+  await ctx.db.transaction().execute(async (trx) => {
+    const doc = await lockDocument(ctx, trx, id);
+    requireManageDocument(actor, doc);
+    if (doc.status !== "draft") throw new SignedError("DOCUMENT_NOT_DRAFT", "Only drafts can be approved");
+    if (doc.revision !== revision) throw new SignedError("REVISION_MISMATCH", "The draft changed. Review it again.");
+    await trx
+      .updateTable("documents")
+      .set({ send_approved_by: actorRef(actor), send_approved_at: now(), send_approved_revision: revision })
+      .where("id", "=", id)
+      .execute();
+    await appendEvent(trx, id, "document.send_approved", actor, { revision });
   });
   return getDocument(ctx, actor, id);
 }
@@ -732,7 +783,16 @@ export async function convertToInline(ctx: Ctx, actor: Actor, id: string): Promi
     if (doc.source_kind === "inline") return;
     await trx
       .updateTable("documents")
-      .set({ source_kind: "inline", inline_approved_by: null, inline_approved_at: null, inline_approved_revision: null, updated_at: now() })
+      .set({
+        source_kind: "inline",
+        inline_approved_by: null,
+        inline_approved_at: null,
+        inline_approved_revision: null,
+        send_approved_by: null,
+        send_approved_at: null,
+        send_approved_revision: null,
+        updated_at: now(),
+      })
       .where("id", "=", id)
       .execute();
     await appendEvent(trx, id, "document.converted_to_inline", actor, { template_version_id: doc.template_version_id, revision: doc.revision });
@@ -774,6 +834,8 @@ export interface DocumentView {
   approved_revision: string | null;
   approved_by: string | null;
   inline_approval: { required: boolean; approved: boolean; approved_at: string | null } | null;
+  /** Drafts only, when the account requires a person to approve agent sends. */
+  send_approval: { required: boolean; approved: boolean; approved_at: string | null } | null;
   expires_in_days: number;
   expires_at: string | null;
   timezone: string;
@@ -800,10 +862,10 @@ export async function getDocument(ctx: Ctx, actor: Actor, id: string): Promise<D
   const doc = await loadDocument(ctx.db, id);
   requireReadDocument(actor, doc);
   const signers = await loadSigners(ctx.db, id);
-  return documentView(ctx, doc, signers, (await getAccount(ctx)).config.inline_documents);
+  return documentView(ctx, doc, signers, (await getAccount(ctx)).config);
 }
 
-export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], inlineSetting: string): Promise<DocumentView> {
+export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], settings: ApprovalSettings): Promise<DocumentView> {
   const active = isOpenStatus(doc.status);
   const unsigned = signers.filter((s) => s.status !== "signed");
   const currentGroup = active && unsigned.length > 0 ? Math.min(...unsigned.map((s) => Number(s.signing_order))) : null;
@@ -849,9 +911,17 @@ export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], 
     inline_approval:
       doc.source_kind === "inline"
         ? {
-            required: inlineSetting === "needs_approval",
+            required: settings.inline_documents === "needs_approval",
             approved: doc.inline_approved_revision !== null && doc.inline_approved_revision === doc.revision,
             approved_at: doc.inline_approved_at,
+          }
+        : null,
+    send_approval:
+      doc.status === "draft" && settings.agent_sends === "needs_approval"
+        ? {
+            required: true,
+            approved: doc.send_approved_revision !== null && doc.send_approved_revision === doc.revision,
+            approved_at: doc.send_approved_at,
           }
         : null,
     expires_in_days: Number(doc.expires_in_days),
@@ -937,7 +1007,7 @@ export async function listDocuments(ctx: Ctx, actor: Actor, opts: ListDocumentsO
   const more = rows.length > limit;
   if (newer && !more) return listDocuments(ctx, actor, { ...opts, after: undefined });
   const page = newer ? rows.slice(0, limit).reverse() : rows.slice(0, limit);
-  const setting = (await getAccount(ctx)).config.inline_documents;
+  const setting = (await getAccount(ctx)).config;
   const data = await Promise.all(page.map(async (d) => documentView(ctx, d, await loadSigners(ctx.db, d.id), setting)));
   const first = page[0], last = page[page.length - 1];
   return {

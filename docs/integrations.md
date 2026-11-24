@@ -287,6 +287,8 @@ The server rejects sending if the draft changed after the approved preview (`REV
 
 `approved_by` is recorded in the evidence. It is a statement from the caller, not a verified identity.
 
+To make sure a person approves every document an agent sends, set "Sending by agents" to "Need approval in the UI" in Settings (`agent_sends: needs_approval`). The agent can still create and preview drafts, but sending fails with `DOCUMENT_NOT_APPROVED` until a person approves that exact revision in the web UI. The document shows `send_approval: { required, approved, approved_at }` so the agent knows to wait, and the document's `links.ui` is the page where the person approves it.
+
 The operation must support idempotency.
 
 Agents must not treat a successful preview as authorisation to send.
@@ -439,7 +441,7 @@ Human approves
 Agent sends approved revision
 ```
 
-For explicitly authorised automated workflows, `auto_send` may bypass interactive approval.
+For explicitly authorised automated workflows, `auto_send` may bypass interactive approval. It can't bypass "Need approval in the UI": with that setting, the document is created as a draft and the request fails with `DOCUMENT_NOT_APPROVED`.
 
 Such authorisation belongs to the calling system, and the service must still enforce template constraints and API permissions.
 
@@ -484,7 +486,7 @@ Examples:
 | `UNAUTHENTICATED` | Missing or invalid API key |
 | `TEMPLATE_NOT_APPROVED` | Template version is waiting for human approval |
 | `INLINE_DISABLED` | Inline documents are disabled for this account |
-| `DOCUMENT_NOT_APPROVED` | Inline document needs human approval in the UI before sending |
+| `DOCUMENT_NOT_APPROVED` | A person must approve the document in the web UI before sending (inline documents, or agent sends when the account requires it) |
 | `FIELD_REQUIRED` | Required field is missing |
 | `FIELD_INVALID` | Field value violates its schema |
 | `FIELD_UNKNOWN` | A value was supplied for a key the template does not use |

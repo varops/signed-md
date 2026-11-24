@@ -345,6 +345,14 @@ const m010: Migration = {
   },
 };
 
+const m011: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema.alterTable("documents").addColumn("send_approved_by", "text").execute();
+    await db.schema.alterTable("documents").addColumn("send_approved_at", "text").execute();
+    await db.schema.alterTable("documents").addColumn("send_approved_revision", "text").execute();
+  },
+};
+
 export const migrations: Record<string, Migration> = {
   "001_initial": m001,
   "002_signer_message": m002,
@@ -356,6 +364,7 @@ export const migrations: Record<string, Migration> = {
   "008_password_resets": m008,
   "009_reminders": m009,
   "010_deadline_reminders": m010,
+  "011_send_approval": m011,
 };
 
 export const migrationProvider: MigrationProvider = {
