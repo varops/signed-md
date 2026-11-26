@@ -6,6 +6,10 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ## [Unreleased]
 
+### Changed
+
+- Small internal changes. Self-hosted servers work as before.
+
 ## [1.2.0] – 2026-11-26
 
 Agents can be made to wait for a person's approval before sending, and the server starts about three times faster, which helps on platforms that stop idle containers.
