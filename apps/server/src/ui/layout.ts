@@ -1,6 +1,6 @@
 import { html, raw } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
-import { HOSTED_APP_URL } from "../hosted.ts";
+import { hostedAppLink } from "../hosted.ts";
 import { initialsOf } from "../services/avatars.ts";
 
 export type H = HtmlEscapedString | Promise<HtmlEscapedString>;
@@ -165,7 +165,7 @@ function userMenu(user: NonNullable<ShellOptions["user"]>, csrf: string): H {
     <button type="button" id="user-trigger" class="ghost" popovertarget="user-pop" aria-haspopup="menu" aria-label="Account: ${user.name}, ${user.email}">${avatarFigure(user.name, user.avatar, "small")}<span class="user-text" aria-hidden="true"><strong>${user.name}</strong><span class="tiny muted">${role}</span></span>${icon("chevronsUpDown")}</button>
     <div popover id="user-pop" class="account-pop" role="menu" aria-labelledby="user-trigger">
       <div class="account-head" aria-hidden="true">${avatarFigure(user.name, user.avatar)}<p><strong>${user.name}</strong><span class="small muted">${user.email}</span></p></div>
-      ${hosted ? html`<a role="menuitem" href="${HOSTED_APP_URL}/account">${icon("account")} Manage account</a>` : html`<a role="menuitem" href="/settings">${icon("account")} Your settings</a>`}
+      ${hosted ? html`<a role="menuitem" href="${hostedAppLink("/account")}">${icon("account")} Manage account</a>` : html`<a role="menuitem" href="/settings">${icon("account")} Your settings</a>`}
       <form method="post" action="/logout" role="none">${csrfInput(csrf)}<button type="submit" role="menuitem" class="ghost">${icon("logout")} Log out</button></form>
     </div>
   </ot-dropdown>`;

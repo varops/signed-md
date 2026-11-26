@@ -2,15 +2,12 @@ import { SignedError } from "@signed-md/core";
 import type { Database } from "@signed-md/db";
 import { type Kysely, sql } from "kysely";
 import type { Ctx } from "../context.ts";
-import { HOSTED_APP_URL } from "../hosted.ts";
 
 /**
  * Plan limits on sent contracts, for the hosted service. MONTHLY_LIMIT and TOTAL_LIMIT default to
  * -1 (no limit), so self-hosted installations never hit them. Each sent contract adds one to the
  * counter for its calendar month (UTC).
  */
-
-const BILLING_URL = `${HOSTED_APP_URL}/billing`;
 
 /** The current calendar month, YYYY-MM, in UTC. */
 export function currentPeriod(at = new Date()): string {
@@ -43,7 +40,7 @@ export interface LimitHit {
 
 /** Where to upgrade. app.signed.md shows the right plans for this workspace and user. */
 export function upgradeUrl(ctx: Ctx, reason: "limit" | "usage" = "limit"): string {
-  return `${BILLING_URL}?reason=${reason}&workspace=${encodeURIComponent(new URL(ctx.config.publicUrl).host)}`;
+  return `${ctx.config.hostedAppUrl}/billing?${new URLSearchParams({ reason, workspace: new URL(ctx.config.publicUrl).host })}`;
 }
 
 export interface Remaining {

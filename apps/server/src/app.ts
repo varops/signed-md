@@ -15,6 +15,7 @@ import { avatarOrigin } from "./services/avatars.ts";
 import { readLogo } from "./services/branding.ts";
 import { checkDownloadSignature, readArtifact } from "./services/finalize.ts";
 import { createAdmin } from "./ui/admin.ts";
+import { setHostedApp } from "./hosted.ts";
 import { asset, logo, setAssetVersion, setBranding, setHosted, setSourceUrl, shell } from "./ui/layout.ts";
 import { sha256 } from "./crypto.ts";
 import { createSigningRoutes } from "./ui/signing.ts";
@@ -69,6 +70,7 @@ export function createApp(ctx: Ctx) {
   setSourceUrl(ctx.config.sourceUrl);
   setBranding(ctx.config.branding);
   setHosted(ctx.config.hosted);
+  setHostedApp(ctx.config.hostedAppUrl, ctx.config.publicUrl);
 
   // Email previews set their own, stricter policy that allows same-origin framing.
   const EMAIL_PREVIEW = /^\/(outbox\/[A-Za-z0-9-]+\/html|settings\/branding\/preview)$/;

@@ -22,7 +22,7 @@ import { readLogo, removeLogo, setBannerAndAvatars, setContractFont, setDefaultM
 import { CONTRACT_FONTS, CONTRACT_FONT_NAMES, type ContractFont } from "../services/fonts.ts";
 import { avatarOrigin, avatarUrl, emailAvatar, initialsOf } from "../services/avatars.ts";
 import { renderEmail } from "../services/emailtemplate.ts";
-import { HOSTED_APP_URL } from "../hosted.ts";
+import { hostedAppLink } from "../hosted.ts";
 import { brandAttachment } from "../services/emails.ts";
 import { MESSAGE_VARIABLES, personalizeMessage } from "../services/messagevars.ts";
 import { type FormBody, parseSigners, parseValues, signerRows, str, valueInput } from "./forms.ts";
@@ -1174,7 +1174,7 @@ export function createAdmin(ctx: Ctx) {
               <small data-hint id="banner-hint">Text and button colours adjust automatically for contrast.</small></div>
             <label class="check"><input type="checkbox" name="avatars" ${account.config.branding.avatars ? "checked" : ""}> <span>Show avatars in emails and in this app<br><span class="tiny muted">Pictures come from ${ctx.config.avatarProvider === "gravatar" ? "Gravatar" : "unavatar.io"}${!["https://unavatar.io", "https://gravatar.com/avatar"].includes(ctx.config.avatarBaseUrl) ? html` through <code>${new URL(ctx.config.avatarBaseUrl).host}</code>` : ""}. This shares ${ctx.config.avatarProvider === "gravatar" ? "a hash of each email address" : "email addresses"} with that service, and email clients load the pictures from it. Without a picture, initials are shown.</span></span></label>
             ${ctx.config.hosted
-              ? html`<label class="check"><input type="checkbox" ${ctx.config.branding ? "checked" : ""} disabled> <span>Show “Powered by Signed.md” in emails and on signing pages<br><span class="tiny muted">${ctx.config.branding ? html`Included on your plan. <a class="text-link" href="${HOSTED_APP_URL}/billing">Upgrade</a> to remove it.` : "Removed on your plan."}</span></span></label>`
+              ? html`<label class="check"><input type="checkbox" ${ctx.config.branding ? "checked" : ""} disabled> <span>Show “Powered by Signed.md” in emails and on signing pages<br><span class="tiny muted">${ctx.config.branding ? html`Included on your plan. <a class="text-link" href="${hostedAppLink("/billing")}">Upgrade</a> to remove it.` : "Removed on your plan."}</span></span></label>`
               : ""}
             <button type="submit" style="margin-top:12px">Save</button>
           </form>

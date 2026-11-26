@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path";
-import { HOSTED_APP_URL } from "./hosted.ts";
+import { DEFAULT_HOSTED_APP_URL } from "./hosted.ts";
 
 export interface SmtpConfig {
   host: string;
@@ -56,6 +56,8 @@ export interface Config {
   allowEmailLogin: boolean;
   /** Our hosted service: needs SMTP, and hides the signing key settings and the Outbox. */
   hosted: boolean;
+  /** The hosted app (HOSTED_APP_URL, hidden): account, billing and sign-in links. */
+  hostedAppUrl: string;
   /** Plan limits on sent contracts, per calendar month (UTC) and in total. -1 means no limit. */
   monthlyLimit: number;
   totalLimit: number;
@@ -184,6 +186,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const hosted = bool(env.HOSTED);
   if (hosted && !smtp) throw new ConfigError("HOSTED=true needs SMTP_HOST");
 
+  const hostedAppUrl = (env.HOSTED_APP_URL ?? "").trim().replace(/\/+$/, "") || DEFAULT_HOSTED_APP_URL;
+  if (!/^https?:\/\/[^/\s]+$/.test(hostedAppUrl)) throw new ConfigError(`HOSTED_APP_URL must be an http(s) origin, got '${hostedAppUrl}'`);
   const oauthLink = (name: string, hostedDefault: string): string | null => {
     const raw = (env[name] ?? "").trim();
     if (!raw) return hosted ? hostedDefault : null;
@@ -191,8 +195,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     return raw;
   };
   const oauth = {
-    google: oauthLink("OAUTH_GOOGLE_URL", `${HOSTED_APP_URL}/oauth/google`),
-    microsoft: oauthLink("OAUTH_MICROSOFT_URL", `${HOSTED_APP_URL}/oauth/microsoft`),
+    google: oauthLink("OAUTH_GOOGLE_URL", `${hostedAppUrl}/oauth/google`),
+    microsoft: oauthLink("OAUTH_MICROSOFT_URL", `${hostedAppUrl}/oauth/microsoft`),
   };
 
   const allowEmailLogin = bool(env.ALLOW_EMAIL_LOGIN, true);
@@ -220,6 +224,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     branding: bool(env.BRANDING, true),
     active: bool(env.ACTIVE, true),
     hosted,
+    hostedAppUrl,
     cookieDomain,
     cookieHashKey,
     oauth,

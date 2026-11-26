@@ -146,6 +146,13 @@ describe("login with Google or Microsoft", () => {
     expect(() => loadConfig({ ALLOW_EMAIL_LOGIN: "false" })).toThrow(/needs OAUTH_GOOGLE_URL or OAUTH_MICROSOFT_URL/);
   });
 
+  it("follow HOSTED_APP_URL, for test workspaces with a test app", () => {
+    const test = loadConfig({ HOSTED: "true", SMTP_HOST: "smtp.x", HOSTED_APP_URL: "https://app.test.signed.md/" });
+    expect(test.hostedAppUrl).toBe("https://app.test.signed.md");
+    expect(test.oauth.google).toBe("https://app.test.signed.md/oauth/google");
+    expect(() => loadConfig({ HOSTED_APP_URL: "https://app.test.signed.md/account" })).toThrow(/HOSTED_APP_URL must be an http\(s\) origin/);
+  });
+
   it("are the only way in with ALLOW_EMAIL_LOGIN=false", async () => {
     const { ctx, user } = await testContext({ HOSTED: "true", ALLOW_EMAIL_LOGIN: "false", SMTP_HOST: "smtp.host.example" });
     const app = createApp(ctx);
@@ -219,7 +226,7 @@ describe("account menu", () => {
     const hosted = await testContext({ HOSTED: "true", SMTP_HOST: "smtp.host.example" });
     const page = await (await createApp(hosted.ctx).request("/documents", { headers: { cookie: `smd_session=${await createSession(hosted.ctx, hosted.user.id)}` } })).text();
     expect(page).toContain('class="user-menu"');
-    expect(page).toContain('href="https://app.signed.md/account"');
+    expect(page).toContain(`href="https://app.signed.md/account?workspace=${encodeURIComponent(new URL(hosted.ctx.config.publicUrl).host)}"`);
     expect(page).toMatch(/action="\/logout"/);
     expect(page).toContain("unavatar.io/admin%40automaze.example");
     expect(page).not.toContain(">Outbox<");
