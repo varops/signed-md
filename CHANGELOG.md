@@ -6,6 +6,8 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ## [Unreleased]
 
+## [1.2.1] – 2026-11-26
+
 ### Changed
 
 - Small internal changes. Self-hosted servers work as before.
