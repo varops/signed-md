@@ -1,6 +1,6 @@
 {
   "name": "signed-md",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Verify Signed.md completion packages offline.",
   "type": "module",
   "bin": {

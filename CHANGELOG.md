@@ -6,6 +6,8 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 ## [Unreleased]
 
+Agents can be made to wait for a person's approval before sending, and the server starts about three times faster, which helps on platforms that stop idle containers.
+
 ### Added
 
 - A new setting, "Sending by agents", in Settings. With "Need approval in the UI", an agent (an API key, over REST or MCP) can prepare a document but can't send it until a person approves that exact version on the document page. Sending fails with `DOCUMENT_NOT_APPROVED` until then, and any edit needs a new approval. People can still send from the web UI as before. The default is unchanged: agents send after the user approves in chat. The approval settings can now only be changed in the web UI, never with an API key.
