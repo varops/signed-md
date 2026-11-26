@@ -3,7 +3,6 @@ import { dirname } from "node:path";
 import SQLite from "better-sqlite3";
 import { Kysely, PostgresDialect, SqliteDialect, sql } from "kysely";
 import { Migrator } from "kysely/migration";
-import pg from "pg";
 import { migrationProvider } from "./migrations.ts";
 import type { Database } from "./schema.ts";
 
@@ -24,7 +23,8 @@ export interface Db {
  */
 export function openDatabase(url: string): Db {
   if (url.startsWith("postgres://") || url.startsWith("postgresql://")) {
-    const pool = new pg.Pool({ connectionString: url, max: 10 });
+    // The Postgres driver loads on the first query, so SQLite installs start faster.
+    const pool = async () => new (await import("pg")).default.Pool({ connectionString: url, max: 10 });
     const db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
     return { db, dialect: "postgres", close: () => db.destroy() };
   }

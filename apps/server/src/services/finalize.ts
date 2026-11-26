@@ -18,7 +18,6 @@ import { appendEvent, listEvents } from "./events.ts";
 import { loadDocument, loadSigners, lockDocument } from "./documents.ts";
 import { renderPdf } from "./pdf.ts";
 import { fontOf } from "./fonts.ts";
-import { certificatePem, pdfIdentity, signPdf } from "./pdfsign.ts";
 import { requestTimestamp } from "./tsa.ts";
 import { createHash } from "node:crypto";
 import { log } from "../log.ts";
@@ -67,6 +66,8 @@ export async function finalizeDocument(ctx: Ctx, documentId: string): Promise<vo
   // Reuse a PDF from an earlier, interrupted attempt so its hash in the evidence stays correct.
   const dir = `documents/${documentId}`;
   const existing = await ctx.storage.read(`${dir}/signed.pdf`).catch(() => null);
+  // PAdES sealing (node-forge, @signpdf) loads on the first completion, not at start-up.
+  const { certificatePem, pdfIdentity, signPdf } = await import("./pdfsign.ts");
   const identity = pdfIdentity(ctx.config.dataDir, account.name);
   const owner = doc.owner_user_id ? await ctx.db.selectFrom("users").select(["name", "email"]).where("id", "=", doc.owner_user_id).executeTakeFirst() : undefined;
   // The certificate (inside the PDF) states that timestamps are present only when the authority answers now.

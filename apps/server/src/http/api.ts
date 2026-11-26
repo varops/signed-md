@@ -14,6 +14,7 @@ import * as tpl from "../services/templates.ts";
 import * as folders from "../services/folders.ts";
 import { errorResponse, statusFor } from "./errors.ts";
 import { rateLimit } from "./ratelimit.ts";
+import { WEBHOOK_EVENTS } from "../services/webhooks.ts";
 import * as S from "./schemas.ts";
 
 type Env = { Variables: { actor: Actor } };
@@ -26,7 +27,6 @@ const idemHeader = z.object({ "idempotency-key": z.string().max(200).optional().
 const security = [{ bearerAuth: [] }];
 const common = { 401: err("Missing or invalid API key"), 429: err("Rate limited") };
 
-export const WEBHOOK_EVENTS = ["document.awaiting_last_signer", "document.signed", "document.finalized", "document.declined"];
 
 /** Bearer API key authentication. Session cookies are not accepted on the API. */
 export function apiAuth(ctx: Ctx, via: "api" | "mcp"): MiddlewareHandler<Env> {

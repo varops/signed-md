@@ -3,7 +3,7 @@ import { isIP } from "node:net";
 import { deliveryMachine, SignedError } from "@signed-md/core";
 import { type Database, enqueueJob, newId, now } from "@signed-md/db";
 import type { Kysely, Transaction } from "kysely";
-import { Agent, fetch } from "undici";
+import type { Agent } from "undici";
 import type { Ctx } from "../context.ts";
 import { hmacHex } from "../crypto.ts";
 import { getAccount } from "./accounts.ts";
@@ -13,6 +13,8 @@ export type WebhookEventType =
   | "document.signed"
   | "document.finalized"
   | "document.declined";
+
+export const WEBHOOK_EVENTS: WebhookEventType[] = ["document.awaiting_last_signer", "document.signed", "document.finalized", "document.declined"];
 
 /** Checks that do not need the network: scheme, credentials, obvious internal hosts. */
 export function assertWebhookUrlShape(ctx: Ctx, url: string): void {
@@ -58,7 +60,9 @@ export function isPrivateAddress(ip: string): boolean {
  * HTTP agent that checks the resolved IP at connect time. This blocks DNS rebinding:
  * the address that is checked is the address that is used.
  */
-function safeAgent(allowPrivate: boolean): Agent {
+async function safeAgent(allowPrivate: boolean): Promise<Agent> {
+  // undici loads on the first delivery, not at start-up.
+  const { Agent } = await import("./undici.ts");
   return new Agent({
     connect: {
       lookup(hostname, options, cb) {
@@ -133,7 +137,7 @@ export async function deliverWebhook(ctx: Ctx, deliveryId: string): Promise<void
   const account = await getAccount(ctx);
   const allowPrivate = ctx.config.allowInsecureWebhooks;
   if (!agent || agentPrivate !== allowPrivate) {
-    agent = safeAgent(allowPrivate);
+    agent = await safeAgent(allowPrivate);
     agentPrivate = allowPrivate;
   }
 
@@ -141,6 +145,7 @@ export async function deliverWebhook(ctx: Ctx, deliveryId: string): Promise<void
   let error: string | null = null;
   try {
     assertWebhookUrlShape(ctx, d.url);
+    const { fetch } = await import("./undici.ts");
     const res = await fetch(d.url, {
       method: "POST",
       body: d.body,

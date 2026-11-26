@@ -226,6 +226,9 @@ importers:
       aws4fetch:
         specifier: ^1.0.20
         version: 1.0.20
+      better-sqlite3:
+        specifier: ^13.0.3
+        version: 13.0.3
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
@@ -275,6 +278,9 @@ importers:
       '@types/nodemailer':
         specifier: ^8.0.2
         version: 8.0.2
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
       signed-md:
         specifier: workspace:*
         version: link:../../packages/verify

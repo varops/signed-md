@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { der, derDecode } from "@signed-md/core/der";
 import { OID, parseTimestampToken } from "@signed-md/core/cms";
-import { fetch } from "undici";
 
 /**
  * RFC 3161 timestamp client. Only a SHA-256 hash leaves the server, never the document.
@@ -16,6 +15,7 @@ export async function requestTimestamp(url: string, hash: Uint8Array, timeoutMs 
     der.int(nonce),
     der.bool(true),
   );
+  const { fetch } = await import("./undici.ts");
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/timestamp-query", accept: "application/timestamp-reply" },

@@ -1,5 +1,5 @@
 import { SignedError } from "@signed-md/core";
-import { type Format, formatFromBytes, formatFromExtension, toMarkdownBytes } from "@firecrawl/anydoc";
+import type { Format } from "@firecrawl/anydoc";
 
 /**
  * Start a template or an inline document from an existing contract: Word (.docx, .doc), OpenDocument,
@@ -22,6 +22,8 @@ export async function importDocument(fileName: string, bytes: Uint8Array): Promi
   if (bytes.length === 0) throw new SignedError("INVALID_REQUEST", "Choose a file to import");
   if (bytes.length > MAX_IMPORT_BYTES) throw new SignedError("INVALID_REQUEST", "The file must be at most 3 MB");
   const ext = fileName.includes(".") ? fileName.split(".").pop()! : "";
+  // AnyDoc loads on the first import, not at start-up.
+  const { formatFromBytes, formatFromExtension, toMarkdownBytes } = await import("@firecrawl/anydoc");
   const format = formatFromBytes(bytes) ?? formatFromExtension(ext);
   if (!format || !ACCEPTED.includes(format)) throw new SignedError("INVALID_REQUEST", "Import a Word (.docx or .doc), OpenDocument (.odt), RTF or PDF file");
 

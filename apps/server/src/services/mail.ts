@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import nodemailer, { type Transporter } from "nodemailer";
+import type { Transporter } from "nodemailer";
 import type { SmtpConfig } from "../config.ts";
 import { log } from "../log.ts";
 
@@ -57,6 +57,7 @@ export class Mailer {
     }
     const key = JSON.stringify(smtp);
     if (!this.transport || key !== this.transportKey) {
+      const { default: nodemailer } = await import("nodemailer");
       this.transport = nodemailer.createTransport({
         host: smtp.host,
         port: smtp.port,
@@ -115,6 +116,7 @@ export class Mailer {
   async verify(): Promise<void> {
     const smtp = this.smtp;
     if (!smtp) throw new Error("No SMTP server configured");
+    const { default: nodemailer } = await import("nodemailer");
     await nodemailer
       .createTransport({ host: smtp.host, port: smtp.port, secure: smtp.secure, ...(smtp.user ? { auth: { user: smtp.user, pass: smtp.pass ?? "" } } : {}) })
       .verify();

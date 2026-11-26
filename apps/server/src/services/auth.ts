@@ -1,4 +1,3 @@
-import { hash, verify } from "@node-rs/argon2";
 import { SignedError } from "@signed-md/core";
 import { newId, now } from "@signed-md/db";
 import type { Actor, Ctx } from "../context.ts";
@@ -6,9 +5,12 @@ import { recordAudit } from "./audit.ts";
 import { can, userIdOf } from "./permissions.ts";
 import { hmacHex, randomToken, safeEqual, sha256 } from "../crypto.ts";
 
-export function hashPassword(password: string): Promise<string> {
+// The argon2 addon loads on the first login, not at start-up.
+const argon2 = () => import("@node-rs/argon2");
+
+export async function hashPassword(password: string): Promise<string> {
   // argon2id with library defaults (m=19456 KiB, t=2, p=1), as recommended by OWASP.
-  return hash(password);
+  return (await argon2()).hash(password);
 }
 
 export async function login(ctx: Ctx, email: string, password: string): Promise<{ token: string; userId: string } | null> {
@@ -20,6 +22,7 @@ export async function login(ctx: Ctx, email: string, password: string): Promise<
     .where("status", "=", "active")
     .executeTakeFirst();
   // Verify against a dummy hash when the user does not exist, so timing does not reveal accounts.
+  const { verify } = await argon2();
   const ok = await verify(user?.password_hash ?? (await dummyHash()), password).catch(() => false);
   if (!user || !user.password_hash || !ok) return null;
   await ctx.db.updateTable("users").set({ last_login_at: now() }).where("id", "=", user.id).execute();
@@ -64,7 +67,7 @@ export async function createSession(ctx: Ctx, userId: string): Promise<string> {
 
 let dummy: Promise<string> | null = null;
 function dummyHash(): Promise<string> {
-  dummy ??= hash("not-a-real-password");
+  dummy ??= hashPassword("not-a-real-password");
   return dummy;
 }
 

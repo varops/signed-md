@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { isAwaitingSigner, isOpenStatus, reminderLabel, SignedError } from "@signed-md/core";
 import type { Ctx } from "../context.ts";
 import { unseal } from "../crypto.ts";
+import { ASSETS_DIR } from "../paths.ts";
 import { getAccount } from "./accounts.ts";
 import { readLogo } from "./branding.ts";
 import { loadDocument, loadSigners } from "./documents.ts";
@@ -48,7 +48,7 @@ function longDateTime(iso: string, tz: string): string {
 }
 
 /** The small Signed.md logo for the footer, while "Powered by Signed.md" is on. */
-const BRAND_PNG = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "assets", "email-footer-logo.png"));
+const BRAND_PNG = readFileSync(join(ASSETS_DIR, "email-footer-logo.png"));
 export function brandAttachment(ctx: Ctx): MailAttachment[] {
   return ctx.config.branding ? [{ filename: "signed-md.png", content: BRAND_PNG, contentType: "image/png", cid: BRAND_CID }] : [];
 }

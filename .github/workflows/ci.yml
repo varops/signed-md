@@ -54,5 +54,8 @@ jobs:
       - name: Smoke test
         run: |
           docker run -d --name smd -p 3000:3000 signed-md:ci
-          for i in $(seq 1 30); do curl -fsS localhost:3000/health && exit 0; sleep 1; done
-          docker logs smd; exit 1
+          for i in $(seq 1 30); do curl -fsS localhost:3000/health && break; sleep 1; done
+          curl -fsS localhost:3000/health >/dev/null || { docker logs smd; exit 1; }
+          # The API and MCP load on their first request, from separate files of the bundle.
+          curl -fsS -o /dev/null localhost:3000/openapi.json || { docker logs smd; exit 1; }
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:3000/mcp)" = 405 || { docker logs smd; exit 1; }

@@ -12,6 +12,12 @@ Add each change under **Unreleased** as you merge it into `develop`. When `rc` i
 
 - For platforms that stop idle containers: the server writes the next time its background worker has work (a job, an expiry or a reminder) to `DATA_DIR/next-work-at`, every minute and when it stops, so the platform can start it again in time. `cli.ts next-work` prints it. See "Stopping idle instances" in the self-hosting guide.
 
+### Changed
+
+- The server starts about three times faster and uses about a fifth of the CPU while starting. In the Docker image it now takes about 0.1 s instead of 0.3 s to accept requests, and on a slow CPU about 0.2 s instead of 1.3 s. This helps most on platforms that stop idle containers and start them again on the next request.
+  - The Docker image runs a bundled server (`apps/server/bundle/main.js`, built with esbuild while the image builds) instead of loading about 1,200 files from source. Running from source (`pnpm start`, `pnpm demo`) is unchanged, and the CLI in the image still runs from source: `node apps/server/src/cli.ts`.
+  - The REST API, MCP, PDF sealing, SMTP, webhook delivery, Word and PDF import, and the Postgres driver now load on first use instead of at start-up. The first API or MCP request after a start takes a few milliseconds longer.
+
 ## [1.1.1] – 2026-11-21
 
 A small release for the verifier. `npx signed-md verify` now works from npm, and the package has a proper README.

@@ -11,3 +11,6 @@ dist/
 # Local only
 CLAUDE.md
 docs/prd.md
+
+# The server bundle for the Docker image (pnpm bundle)
+apps/server/bundle/

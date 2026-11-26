@@ -13,6 +13,7 @@
     "typecheck": "tsc -b",
     "verify": "node packages/verify/bin/signed-md.js verify",
     "start": "node apps/server/src/main.ts",
+    "bundle": "pnpm --filter @signed-md/server bundle",
     "demo": "node apps/server/src/demo.ts",
     "cli": "node apps/server/src/cli.ts",
     "release": "node scripts/release.mjs"

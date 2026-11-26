@@ -2,32 +2,28 @@ import { readFileSync } from "node:fs";
 import { VERSION } from "./version.ts";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { ping } from "@signed-md/db";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { html } from "hono/html";
 import { bodyLimit } from "hono/body-limit";
 import { secureHeaders } from "hono/secure-headers";
 import type { Ctx } from "./context.ts";
-import { createApi } from "./http/api.ts";
 import { errorResponse } from "./http/errors.ts";
-import { createMcpRoutes } from "./http/mcp.ts";
 import { log } from "./log.ts";
+import { ASSETS_DIR, ROOT_DIR } from "./paths.ts";
 import { avatarOrigin } from "./services/avatars.ts";
 import { readLogo } from "./services/branding.ts";
-import { certificatePem, pdfIdentity } from "./services/pdfsign.ts";
 import { checkDownloadSignature, readArtifact } from "./services/finalize.ts";
 import { createAdmin } from "./ui/admin.ts";
 import { asset, logo, setAssetVersion, setBranding, setHosted, setSourceUrl, shell } from "./ui/layout.ts";
 import { sha256 } from "./crypto.ts";
 import { createSigningRoutes } from "./ui/signing.ts";
 
-const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
 function loadAssets(): Record<string, { body: string; type: string }> {
-  const dir = join(here, "..", "assets");
-  const brand = join(here, "..", "..", "..", "brand");
+  const dir = ASSETS_DIR;
+  const brand = join(ROOT_DIR, "brand");
   const svg = (name: string) => ({ body: readFileSync(join(brand, name), "utf8"), type: "image/svg+xml" });
   const oat = dirname(require.resolve("@knadh/oat/package.json"));
   return {
@@ -51,6 +47,18 @@ function loadAssets(): Record<string, { body: string; type: string }> {
       body: readFileSync(join(dirname(require.resolve("signature_pad")), "signature_pad.umd.min.js"), "utf8"),
       type: "text/javascript; charset=utf-8",
     },
+  };
+}
+
+/** A handler that builds a sub-app on the first request and passes every matching request to it. */
+function lazyRoutes(build: () => Promise<{ fetch: Hono["fetch"] }>) {
+  let routes: Promise<{ fetch: Hono["fetch"] }> | null = null;
+  return async (c: Context) => {
+    routes ??= build().catch((e: unknown) => {
+      routes = null;
+      throw e;
+    });
+    return (await routes).fetch(c.req.raw, c.env);
   };
 }
 
@@ -128,6 +136,7 @@ export function createApp(ctx: Ctx) {
   app.get("/.well-known/signed-md-keys.json", async (c) => {
     c.header("cache-control", "public, max-age=300");
     const account = await ctx.db.selectFrom("accounts").select("name").limit(1).executeTakeFirst();
+    const { certificatePem, pdfIdentity } = await import("./services/pdfsign.ts");
     const pdfCert = account ? certificatePem(pdfIdentity(ctx.config.dataDir, account.name).chain[0]!) : null;
     return c.json({ keys: [ctx.keys.info], pdf_signing_certificates: pdfCert ? [pdfCert] : [] });
   });
@@ -143,11 +152,11 @@ export function createApp(ctx: Ctx) {
     if (!FONT_FILES.has(name)) return c.notFound();
     c.header("content-type", name.endsWith(".woff2") ? "font/woff2" : "font/ttf");
     c.header("cache-control", "public, max-age=604800, immutable");
-    return c.body(readFileSync(join(here, "..", "assets", "fonts", name)));
+    return c.body(readFileSync(join(ASSETS_DIR, "fonts", name)));
   });
 
   // The agent skill (skills/signed-md/SKILL.md), so agents can install it from this server.
-  const skillPath = join(here, "..", "..", "..", "skills", "signed-md", "SKILL.md");
+  const skillPath = join(ROOT_DIR, "skills", "signed-md", "SKILL.md");
   app.get("/skill.md", (c) => {
     c.header("content-type", "text/markdown; charset=utf-8");
     c.header("cache-control", "public, max-age=3600");
@@ -155,7 +164,7 @@ export function createApp(ctx: Ctx) {
   });
 
   // The home-screen icon (iOS asks for /apple-touch-icon.png on its own too). Full-bleed: iOS rounds the corners.
-  const touchIcon = readFileSync(join(here, "..", "..", "..", "brand", "signedmd-apple-touch-icon.png"));
+  const touchIcon = readFileSync(join(ROOT_DIR, "brand", "signedmd-apple-touch-icon.png"));
   app.get("/apple-touch-icon.png", (c) => {
     c.header("content-type", "image/png");
     c.header("cache-control", "public, max-age=86400");
@@ -200,8 +209,13 @@ export function createApp(ctx: Ctx) {
     return c.body(new Uint8Array(art.data));
   });
 
-  app.route("/", createApi(ctx));
-  app.route("/", createMcpRoutes(ctx));
+  // The REST API and MCP load on their first request. Their libraries (Zod, OpenAPI, the MCP SDK)
+  // are a large part of the start-up time, and a sleeping instance is woken by whatever comes first.
+  const api = lazyRoutes(async () => (await import("./http/api.ts")).createApi(ctx));
+  const mcp = lazyRoutes(async () => (await import("./http/mcp.ts")).createMcpRoutes(ctx));
+  app.all("/v1/*", api);
+  app.all("/openapi.json", api);
+  app.all("/mcp", mcp);
   app.route("/", createSigningRoutes(ctx));
   app.route("/", createAdmin(ctx));
 

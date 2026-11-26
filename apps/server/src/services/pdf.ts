@@ -1,8 +1,7 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { type ColumnsNode, type FieldDef, formatValue, groupColumns, parseTemplate } from "@signed-md/core";
 import type { Nodes, Root, RootContent } from "mdast";
@@ -11,10 +10,11 @@ import remarkParse from "remark-parse";
 import { unified } from "unified";
 import type { SignatureValue, SignerFieldValue } from "./signing.ts";
 import { CONTRACT_FONTS, type ContractFont } from "./fonts.ts";
+import { ASSETS_DIR } from "../paths.ts";
 
 const run = promisify(execFile);
 /** Bundled fonts (OFL): STIX Two Text or Arimo (like Arial) for the agreement, Arimo for the certificate. */
-const FONT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "assets", "fonts");
+const FONT_DIR = join(ASSETS_DIR, "fonts");
 
 /** Escape text for Typst markup: every non-alphanumeric, non-space character gets a backslash. */
 export function typstText(s: string): string {
