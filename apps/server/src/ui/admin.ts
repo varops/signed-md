@@ -472,7 +472,8 @@ export function createAdmin(ctx: Ctx) {
                     : ""}`
             : html`<p class="small muted">Fix the problems shown on the document, then send.</p>`}
         </section>`
-      : html`<section class="panel-block row-stretch" aria-labelledby="status"><h2 id="status">${d.status === "finalized" ? "Signed" : active ? `${signedCount} of ${d.signers.length} signed` : badge(d.status)}</h2>
+      : html`<section class="panel-block row-stretch" aria-labelledby="status"><h2 id="status">${d.status === "finalized" ? "Signed" : d.held_for_review ? "Being checked" : active ? `${signedCount} of ${d.signers.length} signed` : badge(d.status)}</h2>
+          ${d.held_for_review ? alert("info", "We check the first documents a new account sends. Signers get their emails as soon as this one is cleared, usually within a few hours.") : ""}
           ${artifacts.length ? html`<div class="stack">${artifacts.map((a) => html`<a class="button w-full${a.type === "zip" ? " main-action" : ""}" href="${a.download.url}">${a.type === "zip" ? "Download package (.zip)" : "Download signed PDF"}</a>`)}
             <p class="tiny muted">Verify the package offline with <code>npx signed-md verify file.zip</code>.</p></div>` : ""}
           ${active && manage ? html`<button type="button" data-variant="danger" class="outline small" commandfor="revoke-dialog" command="show-modal">Revoke</button>

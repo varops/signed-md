@@ -19,6 +19,7 @@ import { getAccount, isSetUp, setup } from "./services/accounts.ts";
 import { createApiKey } from "./services/auth.ts";
 import { renderEmail } from "./services/emailtemplate.ts";
 import { passwordResetLink } from "./services/passwordreset.ts";
+import { listHeld, rejectHeld, releaseHeld } from "./services/review.ts";
 import { nextWorkAt } from "./services/schedule.ts";
 
 function arg(args: string[], name: string): string | undefined {
@@ -102,6 +103,21 @@ async function main(argv: string[]): Promise<number> {
         console.log(await passwordResetLink(ctx, email));
         console.error("Give this link to the person directly. It works once and expires in 1 hour.");
         return 0;
+      }
+      // The hosted service's review of first sends (REVIEW_SENDS). Not in the help on purpose.
+      case "review": {
+        const [sub, id, ...rest] = args;
+        if (sub === "list") {
+          console.log(JSON.stringify(await listHeld(ctx)));
+          return 0;
+        }
+        if ((sub === "release" || sub === "reject") && id) {
+          if (sub === "release") await releaseHeld(ctx, id);
+          else await rejectHeld(ctx, id, rest.join(" "));
+          console.log(sub === "release" ? `Released ${id}.` : `Rejected ${id}.`);
+          return 0;
+        }
+        throw new Error("review needs: list, release <document id>, or reject <document id> [reason]");
       }
       default:
         throw new Error(`Unknown command '${cmd}'. Run with --help.`);

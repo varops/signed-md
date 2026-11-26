@@ -33,6 +33,8 @@ const DOC_TYPES: Record<string, string> = {
   "document.approved": "approved sending",
   "document.sent": "sent for signature",
   "document.revoked": "revoked",
+  "document.held_for_review": "held it for review",
+  "document.review_released": "released it after review",
   "document.archived": "archived",
   "document.unarchived": "unarchived",
   "document.inline_approved": "approved the inline document",

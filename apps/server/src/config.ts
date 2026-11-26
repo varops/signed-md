@@ -37,6 +37,8 @@ export interface Config {
    * ACTIVE=false disables the account: no logins, API, MCP or signing links, and no worker.
    * HOSTED=true needs SMTP_HOST, and hides the signing key settings and the Outbox.
    * MONTHLY_LIMIT and TOTAL_LIMIT cap sent contracts (-1, the default, means no limit).
+   * REVIEW_SENDS holds the account's first N sent documents for review (0, the default, is off),
+   * and REVIEW_NOTIFY_URL is told about each one (see services/review.ts).
    */
   branding: boolean;
   active: boolean;
@@ -57,6 +59,10 @@ export interface Config {
   /** Plan limits on sent contracts, per calendar month (UTC) and in total. -1 means no limit. */
   monthlyLimit: number;
   totalLimit: number;
+  /** Hold the first N sent documents until an operator releases them. 0 is off. */
+  reviewSends: number;
+  /** POSTed {"document_id"} when a document is held. Null tells nobody. */
+  reviewNotifyUrl: string | null;
   /** SMTP from the environment. It can't be set in the UI. Null writes emails to the outbox. */
   smtp: SmtpConfig | null;
   typstBin: string;
@@ -85,6 +91,21 @@ function bool(v: string | undefined, def = false): boolean {
 }
 
 export class ConfigError extends Error {}
+
+function reviewSends(raw: string | undefined): number {
+  const v = (raw ?? "").trim();
+  if (v === "") return 0;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 0) throw new ConfigError(`REVIEW_SENDS must be a whole number, got '${v}'`);
+  return n;
+}
+
+function reviewNotifyUrl(raw: string | undefined): string | null {
+  const v = (raw ?? "").trim();
+  if (!v) return null;
+  if (!/^https?:\/\/[^/\s]+/.test(v)) throw new ConfigError(`REVIEW_NOTIFY_URL must be an http(s) URL, got '${v}'`);
+  return v;
+}
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const dataDir = resolve(env.DATA_DIR ?? "./.data");
@@ -203,6 +224,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     cookieHashKey,
     oauth,
     allowEmailLogin,
+    reviewSends: reviewSends(env.REVIEW_SENDS),
+    reviewNotifyUrl: reviewNotifyUrl(env.REVIEW_NOTIFY_URL),
     monthlyLimit: limit("MONTHLY_LIMIT"),
     totalLimit: limit("TOTAL_LIMIT"),
     smtp,

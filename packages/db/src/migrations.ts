@@ -353,6 +353,12 @@ const m011: Migration = {
   },
 };
 
+const m012: Migration = {
+  async up(db: Kysely<any>) {
+    await db.schema.alterTable("documents").addColumn("review_held_at", "text").execute();
+  },
+};
+
 export const migrations: Record<string, Migration> = {
   "001_initial": m001,
   "002_signer_message": m002,
@@ -365,6 +371,7 @@ export const migrations: Record<string, Migration> = {
   "009_reminders": m009,
   "010_deadline_reminders": m010,
   "011_send_approval": m011,
+  "012_review_hold": m012,
 };
 
 export const migrationProvider: MigrationProvider = {

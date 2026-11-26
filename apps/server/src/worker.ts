@@ -3,6 +3,7 @@ import type { Ctx } from "./context.ts";
 import { log } from "./log.ts";
 import { type EmailJob, sendEmailJob } from "./services/emails.ts";
 import { finalizeDocument } from "./services/finalize.ts";
+import { sendReviewNotice } from "./services/review.ts";
 import { sendReminders } from "./services/reminders.ts";
 import { writeNextWorkAt } from "./services/schedule.ts";
 import { expireDocuments } from "./services/signing.ts";
@@ -14,6 +15,7 @@ const handlers: Record<string, Handler> = {
   email: (ctx, p: EmailJob) => sendEmailJob(ctx, p),
   webhook: (ctx, p: { delivery_id: string }) => deliverWebhook(ctx, p.delivery_id),
   finalize: (ctx, p: { document_id: string }) => finalizeDocument(ctx, p.document_id),
+  review_notice: (ctx, p: { document_id: string }) => sendReviewNotice(ctx, p.document_id),
 };
 
 /** Run one due job, if any. Returns true when a job ran. */

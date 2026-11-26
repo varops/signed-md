@@ -196,6 +196,8 @@ export interface DocumentTable {
   send_approved_by: string | null;
   send_approved_at: string | null;
   send_approved_revision: string | null;
+  /** Set while the service holds a sent document for review: signers aren't notified until it's released. */
+  review_held_at: string | null;
   created_at: string;
   updated_at: string;
   sent_at: string | null;

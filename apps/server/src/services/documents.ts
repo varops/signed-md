@@ -18,7 +18,7 @@ import {
 } from "@signed-md/core";
 import { type Database, type DocumentTable, enqueueJob, newId, now, type SignerTable } from "@signed-md/db";
 import type { Kysely, Selectable, Transaction } from "kysely";
-import { type Actor, actorRef, type Ctx } from "../context.ts";
+import { type Actor, actorRef, type Ctx, SYSTEM } from "../context.ts";
 import { randomToken, seal, sha256 } from "../crypto.ts";
 import { type AccountConfig, getAccount } from "./accounts.ts";
 import { can, requireManageDocument, requirePermission, requireReadDocument, userIdOf } from "./permissions.ts";
@@ -275,6 +275,7 @@ export async function createDocument(ctx: Ctx, actor: Actor, input: CreateDocume
     send_approved_by: null,
     send_approved_at: null,
     send_approved_revision: null,
+    review_held_at: null,
     created_at: t,
     updated_at: t,
     sent_at: null,
@@ -530,11 +531,16 @@ export async function sendDocument(
       );
     }
 
+    // The hosted service holds an account's first sends for review (REVIEW_SENDS): the document is
+    // sent, but signers get nothing until an operator releases it (services/review.ts).
+    const held = ctx.config.reviewSends > 0 && (await sentSoFar(trx)) < ctx.config.reviewSends;
+
     const t = now();
     await trx
       .updateTable("documents")
       .set({
         status,
+        review_held_at: held ? t : null,
         content: prepared.content,
         revision: prepared.revision,
         sent_at: t,
@@ -578,9 +584,20 @@ export async function sendDocument(
       content_sha256: sha256(prepared.content),
       signers: prepared.signers.map((s) => ({ key: s.key, name: s.name, email: s.email, order: s.order })),
     });
-    await activateNextGroup(ctx, trx, id);
+    if (held) {
+      await appendEvent(trx, id, "document.held_for_review", SYSTEM);
+      if (ctx.config.reviewNotifyUrl) await enqueueJob(trx, "review_notice", { document_id: id });
+    } else {
+      await activateNextGroup(ctx, trx, id);
+    }
   });
   return getDocument(ctx, actor, id);
+}
+
+/** Documents this account has ever sent. */
+async function sentSoFar(db: Kysely<Database>): Promise<number> {
+  const row = await db.selectFrom("documents").select((eb) => eb.fn.countAll<number>().as("n")).where("sent_at", "is not", null).executeTakeFirstOrThrow();
+  return Number(row.n);
 }
 
 /**
@@ -656,7 +673,7 @@ export async function revokeDocument(ctx: Ctx, actor: Actor, id: string, reason?
     const t = now();
     await trx
       .updateTable("documents")
-      .set({ status, revoked_at: t, updated_at: t, revoke_reason: reason?.slice(0, 1000) ?? null })
+      .set({ status, revoked_at: t, updated_at: t, revoke_reason: reason?.slice(0, 1000) ?? null, review_held_at: null })
       .where("id", "=", id)
       .execute();
     const signers = await loadSigners(trx, id);
@@ -836,6 +853,8 @@ export interface DocumentView {
   inline_approval: { required: boolean; approved: boolean; approved_at: string | null } | null;
   /** Drafts only, when the account requires a person to approve agent sends. */
   send_approval: { required: boolean; approved: boolean; approved_at: string | null } | null;
+  /** Sent, but held for review by the service: signers are notified once it's released. */
+  held_for_review: boolean;
   expires_in_days: number;
   expires_at: string | null;
   timezone: string;
@@ -924,6 +943,7 @@ export async function documentView(ctx: Ctx, doc: DocRow, signers: SignerRow[], 
             approved_at: doc.send_approved_at,
           }
         : null,
+    held_for_review: doc.review_held_at !== null,
     expires_in_days: Number(doc.expires_in_days),
     expires_at: doc.expires_at,
     timezone: doc.timezone,

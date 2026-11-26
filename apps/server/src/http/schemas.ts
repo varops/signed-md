@@ -111,6 +111,7 @@ export const DocumentSchema = z
       .object({ required: z.boolean(), approved: z.boolean(), approved_at: z.string().nullable() })
       .nullable()
       .openapi({ description: "Drafts only, when the account requires a person to approve agent sends. Ask the user to approve it in the web UI (links.ui), then send." }),
+    held_for_review: z.boolean().openapi({ description: "Sent, but held for a check by the service before signers are emailed. Signers get their links once it's released. Nothing to do: tell the user." }),
     expires_in_days: z.number(),
     expires_at: z.string().nullable(),
     timezone: z.string(),
